@@ -1,0 +1,70 @@
+- generic [ref=f1e1]:
+  - main [ref=f1e2]:
+    - generic [ref=f1e72]:
+      - generic [ref=f1e73]:
+        - generic [ref=f1e74]: apollo
+        - generic [ref=f1e76]:
+          - generic [ref=f1e77]: The Last Broadcast
+          - generic [ref=f1e78]: First draft
+        - generic [ref=f1e79]: ●Saved just now
+        - button "History" [ref=f1e80] [cursor=pointer]
+        - button "Export" [ref=f1e81] [cursor=pointer]
+      - generic [ref=f1e82]:
+        - complementary [ref=f1e83]:
+          - generic [ref=f1e84]: The Last Broadcast
+          - generic [ref=f1e85]: First draft · 94 pages
+          - generic [ref=f1e86]:
+            - text: SCENES
+            - generic [ref=f1e87]: ⌄
+          - generic [ref=f1e88]:
+            - strong [ref=f1e89]: 8 INT. APARTMENT — EVENING
+            - generic [ref=f1e90]: Mara finds the tape
+          - generic [ref=f1e91]:
+            - strong [ref=f1e92]: 9 EXT. CITY STREET — NIGHT
+            - generic [ref=f1e93]: On the way to the station
+          - generic [ref=f1e94]:
+            - strong [ref=f1e95]: 10 INT. RADIO STATION — NIGHT
+            - generic [ref=f1e96]: Mara hears Eli's voice · p. 12
+          - generic [ref=f1e97]:
+            - strong [ref=f1e98]: 11 EXT. CITY STREET — NIGHT
+            - generic [ref=f1e99]: The city listens
+          - generic [ref=f1e100]:
+            - strong [ref=f1e101]: 12 INT. STUDIO — LATER
+            - generic [ref=f1e102]: The last broadcast
+          - generic [ref=f1e103]: PROJECT
+          - generic [ref=f1e104]:
+            - generic [ref=f1e105]: ▧
+            - text: Notes
+          - generic [ref=f1e106]:
+            - generic [ref=f1e107]: ◇
+            - text: Stash
+        - generic [ref=f1e108]:
+          - generic [ref=f1e109]:
+            - generic [ref=f1e110]: "10"
+            - strong [ref=f1e111]: INT. RADIO STATION — NIGHT
+            - generic [ref=f1e112]: Page 12
+            - button "⋯" [ref=f1e113] [cursor=pointer]
+          - article "Sample screenplay page" [ref=f1e114]:
+            - generic [ref=f1e115]: "12."
+            - generic [ref=f1e116]:
+              - paragraph [ref=f1e117]: INT. RADIO STATION — NIGHT
+              - paragraph [ref=f1e118]: The ON AIR light hums above an empty hallway. Rain needles the windows at the far end.
+              - paragraph [ref=f1e119]: MARA, still in her coat, holds a cassette against the glass of the studio door.
+              - paragraph [ref=f1e120]: MARA
+              - paragraph [ref=f1e121]: You said you'd be here before the last song.
+              - paragraph [ref=f1e122]: A voice answers through the headphones, soft beneath the static.
+              - paragraph [ref=f1e123]: ELI (V.O.)
+              - paragraph [ref=f1e124]: I am here. Just not where you expected.
+              - paragraph [ref=f1e125]: Mara looks toward the blinking light on the console. She presses play.
+              - paragraph [ref=f1e126]: MARA
+              - paragraph [ref=f1e127]: (into the microphone)
+              - paragraph [ref=f1e128]: Then let's start again.
+              - paragraph [ref=f1e130]: EXT. CITY STREET — NIGHT
+              - paragraph [ref=f1e131]: A single window glows above the sleeping storefronts.
+              - paragraph [ref=f1e132]: "CUT TO:"
+  - generic "Prototype directions" [ref=f1e46]:
+    - button "Previous direction" [ref=f1e47] [cursor=pointer]: ‹
+    - generic [ref=f1e48]:
+      - text: C · Story outline
+      - generic [ref=f1e49]: Visual prototype · use ← → to compare
+    - button "Next direction" [active] [ref=f1e50] [cursor=pointer]: ›

@@ -170,6 +170,13 @@ Owner-confirmed:
 
 ## Subsequent decision branches
 
+Visual exploration: [editor prototype](../prototype/editor.html) presents three
+workspace directions (Library, Writing desk, and Story outline). The owner
+approved B (Writing desk) as the overall visual direction, especially its compact
+left rail, with an expandable scene outline like C's that can be hidden again.
+B demonstrates that combination. Individual screens and details can be refined
+as they are developed; the QML implementation remains to be validated.
+
 Ask these as their prerequisites settle, rather than presenting the entire list as a questionnaire.
 
 - Daily workflow: creating/opening a script, resuming a session, keyboard behavior (including empty/mid-element Enter and suggestions), paste, element inference and overrides, undo/redo, and selection.

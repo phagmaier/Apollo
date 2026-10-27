@@ -1,0 +1,49 @@
+- generic [active] [ref=f1e1]:
+  - main [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic [ref=f1e4]:
+        - generic [ref=f1e5]: apollo
+        - generic [ref=f1e7]:
+          - generic [ref=f1e8]: The Last Broadcast
+          - generic [ref=f1e9]: First draft
+        - generic [ref=f1e10]: ●Saved just now
+        - button "History" [ref=f1e11] [cursor=pointer]
+        - button "Export" [ref=f1e12] [cursor=pointer]
+      - generic [ref=f1e13]:
+        - complementary "Workspace" [ref=f1e14]:
+          - button "Screenplay" [ref=f1e15] [cursor=pointer]: ▤
+          - button "Toggle scene outline" [ref=f1e16] [cursor=pointer]: ☰
+          - button "Notes" [ref=f1e17] [cursor=pointer]: ▧
+          - button "Stash" [ref=f1e18] [cursor=pointer]: ◇
+        - generic [ref=f1e19]:
+          - generic [ref=f1e20]:
+            - generic [ref=f1e21]: ‹
+            - strong [ref=f1e22]: Scene 10
+            - generic [ref=f1e23]: of 28
+            - generic [ref=f1e24]: ›
+            - generic [ref=f1e25]: INT. RADIO STATION — NIGHT
+          - generic [ref=f1e26]: Page 12 of 94100% zoom
+          - article "Sample screenplay page" [ref=f1e27]:
+            - generic [ref=f1e28]: "12."
+            - generic [ref=f1e29]:
+              - paragraph [ref=f1e30]: INT. RADIO STATION — NIGHT
+              - paragraph [ref=f1e31]: The ON AIR light hums above an empty hallway. Rain needles the windows at the far end.
+              - paragraph [ref=f1e32]: MARA, still in her coat, holds a cassette against the glass of the studio door.
+              - paragraph [ref=f1e33]: MARA
+              - paragraph [ref=f1e34]: You said you'd be here before the last song.
+              - paragraph [ref=f1e35]: A voice answers through the headphones, soft beneath the static.
+              - paragraph [ref=f1e36]: ELI (V.O.)
+              - paragraph [ref=f1e37]: I am here. Just not where you expected.
+              - paragraph [ref=f1e38]: Mara looks toward the blinking light on the console. She presses play.
+              - paragraph [ref=f1e39]: MARA
+              - paragraph [ref=f1e40]: (into the microphone)
+              - paragraph [ref=f1e41]: Then let's start again.
+              - paragraph [ref=f1e43]: EXT. CITY STREET — NIGHT
+              - paragraph [ref=f1e44]: A single window glows above the sleeping storefronts.
+              - paragraph [ref=f1e45]: "CUT TO:"
+  - generic "Prototype directions" [ref=f1e46]:
+    - button "Previous direction" [ref=f1e47] [cursor=pointer]: ‹
+    - generic [ref=f1e48]:
+      - text: B · Writing desk
+      - generic [ref=f1e49]: Visual prototype · use ← → to compare
+    - button "Next direction" [ref=f1e50] [cursor=pointer]: ›
