@@ -1,0 +1,64 @@
+# Expected layout for 03-heading-keep-with-next.fountain under the Academy sample profile (docs/export-profile.md).
+# Hand-derived from the profile rules; line wrapping cross-checked with tools/afterwriting-oracle.sh.
+# Format: 'page <n> number=<text|none>' starts a page; then slot<TAB>element<TAB>text[<TAB>styles].
+# Blank slots are omitted. Page 1: heading would be alone on slot 56. Page 2: heading fits at 54, but its 3-line action cannot leave 2 lines on the page.
+page 1 number=none
+1	heading	INT. LAMP ROOM - NIGHT
+3	action	Filler line 01.
+5	action	Filler line 02.
+7	action	Filler line 03.
+9	action	Filler line 04.
+11	action	Filler line 05.
+13	action	Filler line 06.
+15	action	Filler line 07.
+17	action	Filler line 08.
+19	action	Filler line 09.
+21	action	Filler line 10.
+23	action	Filler line 11.
+25	action	Filler line 12.
+27	action	Filler line 13.
+29	action	Filler line 14.
+31	action	Filler line 15.
+33	action	Filler line 16.
+35	action	Filler line 17.
+37	action	Filler line 18.
+39	action	Filler line 19.
+41	action	Filler line 20.
+43	action	Filler line 21.
+45	action	Filler line 22.
+47	action	Filler line 23.
+49	action	Filler line 24.
+51	action	Filler line 25.
+53	action	Filler line 26.
+page 2 number=2.
+1	heading	INT. STAIRWELL - CONTINUOUS
+3	action	The stairwell is dark and smells of diesel.
+5	action	Filler line 27.
+7	action	Filler line 28.
+9	action	Filler line 29.
+11	action	Filler line 30.
+13	action	Filler line 31.
+15	action	Filler line 32.
+17	action	Filler line 33.
+19	action	Filler line 34.
+21	action	Filler line 35.
+23	action	Filler line 36.
+25	action	Filler line 37.
+27	action	Filler line 38.
+29	action	Filler line 39.
+31	action	Filler line 40.
+33	action	Filler line 41.
+35	action	Filler line 42.
+37	action	Filler line 43.
+39	action	Filler line 44.
+41	action	Filler line 45.
+43	action	Filler line 46.
+45	action	Filler line 47.
+47	action	Filler line 48.
+49	action	Filler line 49.
+51	action	Filler line 50.
+page 3 number=3.
+1	heading	EXT. GALLERY DOOR - CONTINUOUS
+3	action	The door at the top is chained. Mara tests the chain with
+4	action	both hands and finds the lock already broken. She pushes
+5	action	through into the wind.

@@ -1,0 +1,38 @@
+# Expected layout for 06-action-split.fountain under the Academy sample profile (docs/export-profile.md).
+# Hand-derived from the profile rules; line wrapping cross-checked with tools/afterwriting-oracle.sh.
+# Format: 'page <n> number=<text|none>' starts a page; then slot<TAB>element<TAB>text[<TAB>styles].
+# Blank slots are omitted. Breaking after 'wind.' would leave one line for page 2, so the break moves back to 'sputters.'. Action splits are an Apollo proposal, not Academy-observed.
+page 1 number=none
+1	heading	INT. LAMP ROOM - NIGHT
+3	action	Filler line 01.
+5	action	Filler line 02.
+7	action	Filler line 03.
+9	action	Filler line 04.
+11	action	Filler line 05.
+13	action	Filler line 06.
+15	action	Filler line 07.
+17	action	Filler line 08.
+19	action	Filler line 09.
+21	action	Filler line 10.
+23	action	Filler line 11.
+25	action	Filler line 12.
+27	action	Filler line 13.
+29	action	Filler line 14.
+31	action	Filler line 15.
+33	action	Filler line 16.
+35	action	Filler line 17.
+37	action	Filler line 18.
+39	action	Filler line 19.
+41	action	Filler line 20.
+43	action	Filler line 21.
+45	action	Filler line 22.
+47	action	Filler line 23.
+49	action	Filler line 24.
+51	action	The storm reaches the island. Shutters bang against the stone
+52	action	walls and the lamp room fills with salt spray. Mara braces
+53	action	the door with a chair. Theo drags the generator cable across
+54	action	the floor while the needle on the pressure gauge keeps
+55	action	falling. The lamp sputters.
+page 2 number=2.
+1	action	Somewhere below them, glass breaks and the whole tower seems
+2	action	to lean into the wind. Neither of them says a word.

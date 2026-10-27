@@ -1,0 +1,8 @@
+# Third-party reference material kept local (copyrighted text, personal scripts)
+/reference/
+
+# Regenerable workloads
+/fixtures/generated/*.fountain
+
+# Build output
+/build/

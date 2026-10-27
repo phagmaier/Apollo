@@ -1,0 +1,44 @@
+# Expected layout for 08-dual-dialogue-and-contd.fountain under the Academy sample profile (docs/export-profile.md).
+# Hand-derived from the profile rules; line wrapping cross-checked with tools/afterwriting-oracle.sh.
+# Format: 'page <n> number=<text|none>' starts a page; then slot<TAB>element<TAB>text[<TAB>styles].
+# Blank slots are omitted. MARA (CONT'D) is generated, not document text. The right-hand MARA gets none because THEO spoke in between. Dual blocks never split.
+page 1 number=none
+1	heading	INT. LADDER SHAFT - NIGHT
+3	cue	MARA
+4	dialogue	Hold it steady.
+6	action	Theo grips the rails.
+8	cue	MARA (CONT’D)
+9	dialogue	Higher. Now.
+11	dual-cue-L	THEO
+11	dual-cue-R	MARA
+12	dual-dialogue-L	Then hold the ladder steady
+12	dual-dialogue-R	I am holding it. You are the
+13	dual-dialogue-L	and stop arguing with me.
+13	dual-dialogue-R	one who keeps shaking.
+15	action	Filler line 01.
+17	action	Filler line 02.
+19	action	Filler line 03.
+21	action	Filler line 04.
+23	action	Filler line 05.
+25	action	Filler line 06.
+27	action	Filler line 07.
+29	action	Filler line 08.
+31	action	Filler line 09.
+33	action	Filler line 10.
+35	action	Filler line 11.
+37	action	Filler line 12.
+39	action	Filler line 13.
+41	action	Filler line 14.
+43	action	Filler line 15.
+45	action	Filler line 16.
+47	action	Filler line 17.
+49	action	Filler line 18.
+51	action	Filler line 19.
+53	action	Filler line 20.
+page 2 number=2.
+1	dual-cue-L	JUNE
+1	dual-cue-R	ODELL
+2	dual-dialogue-L	Then hold the ladder steady
+2	dual-dialogue-R	I am holding it. You are the
+3	dual-dialogue-L	and stop arguing with me.
+3	dual-dialogue-R	one who keeps shaking.

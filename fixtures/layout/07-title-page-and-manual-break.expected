@@ -1,0 +1,19 @@
+# Expected layout for 07-title-page-and-manual-break.fountain under the Academy sample profile (docs/export-profile.md).
+# Hand-derived from the profile rules; line wrapping cross-checked with tools/afterwriting-oracle.sh.
+# Format: 'page <n> number=<text|none>' starts a page; then slot<TAB>element<TAB>text[<TAB>styles].
+# Blank slots are omitted. Title-page slots use the body grid (slot n top = 1.0 in + (n-1)/6 in). The title page is not counted in page numbers.
+page title number=none
+4	title@center	THE LAMP ROOM
+10	credit@center	Written by
+15	author@center	R. Example
+17	source@center	Based on the story "Keeper" by J. Example
+46	contact@5.2in	12 Harbor Road
+47	contact@5.2in	Port Example, ME 04000
+48	contact@5.2in	555-0100
+48	draft-date@1.5in	October 27, 2026
+page 1 number=none
+1	heading	INT. LAMP ROOM - NIGHT
+3	action	The lamp turns.
+page 2 number=2.
+1	heading	INT. LAMP ROOM - LATER
+3	action	The lamp has stopped.

@@ -1,0 +1,20 @@
+# Expected layout for 01-element-geometry.fountain under the Academy sample profile (docs/export-profile.md).
+# Hand-derived from the profile rules; line wrapping cross-checked with tools/afterwriting-oracle.sh.
+# Format: 'page <n> number=<text|none>' starts a page; then slot<TAB>element<TAB>text[<TAB>styles].
+# Blank slots are omitted. Wrap widths count visible characters only; emphasis markup is hidden.
+page 1 number=none
+1	heading	INT. LIGHTHOUSE KITCHEN - NIGHT
+3	action	Mara crosses the room, unlatches the tall window, and leans
+4	action	out into the cold.
+6	cue	MARA
+7	paren	(quietly, without
+8	paren+	turning around)
+9	dialogue	I left the lights on for you. I
+10	dialogue	always leave the lights on.
+12	cue	THEO (V.O.)
+13	dialogue	I really never wanted this to be	italic=really bold=this
+14	dialogue	our ending.	underline=our
+16	lyric	Row the boat and sing along	italic=all
+18	transition	CUT TO:
+21	heading	EXT. LIGHTHOUSE GALLERY - CONTINUOUS
+23	centered	THE END

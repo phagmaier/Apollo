@@ -1,0 +1,37 @@
+# Expected layout for 04-dialogue-push.fountain under the Academy sample profile (docs/export-profile.md).
+# Hand-derived from the profile rules; line wrapping cross-checked with tools/afterwriting-oracle.sh.
+# Format: 'page <n> number=<text|none>' starts a page; then slot<TAB>element<TAB>text[<TAB>styles].
+# Blank slots are omitted. A split after 'Do not move.' would leave one dialogue line before (MORE).
+page 1 number=none
+1	heading	INT. ATTIC - NIGHT
+3	action	Filler line 01.
+5	action	Filler line 02.
+7	action	Filler line 03.
+9	action	Filler line 04.
+11	action	Filler line 05.
+13	action	Filler line 06.
+15	action	Filler line 07.
+17	action	Filler line 08.
+19	action	Filler line 09.
+21	action	Filler line 10.
+23	action	Filler line 11.
+25	action	Filler line 12.
+27	action	Filler line 13.
+29	action	Filler line 14.
+31	action	Filler line 15.
+33	action	Filler line 16.
+35	action	Filler line 17.
+37	action	Filler line 18.
+39	action	Filler line 19.
+41	action	Filler line 20.
+43	action	Filler line 21.
+45	action	Filler line 22.
+47	action	Filler line 23.
+49	action	Filler line 24.
+51	action	Filler line 25.
+page 2 number=2.
+1	cue	THEO
+2	dialogue	Do not move. The floor is rotten
+3	dialogue	all the way to the far wall and it
+4	dialogue	will not hold the two of us at
+5	dialogue	once, not tonight.
