@@ -65,10 +65,11 @@ Opened open_document(const char* path) {
     opened.document = apollo::editor::screenplay_document(apollo::import_fountain(read_fountain(path)), font);
     return opened;
   }
-  auto project = apollo::source::open_project(info.absoluteFilePath());
+  auto session = std::make_unique<apollo::source::ProjectSession>(info.absoluteFilePath());
+  const auto& project = session->opened();
   opened.export_destination = info.absoluteFilePath() + ".pdf";
   opened.document = apollo::editor::screenplay_document(project.screenplay.elements, font);
-  opened.saver = std::make_unique<Autosaver>(opened.document.get(), project.project, project.screenplay.revision);
+  opened.saver = std::make_unique<Autosaver>(opened.document.get(), std::move(session));
   return opened;
 }
 
@@ -407,6 +408,8 @@ const char* phase_name(Autosaver::Phase phase) {
     case Autosaver::Phase::written: return "written";
     case Autosaver::Phase::committed: return "committed";
     case Autosaver::Phase::acknowledged: return "acknowledged";
+    case Autosaver::Phase::copying: return "copying";
+    case Autosaver::Phase::copied: return "copied";
   }
   return "unknown";
 }

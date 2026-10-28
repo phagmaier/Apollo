@@ -3,11 +3,15 @@
 2026-10-28. Status: requirements planning complete; milestone scope and final
 product choices agreed. Engineering designs below are proposals to validate
 within the implementation slices. No owner question from this interview remains
-pending. This planning handoff does not authorize starting the app build, and
-no implementation or new runtime measurement is claimed here.
+pending. Implementation requires task-specific authorization; the progress
+record below distinguishes completed work from remaining proposals.
 
 **Current status (2026-10-28):** slice 1 is done (see its evidence below);
-slice 2 is next and not started. Slices 3–6 are not started.
+tasks **2.1 — project locking and external-change detection** and
+**2.2 — Save a Copy** are done. The copy becomes active after validation/locking,
+shows its location, and preserves writing/imported files and editor state.
+Next: preserved-work Reload and recovery/emergency copies, then project access.
+The other slice 2 flows and slices 3–6 remain pending; no blocker is known.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -271,7 +275,7 @@ than leaving close indefinitely blocked. Test the actual helper lifecycle.
 
 ## Implementation slices and exit checks
 
-These are proposed implementation tasks, not a record of work already done.
+This table defines the slices; the progress entries below record completed work.
 Each slice must leave a runnable result and reviewable changes. The complete
 milestone includes all slices; an earlier slice is not the usable writing build.
 
@@ -283,6 +287,79 @@ milestone includes all slices; an earlier slice is not the usable writing build.
 | 4 | Everyday writing assistance and live navigation | Context-restricted suggestions with real keys; spelling/dictionary; find/replace; diagnostics; click navigation and undoable drag scene moves with exact retained content |
 | 5 | Production export flow and responsiveness | Snapshot Fountain/PDF while typing; errors/cancel/shutdown preserve outputs; full independent fixtures and editor/PDF agreement; native measurements with autosave/assistance enabled |
 | 6 | Local launch and owner writing handoff | Reproducible launch with packaged fonts/helper and recorded dependencies; one runner with saved logs; realistic writing/recovery/export session and owner comfort assessment |
+
+### Slice 2 task progress
+
+- **2.1 — Project locking and external-change detection (done 2026-10-28).**
+  Editable sessions lock the canonical folder before reading and retain the lock
+  through writer shutdown. Competing instances/aliases are refused without
+  waiting; active locks do not expire by age and dead-process locks recover.
+  Exact source/manifest bytes and file/folder identities are checked around
+  replacement, with idle watching plus polling. A change pauses saving, preserves
+  memory and external files, and cannot be bypassed by Retry, queued saves, or
+  destruction. Retry requires the original destination to match again.
+- **2.2 — Save a Copy (done 2026-10-28).** Depends on 2.1. The Writing desk
+  offers Save a Copy…/Ctrl+Shift+S. A staged complete project gets a new identity
+  and retains current writing and cached imported files, even with a missing
+  original. Successful validation/locking switches autosave and displays the
+  canonical location without resetting cursor/selection/undo. Later edits save
+  there. Failure retains the current project, its paused/error state where
+  applicable, and all writing; a published copy that cannot activate is kept
+  with its location reported. Evidence and limits follow below.
+- Remaining slice 2 work is pending: home/create/open/import, imported-material
+  reader, switching/resume, preserved-work Reload, recovery and
+  emergency copies, damaged-save flow, full close choices, and stale temporary
+  cleanup. Focusing an existing process's window belongs to the later open flow.
+
+Task 2.1 evidence and review:
+
+| Check | Result |
+| --- | --- |
+| Independent competing instances | `project_lock_tests`: actual editor subprocesses, symlink/relative aliases, day-old active lock, SIGKILL recovery, normal release |
+| Moved/reused folder and file aliases | `source_tests`: lock follows renamed folder; old-session cleanup preserves a new project's lock; shared source file links are refused |
+| External changes and memory | `autosave_tests`: in-place/atomic/identical replacement, source/manifest deletion, lost lock, replaced folder, and changes before write/before commit/after commit; Retry, queued work and shutdown preserve external bytes and current text |
+| Restored destination and slow Retry | Missing-folder restoration resumes only through Retry; writing during a slow retry is captured after it completes |
+| Required suites | `mise run check` 10/10, `mise run check-debug` 10/10 (ASan/UBSan; leak detection disabled), `mise run check-engine` 2/2 |
+| Independent layout checks | Hand-derived PDF fixtures and local Academy agreement pass with their existing documented limits/deviations |
+| Native path | Wayland `autosave_tests` 30/30; software rendering, synthetic test keys, no new typing/performance or physical-input claim |
+| Representative crash regression | All 36 kills leave complete valid source; max lost writing 259 ms at 200 pages and 289 ms at 500 pages |
+
+Contract, race boundary, commands, and saved-log locations are in
+[source-format.md](source-format.md#editable-sessions-and-destination-changes-slice-2-task-21).
+Direct implementation review covered code and tests. The initial idle/during-save
+checks failed on the old saver. Review exposed a missed-capture bug while Retry
+was paused: a focused failing check reproduced it, and the fix now saves later
+writing without another key. No remaining in-scope finding was identified.
+
+The final compare/rename interval still races with noncooperating external
+writers; live simultaneous external editing is unsupported. This task does not
+claim durable recovery of memory-only writing after a destination change.
+Save a Copy is now completed by 2.2 below. Reload, emergency copies and the full
+failure-close choices remain pending; the interim two-close discard remains.
+
+Task 2.2 evidence and review:
+
+| Check | Result |
+| --- | --- |
+| Copy and activation | Real Writing desk controls copy memory-only writing after an external change; a new UUID, exact retained elements/ids, changed location/PDF default, selection, cursor and undo/redo are checked |
+| Missing original/imports | Moved original still copies cached imported-material/original Fountain bytes; source tests distinguish empty dependencies and reject unreadable/symlinked imports |
+| Ordered saving/lifecycle | In-flight old save finishes; queued old writes are superseded; parent aliases resolve canonically; edits during a slow copy save after activation; close waits; destruction drains later writing |
+| Failure | Existing/nonempty/empty destinations, symlinks, missing/read-only parents, relative paths, paused originals and copies changed/locked before activation keep the current project/writing; external files remain intact |
+| Required suites | Release 10/10; ASan/UBSan 10/10 with leak detection disabled; engine-only 2/2. Final source/autosave sanitizer recheck passes 72/72 and 42/42 after review/test extensions |
+| Native path | Final Wayland autosave suite 42/42, with fcitx and software rendering; final focused offscreen selection/cancellation/alias checks also pass |
+
+Direct review covered requirements, implementation, concurrency and test
+necessity; no remaining in-scope finding was identified. The first copy check
+failed on the original saver. A focused failing regression then reproduced
+loss of later writing on destruction during a copy; the fix and ordered-save
+checks now pass. The collision form and active-location screenshots were
+inspected. Logs, exact native setup, limitations and the copy contract are in
+[source-format.md](source-format.md#save-a-copy-slice-2-task-22).
+
+No new crash-loss/latency guarantee during copying, emergency backup, damaged-save
+recovery or full failure-close flow is claimed. Those remain explicit pending
+work. An ordinary autosave crash regression passed in the required suites;
+the earlier representative crash-loss measurements were not repeated here.
 
 ### Slice 1 result (done 2026-10-28)
 
@@ -299,12 +376,15 @@ creates one); a Fountain path still opens unsaved.
 | Interrupted replacement | Injected failures and SIGKILL at every save phase leave the complete old or new file |
 | Initial crash-loss measurements | Max lost writing 258 ms (200 pages) and 337 ms (500 pages) over 18 kills each; offscreen typing p95 unchanged |
 
-Moved to later slices rather than claimed: the engine, PDF, Fountain, and
-keyboard handling of deliberate breaks, and the page-break-text limitation
+At slice 1 completion, moved to later slices rather than claimed: the engine,
+PDF, Fountain, and keyboard handling of deliberate breaks, and the page-break-text
+limitation
 (slice 3); recovery snapshots, the emergency copy and full close dialog,
 damaged-save recovery, Save a Copy, locking, external-change detection,
 resuming the last project/cursor, and stale temporary-file cleanup (slice 2);
-native typing and save measurements with autosave (slice 5).
+native typing and save measurements with autosave (slice 5). Locking and
+external-change detection are now completed by task 2.1 above; Save a Copy is
+completed by task 2.2.
 
 Review corrections: clipboard copy/cut and Apollo paste now use the source's
 line-break offsets and retain internal breaks/emphasis; Qt-created block ids
@@ -324,7 +404,8 @@ that branch/shared-material semantics are solved.
 Extend the smallest existing tests where practical and add focused persistence,
 compatibility, and app-flow checks for distinct risks. Use original expected
 documents and failure outcomes rather than reproducing implementation logic.
-No new runtime tests were run for this planning-only document.
+Implementation evidence is recorded with each completed task; requirements
+below remain the milestone acceptance gate.
 
 - Run `mise run check`, `mise run check-debug`, and `mise run check-engine` for
   the implemented changes. Preserve the unchanged hand-derived fixture checks,
@@ -392,4 +473,4 @@ keyboard tables and schema contract in the relevant early slices, checking them
 against these requirements. Technical validation and tests remain work to do;
 completion of the plan is not completion of those checks. Raise any newly
 discovered consequential product question rather than silently settling it in
-code. The first implementation task, when requested, is slice 1.
+code. Current implementation progress and the remaining scope are recorded above.

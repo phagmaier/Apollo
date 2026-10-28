@@ -13,6 +13,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQuickView>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -20,6 +21,7 @@
 #include <QtTest>
 #include <chrono>
 #include <fstream>
+#include <future>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -39,6 +41,10 @@ std::string read(const QString& path) {
 QByteArray read_file(const QString& path) {
   QFile file(path);
   return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+bool write_file(const QString& path, const QByteArray& bytes) {
+  QFile file(path);
+  return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
 }
 // The saved screenplay, read with Qt's JSON parser rather than Apollo's.
 QJsonObject saved_json(const QString& project) {
@@ -94,9 +100,10 @@ class AutosaveTests : public QObject {
   // Opens the project in the Writing desk with autosave.
   bool open_project(Autosaver::Hook hook = {}) {
     view_.reset(); saver_.reset(); document_.reset();
-    const auto opened = source::open_project(project_path_);
+    auto session = std::make_unique<source::ProjectSession>(project_path_);
+    const auto& opened = session->opened();
     document_ = screenplay_document(opened.screenplay.elements, font_);
-    saver_ = std::make_unique<Autosaver>(document_.get(), opened.project, opened.screenplay.revision);
+    saver_ = std::make_unique<Autosaver>(document_.get(), std::move(session));
     if (hook) saver_->set_hook(std::move(hook));
     view_ = std::make_unique<QQuickView>();
     editor_ = show_editor(*view_, *document_, nullptr, {}, saver_.get());
@@ -425,6 +432,415 @@ private slots:
     QVERIFY(saved_texts(project_path_).at(1).endsWith("xyyy"));
   }
 
+  // A destination change while idle must revoke Saved without waiting for an
+  // edit. Retry, later edits, and shutdown must not overwrite the external file.
+  void external_changes_preserve_both_versions_data() {
+    QTest::addColumn<QString>("change");
+    for (const auto* name : {"in-place", "replacement", "identical replacement", "deletion", "manifest",
+                             "missing manifest", "missing lock", "folder replacement"})
+      QTest::newRow(name) << QString::fromLatin1(name);
+  }
+  void external_changes_preserve_both_versions() {
+    QFETCH(QString, change);
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    const auto source_path = project_path_ + "/screenplay.json";
+    const auto manifest_path = project_path_ + "/project.json";
+    const auto original = read_file(source_path);
+    const auto original_manifest = read_file(manifest_path);
+    auto external = original;
+    external.replace("Wind rattles the glass.", "An external writer was here.");
+    if (change == "in-place") QVERIFY(write_file(source_path, external));
+    if (change == "replacement") source::replace_file(source_path, external);
+    if (change == "identical replacement") source::replace_file(source_path, original);
+    if (change == "deletion") QVERIFY(QFile::remove(source_path));
+    if (change == "manifest") QVERIFY(write_file(manifest_path, original_manifest + " \n"));
+    if (change == "missing manifest") QVERIFY(QFile::remove(manifest_path));
+    if (change == "missing lock") QVERIFY(QFile::remove(project_path_ + "/.apollo.lock"));
+    if (change == "folder replacement") {
+      QVERIFY(QDir().rename(project_path_, project_path_ + "-moved"));
+      QVERIFY(QDir().mkpath(project_path_));
+      QVERIFY(write_file(source_path, original));
+      QVERIFY(write_file(manifest_path, original_manifest));
+    }
+    const auto expected = read_file(source_path), expected_manifest = read_file(manifest_path);
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    QVERIFY(saver_->status().contains("paused", Qt::CaseInsensitive));
+    QVERIFY(document_->toPlainText().contains("Wind rattles the glass."));
+    place(position_of("glass.") + 6);
+    type(" My newer writing.");
+    saver_->retry();
+    QTest::qWait(Autosaver::capture_interval_ms + 300);
+    QCOMPARE(saver_->state(), QStringLiteral("failed"));
+    QVERIFY(document_->toPlainText().contains("glass. My newer writing."));
+    view_.reset();
+    saver_.reset();
+    QCOMPARE(read_file(source_path), expected);
+    QCOMPARE(read_file(manifest_path), expected_manifest);
+    if (change == "deletion") QVERIFY(!QFile::exists(source_path));
+  }
+
+  // A watcher alone is too late when another writer changes the target
+  // between capture and commit. The final check must discard our temporary.
+  void external_change_during_write_is_not_replaced_data() {
+    QTest::addColumn<int>("when");
+    QTest::newRow("before write") << static_cast<int>(Phase::writing);
+    QTest::newRow("before commit") << static_cast<int>(Phase::written);
+    QTest::newRow("after commit") << static_cast<int>(Phase::committed);
+  }
+  void external_change_during_write_is_not_replaced() {
+    QFETCH(int, when);
+    QVERIFY(create(scene));
+    const auto path = project_path_ + "/screenplay.json";
+    auto external = read_file(path);
+    external.replace("Wind rattles the glass.", "Changed during save.");
+    Events events;
+    events.also = [&](Phase phase, std::uint64_t) {
+      if (static_cast<int>(phase) == when) source::replace_file(path, external);
+    };
+    QVERIFY(open_project(events.hook()));
+    place(position_of("glass.") + 6);
+    type(" My work.");
+    saver_->flush();
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    QVERIFY(document_->toPlainText().contains("glass. My work."));
+    view_.reset(); saver_.reset();
+    QCOMPARE(read_file(path), external);
+  }
+  // A changed destination cancels both queued and uncaptured shutdown work.
+  void conflict_cancels_queued_and_shutdown_saves() {
+    QVERIFY(create(scene));
+    const auto path = project_path_ + "/screenplay.json";
+    auto external = read_file(path);
+    external.replace("Wind rattles the glass.", "Keep the external version.");
+    auto session = std::make_unique<source::ProjectSession>(project_path_);
+    auto document = screenplay_document(session->opened().screenplay.elements, font_);
+    std::promise<void> entered, resume;
+    const auto ready = entered.get_future(), proceed = resume.get_future();
+    std::atomic<bool> first{true};
+    {
+      Autosaver saver(document.get(), std::move(session));
+      saver.set_hook([&](Phase phase, std::uint64_t) {
+        if (phase == Phase::written && first.exchange(false)) {
+          entered.set_value();
+          proceed.wait();
+        }
+      });
+      auto unblock = qScopeGuard([&] { resume.set_value(); });
+      QTextCursor cursor(document.get());
+      cursor.movePosition(QTextCursor::End);
+      cursor.insertText(" My first edit.");
+      saver.flush();
+      QTRY_VERIFY(ready.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+      cursor.insertText(" My queued edit.");
+      saver.flush();
+      source::replace_file(path, external);
+      resume.set_value();
+      unblock.dismiss();
+      QTRY_COMPARE(saver.state(), QStringLiteral("failed"));
+      cursor.insertText(" My final uncaptured edit.");
+    }
+    QCOMPARE(read_file(path), external);
+    QVERIFY(document->toPlainText().endsWith(" My first edit. My queued edit. My final uncaptured edit."));
+  }
+
+  void watches_survive_our_own_replacements() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    place(position_of("glass.") + 6);
+    for (int i = 0; i < 3; ++i) {
+      type("x");
+      saver_->flush();
+      QTRY_VERIFY(saved());
+    }
+    auto external = read_file(project_path_ + "/screenplay.json");
+    external.replace("glass.xxx", "glass. External after three saves.");
+    source::replace_file(project_path_ + "/screenplay.json", external);
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    QVERIFY(document_->toPlainText().contains("glass.xxx"));
+  }
+
+  // Copy the current writing, not the last disk version; switch only the
+  // destination and retain Qt's cursor, identities and undo history.
+  void save_a_copy_becomes_active() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    const auto original = read_file(project_path_ + "/screenplay.json");
+    const auto old_id = source::open_project(project_path_).project.id;
+    auto external = original;
+    external.replace("Wind rattles the glass.", "An external version.");
+    source::replace_file(project_path_ + "/screenplay.json", external);
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    place(position_of("glass.") + 6);
+    type(" My work.");
+    const auto expected = document_elements(*document_);
+    const auto position = editor_->property("cursorPosition").toInt();
+    QVERIFY(QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, position - 8), Q_ARG(int, position)));
+    QSignalSpy failed(saver_.get(), &Autosaver::copyCompleted);
+    QVERIFY(saver_->save_copy(project_path_)); // Collides while original is paused.
+    QTRY_COMPARE(failed.size(), 1);
+    QVERIFY(!failed.front().front().toBool());
+    QCOMPARE(saver_->state(), QStringLiteral("failed"));
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), external);
+    auto* panel = view_->rootObject()->findChild<QObject*>("copyPanel");
+    QVERIFY(panel);
+    QTRY_VERIFY(panel->property("visible").toBool());
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/copy-failed.png"));
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(!panel->property("visible").toBool());
+    const auto copy = project_path_ + " copy";
+    QSignalSpy completed(saver_.get(), SIGNAL(copyCompleted(bool)));
+    auto* button = view_->rootObject()->findChild<QQuickItem*>("saveCopy");
+    QVERIFY(button && button->isVisible());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, button->mapToScene(button->boundingRect().center()).toPoint());
+    auto* destination = view_->rootObject()->findChild<QObject*>("copyDestination");
+    QVERIFY(destination);
+    destination->setProperty("text", copy);
+    auto* confirm = view_->rootObject()->findChild<QQuickItem*>("copyConfirm");
+    QVERIFY(confirm);
+    QTRY_VERIFY(confirm->isVisible());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, confirm->mapToScene(confirm->boundingRect().center()).toPoint());
+    QTRY_COMPARE(completed.size(), 1);
+    QVERIFY(completed.front().front().toBool());
+    QCOMPARE(saver_->location(), copy);
+    QTRY_VERIFY(saved());
+    QVERIFY(source::open_project(copy).project.id != old_id);
+    QVERIFY(source::open_project(copy).screenplay.elements == expected);
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), external);
+    QCOMPARE(editor_->property("cursorPosition").toInt(), position);
+    QCOMPARE(editor_->property("selectionStart").toInt(), position - 8);
+    QCOMPARE(editor_->property("selectionEnd").toInt(), position);
+    auto* location = view_->rootObject()->findChild<QQuickItem*>("projectLocation");
+    QVERIFY(location);
+    QCOMPARE(location->property("text").toString(), copy);
+    QCOMPARE(view_->rootObject()->property("exportDestination").toString(), copy + ".pdf");
+    place(position);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QTRY_VERIFY(saved());
+    QVERIFY(!saved_texts(copy).at(1).endsWith(" My work."));
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    type(" Later.");
+    QTRY_VERIFY(saved());
+    QCOMPARE(saved_texts(copy).at(1), QStringLiteral("Wind rattles the glass. My work. Later."));
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), external);
+    source::ProjectSession released(project_path_);
+    QVERIFY_THROWS_EXCEPTION(source::SourceError, source::ProjectSession{copy});
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/copy-active.png"));
+  }
+
+  void destruction_during_copy_preserves_later_writing() {
+    QVERIFY(create(scene));
+    auto session = std::make_unique<source::ProjectSession>(project_path_);
+    auto document = screenplay_document(session->opened().screenplay.elements, font_);
+    std::promise<void> entered, resume;
+    const auto ready = entered.get_future(), proceed = resume.get_future();
+    const auto copy = project_path_ + " copy";
+    {
+      Autosaver saver(document.get(), std::move(session));
+      saver.set_hook([&](Phase phase, std::uint64_t) {
+        if (phase == Phase::copying) { entered.set_value(); proceed.wait(); }
+      });
+      auto unblock = qScopeGuard([&] { resume.set_value(); });
+      QTextCursor cursor(document.get());
+      cursor.movePosition(QTextCursor::End);
+      cursor.insertText(" Copied.");
+      QVERIFY(saver.save_copy(copy));
+      QTRY_VERIFY(ready.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+      cursor.insertText(" During copy.");
+      resume.set_value();
+      unblock.dismiss();
+    }
+    QCOMPARE(saved_texts(copy).last(), QStringLiteral("Waves break below. Copied. During copy."));
+  }
+
+  void copy_orders_in_flight_and_queued_saves() {
+    QVERIFY(create(scene));
+    auto session = std::make_unique<source::ProjectSession>(project_path_);
+    auto document = screenplay_document(session->opened().screenplay.elements, font_);
+    std::promise<void> entered, resume;
+    const auto ready = entered.get_future(), proceed = resume.get_future();
+    std::atomic<bool> first{true};
+    Autosaver saver(document.get(), std::move(session));
+    saver.set_hook([&](Phase phase, std::uint64_t) {
+      if (phase == Phase::written && first.exchange(false)) { entered.set_value(); proceed.wait(); }
+    });
+    auto unblock = qScopeGuard([&] { resume.set_value(); });
+    QTextCursor cursor(document.get());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(" First.");
+    saver.flush();
+    QTRY_VERIFY(ready.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    cursor.insertText(" Queued.");
+    saver.flush();
+    cursor.insertText(" Uncaptured.");
+    const auto copy = project_path_ + " copy";
+    const auto alias = project_path_ + "-parent";
+    QVERIFY(QFile::link(directory_.path(), alias));
+    QVERIFY(saver.save_copy(alias + '/' + QFileInfo(copy).fileName()));
+    cursor.insertText(" After request.");
+    resume.set_value();
+    unblock.dismiss();
+    QTRY_COMPARE(saver.location(), copy);
+    QTRY_COMPARE(saver.state(), QStringLiteral("saved"));
+    QCOMPARE(saved_texts(project_path_).last(), QStringLiteral("Waves break below. First."));
+    QCOMPARE(saved_texts(copy).last(), QStringLiteral("Waves break below. First. Queued. Uncaptured. After request."));
+  }
+
+  void changed_or_locked_copy_does_not_activate_data() {
+    QTest::addColumn<bool>("locked");
+    QTest::newRow("changed before activation") << false;
+    QTest::newRow("locked before activation") << true;
+  }
+  void changed_or_locked_copy_does_not_activate() {
+    QFETCH(bool, locked);
+    QVERIFY(create(scene));
+    auto session = std::make_unique<source::ProjectSession>(project_path_);
+    auto document = screenplay_document(session->opened().screenplay.elements, font_);
+    const auto copy = project_path_ + " copy";
+    std::unique_ptr<source::ProjectSession> competitor;
+    Autosaver saver(document.get(), std::move(session));
+    saver.set_hook([&](Phase phase, std::uint64_t) {
+      if (phase != Phase::copied) return;
+      if (locked) competitor = std::make_unique<source::ProjectSession>(copy);
+      else {
+        auto external = read_file(copy + "/screenplay.json");
+        external.replace("Wind rattles the glass.", "External copy writing.");
+        source::replace_file(copy + "/screenplay.json", external);
+      }
+    });
+    QTextCursor cursor(document.get());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(" Retained.");
+    QSignalSpy completed(&saver, &Autosaver::copyCompleted);
+    QVERIFY(saver.save_copy(copy));
+    QTRY_COMPARE(completed.size(), 1);
+    QVERIFY(!completed.front().front().toBool());
+    QCOMPARE(saver.location(), project_path_);
+    QVERIFY(saver.copy_error().contains("could not be activated"));
+    QTRY_COMPARE(saver.state(), QStringLiteral("saved"));
+    QCOMPARE(saved_texts(project_path_).last(), QStringLiteral("Waves break below. Retained."));
+    QCOMPARE(saved_texts(copy).at(1), locked ? QStringLiteral("Wind rattles the glass.") : QStringLiteral("External copy writing."));
+  }
+
+  void copy_from_missing_original_keeps_imports_and_later_edits() {
+    QVERIFY(create(scene));
+    const QByteArray material("{\"note\":\"Keep this\"}\n"), original("Title: Original\r\n\r\nINT. ROOM - DAY\r\n");
+    QVERIFY(write_file(project_path_ + "/imported-material.json", material));
+    QVERIFY(QDir().mkpath(project_path_ + "/imports"));
+    QVERIFY(write_file(project_path_ + "/imports/original.fountain", original));
+    QVERIFY(open_project());
+    const auto moved = project_path_ + "-moved";
+    QVERIFY(QDir().rename(project_path_, moved));
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    const auto old_source = read_file(moved + "/screenplay.json");
+    std::promise<void> entered, resume;
+    const auto ready = entered.get_future(), proceed = resume.get_future();
+    saver_->set_hook([&](Phase phase, std::uint64_t) {
+      if (phase == Phase::copying) { entered.set_value(); proceed.wait(); }
+    });
+    auto unblock = qScopeGuard([&] { resume.set_value(); });
+    place(position_of("glass.") + 6);
+    type(" First.");
+    const auto copy = project_path_ + " copy";
+    QVERIFY(saver_->save_copy(copy));
+    QTRY_VERIFY(ready.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    QVERIFY(saver_->copy_busy());
+    QVERIFY(!saver_->save_copy(project_path_ + " duplicate"));
+    type(" Later.");
+    QTest::qWait(Autosaver::capture_interval_ms + 50);
+    QVERIFY(!saved());
+    view_->close();
+    QVERIFY(view_->isVisible()); // Closing waits for copy and later edits.
+    resume.set_value();
+    unblock.dismiss();
+    QTRY_COMPARE(saver_->location(), copy);
+    QTRY_VERIFY(saved());
+    QTRY_VERIFY(!view_->isVisible());
+    QCOMPARE(saved_texts(copy).at(1), QStringLiteral("Wind rattles the glass. First. Later."));
+    QCOMPARE(read_file(copy + "/imported-material.json"), material);
+    QCOMPARE(read_file(copy + "/imports/original.fountain"), original);
+    QCOMPARE(read_file(moved + "/screenplay.json"), old_source);
+    QVERIFY(!QFile::exists(moved + "/.apollo.lock"));
+  }
+
+  void failed_copy_keeps_original_active_data() {
+    QTest::addColumn<QString>("failure");
+    for (const auto* failure : {"collision", "empty folder", "missing parent", "read-only parent", "symlink", "relative path"})
+      QTest::newRow(failure) << QString::fromLatin1(failure);
+  }
+  void failed_copy_keeps_original_active() {
+    QFETCH(QString, failure);
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    auto copy = project_path_ + " copy";
+    if (failure == "collision") {
+      QVERIFY(QDir().mkpath(copy));
+      QVERIFY(write_file(copy + "/keep.txt", "mine"));
+    }
+    if (failure == "empty folder") QVERIFY(QDir().mkpath(copy));
+    if (failure == "missing parent") copy += "/missing/project";
+    if (failure == "read-only parent") {
+      QVERIFY(QDir().mkpath(copy));
+      QVERIFY(QFile::setPermissions(copy, QFile::ReadOwner | QFile::ExeOwner));
+      copy += "/project";
+    }
+    auto restore = qScopeGuard([&] {
+      if (failure == "read-only parent") QFile::setPermissions(QFileInfo(copy).absolutePath(), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    });
+    if (failure == "symlink") QVERIFY(QFile::link(project_path_, copy));
+    if (failure == "relative path") copy = "relative-project";
+    place(position_of("glass.") + 6);
+    type(" Retain me.");
+    const auto expected = document_elements(*document_);
+    QSignalSpy completed(saver_.get(), &Autosaver::copyCompleted);
+    if (failure == "relative path") QVERIFY(!saver_->save_copy(copy));
+    else {
+      QVERIFY(saver_->save_copy(copy));
+      QTRY_COMPARE(completed.size(), 1);
+      QVERIFY(!completed.front().front().toBool());
+    }
+    QCOMPARE(saver_->location(), project_path_);
+    QVERIFY(!saver_->copy_error().isEmpty());
+    QVERIFY(document_elements(*document_) == expected);
+    QTRY_VERIFY(saved());
+    QCOMPARE(saved_texts(project_path_).at(1), QStringLiteral("Wind rattles the glass. Retain me."));
+    if (failure == "collision") QCOMPARE(read_file(copy + "/keep.txt"), QByteArray("mine"));
+    if (failure == "empty folder") QVERIFY(QDir(copy).isEmpty());
+    QVERIFY(QDir(directory_.path()).entryList({".apollo-staging-*"}, QDir::Dirs | QDir::Hidden).isEmpty());
+  }
+
+  void writing_during_a_slow_retry_is_saved() {
+    QVERIFY(create(scene));
+    auto session = std::make_unique<source::ProjectSession>(project_path_);
+    auto document = screenplay_document(session->opened().screenplay.elements, font_);
+    std::promise<void> entered, resume;
+    const auto ready = entered.get_future(), proceed = resume.get_future();
+    std::atomic<bool> first{true};
+    Autosaver saver(document.get(), std::move(session));
+    auto unblock = qScopeGuard([&] { resume.set_value(); });
+    const auto moved = project_path_ + "-moved";
+    QVERIFY(QDir().rename(project_path_, moved));
+    QTRY_COMPARE(saver.state(), QStringLiteral("failed"));
+    QTextCursor cursor(document.get());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(" First.");
+    QVERIFY(QDir().rename(moved, project_path_));
+    saver.set_hook([&](Phase phase, std::uint64_t) {
+      if (phase == Phase::writing && first.exchange(false)) {
+        entered.set_value();
+        proceed.wait();
+      }
+    });
+    saver.retry();
+    QTRY_VERIFY(ready.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    cursor.insertText(" Later.");
+    QTest::qWait(Autosaver::capture_interval_ms + 50);
+    resume.set_value();
+    unblock.dismiss();
+    QTRY_COMPARE(saver.state(), QStringLiteral("saved"));
+    QCOMPARE(saved_texts(project_path_).last(), QStringLiteral("Waves break below. First. Later."));
+  }
+
   void failed_saves_keep_writing_data() {
     QTest::addColumn<QString>("failure");
     QTest::newRow("short write") << "short write";
@@ -451,7 +867,7 @@ private slots:
     type(" Again.");
     QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
     QVERIFY(saver_->status().startsWith(QStringLiteral("Not saved")));
-    QVERIFY2(saver_->status().contains("screenplay.json"), qPrintable(saver_->status()));
+    QVERIFY2(saver_->status().contains(project_path_), qPrintable(saver_->status()));
     auto* retry = view_->rootObject()->findChild<QQuickItem*>("retrySave");
     QVERIFY(retry && retry->isVisible());
     view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/save-failed-%1.png").arg(QString(failure).replace(' ', '-')));

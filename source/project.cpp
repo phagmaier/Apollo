@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QSaveFile>
 #include <QTemporaryDir>
 #include <QUuid>
@@ -12,6 +13,8 @@
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace apollo::source {
 namespace {
@@ -34,10 +37,10 @@ QByteArray manifest(const QString& id, const QString& screenplay_file) {
 }
 
 // project.json; its screenplay is read separately.
-Project read_manifest(const QString& directory) {
+Project read_manifest(const QString& directory, const QByteArray& bytes) {
   const auto path = directory + QLatin1Char('/') + manifest_name;
   QJsonParseError error;
-  const auto json = QJsonDocument::fromJson(read_all(path), &error);
+  const auto json = QJsonDocument::fromJson(bytes, &error);
   const auto root = json.object();
   if (error.error != QJsonParseError::NoError || !json.isObject() || root.value("format").toString() != QLatin1String("apollo-project"))
     malformed(QStringLiteral("%1 is not an Apollo project file").arg(path));
@@ -54,6 +57,21 @@ Project read_manifest(const QString& directory) {
       screenplay.contains(QLatin1Char('\\')))
     malformed(QStringLiteral("invalid screenplay file name in %1").arg(path));
   return {directory, id, screenplay};
+}
+
+ProjectAssets read_assets(const Project& project) {
+  auto dependency = [&](const QString& name) -> std::optional<QByteArray> {
+    const auto path = project.directory + '/' + name;
+    const QFileInfo info(path);
+    if (info.isSymLink() || (info.exists() && !info.isFile())) io_error(QStringLiteral("import dependency %1 must be a regular file").arg(path));
+    return info.exists() ? std::optional(read_all(path)) : std::nullopt;
+  };
+  ProjectAssets assets;
+  if (project.screenplay_file != QLatin1String("imported-material.json")) assets.imported_material = dependency("imported-material.json");
+  const auto imports = QFileInfo(project.directory + "/imports");
+  if (imports.isSymLink() || (imports.exists() && !imports.isDir())) io_error(QStringLiteral("import folder %1 must be a directory").arg(imports.filePath()));
+  assets.original_fountain = dependency("imports/original.fountain");
+  return assets;
 }
 }
 
@@ -80,12 +98,13 @@ void replace_file(const QString& path, const QByteArray& bytes, const std::funct
 OpenedProject open_project(const QString& directory) {
   const auto absolute = QFileInfo(directory).absoluteFilePath();
   if (!QFileInfo(absolute).isDir()) io_error(QStringLiteral("project folder %1 does not exist").arg(absolute));
-  auto project = read_manifest(absolute);
+  auto project = read_manifest(absolute, read_all(absolute + '/' + manifest_name));
   auto screenplay = parse_screenplay(read_all(project.screenplay_path()));
-  return {std::move(project), std::move(screenplay)};
+  auto assets = read_assets(project);
+  return {std::move(project), std::move(screenplay), std::move(assets)};
 }
 
-Project create_project(const QString& destination, Screenplay screenplay) {
+Project create_project(const QString& destination, Screenplay screenplay, const ProjectAssets& assets) {
   const QFileInfo target(destination);
   const auto parent = target.absolutePath(), path = target.absoluteFilePath();
   if (target.exists() || target.isSymLink()) io_error(QStringLiteral("%1 already exists").arg(path));
@@ -102,8 +121,14 @@ Project create_project(const QString& destination, Screenplay screenplay) {
   const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
   replace_file(staging.filePath(default_screenplay), source);
   replace_file(staging.filePath(manifest_name), manifest(id, default_screenplay));
+  if (assets.imported_material) replace_file(staging.filePath("imported-material.json"), *assets.imported_material);
+  if (assets.original_fountain) {
+    if (!QDir(staging.path()).mkdir("imports")) io_error(QStringLiteral("cannot create staged import folder"));
+    replace_file(staging.filePath("imports/original.fountain"), *assets.original_fountain);
+  }
   // Publish only what reads back as a complete project.
-  if (!(open_project(staging.path()).screenplay == canonical(screenplay))) malformed(QStringLiteral("the staged project did not read back"));
+  const auto verified = open_project(staging.path());
+  if (!(verified.screenplay == canonical(screenplay)) || verified.assets != assets) malformed(QStringLiteral("the staged project did not read back"));
   // QTemporaryDir is private to its owner; give the project ordinary folder access.
   QFile::setPermissions(staging.path(), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadGroup |
                                         QFile::ExeGroup | QFile::ReadOther | QFile::ExeOther);
@@ -112,5 +137,94 @@ Project create_project(const QString& destination, Screenplay screenplay) {
     io_error(QStringLiteral("cannot create %1: %2").arg(path, QString::fromLocal8Bit(std::strerror(errno))));
   staging.setAutoRemove(false);
   return {path, id, default_screenplay};
+}
+
+namespace {
+[[noreturn]] void destination_changed(const QString& path) {
+  throw SourceError(SourceError::Kind::external_change,
+                    QStringLiteral("Saving paused: %1 changed, is missing, or cannot be verified. "
+                                   "Restore the original destination before Retry save.").arg(path));
+}
+}
+
+ProjectSession::Identity ProjectSession::identity(const QString& path, bool directory) {
+  struct stat info{};
+  // Reject file symlinks and hard links: two separate project locks cannot
+  // coordinate writes to shared authoritative files. Folder aliases are
+  // resolved once, before locking.
+  if (::lstat(QFile::encodeName(path).constData(), &info) != 0 ||
+      (directory ? !S_ISDIR(info.st_mode) : (!S_ISREG(info.st_mode) || info.st_nlink != 1)))
+    destination_changed(path);
+  return {static_cast<quint64>(info.st_dev), static_cast<quint64>(info.st_ino)};
+}
+
+ProjectSession::FileState ProjectSession::read_file(const QString& path) {
+  const auto before = identity(path);
+  QByteArray bytes;
+  try { bytes = read_all(path); }
+  catch (const SourceError&) { destination_changed(path); }
+  if (identity(path) != before) destination_changed(path);
+  return {before, bytes};
+}
+
+ProjectSession::ProjectSession(const QString& directory) {
+  const auto canonical = QFileInfo(directory).canonicalFilePath();
+  if (canonical.isEmpty() || !QFileInfo(canonical).isDir()) io_error(QStringLiteral("project folder %1 does not exist").arg(directory));
+  directory_identity_ = identity(canonical, true);
+  // Anchor lock cleanup to the opened directory, even if it is renamed and
+  // another project appears at the old path. Never unlink that project's lock.
+  const auto fd = ::open(QFile::encodeName(canonical).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (fd < 0) io_error(QStringLiteral("cannot open project folder %1").arg(canonical));
+  directory_handle_ = std::make_unique<QFile>();
+  if (!directory_handle_->open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
+    ::close(fd);
+    io_error(QStringLiteral("cannot hold project folder %1").arg(canonical));
+  }
+  lock_ = std::make_unique<QLockFile>(QStringLiteral("/proc/self/fd/%1/.apollo.lock").arg(fd));
+  lock_->setStaleLockTime(0);
+  if (!lock_->tryLock(0)) {
+    if (lock_->error() != QLockFile::LockFailedError) io_error(QStringLiteral("cannot lock project %1").arg(canonical));
+    qint64 pid = 0;
+    QString host, app;
+    lock_->getLockInfo(&pid, &host, &app);
+    throw SourceError(SourceError::Kind::locked,
+                      QStringLiteral("project %1 is already open or locked (%2, process %3 on %4)").arg(canonical, app).arg(pid).arg(host));
+  }
+  lock_file_ = read_file(lock_->fileName());
+  manifest_ = read_file(canonical + '/' + manifest_name);
+  opened_.project = read_manifest(canonical, manifest_.bytes);
+  screenplay_ = read_file(opened_.project.screenplay_path());
+  opened_.screenplay = parse_screenplay(screenplay_.bytes);
+  // Read dependencies while the locked original is available. Later copy
+  // requests use this snapshot, never a changed or missing original folder.
+  opened_.assets = read_assets(opened_.project);
+  check_destination();
+}
+
+ProjectSession::~ProjectSession() = default;
+
+void ProjectSession::check_destination() const {
+  const auto& project = opened_.project;
+  if (identity(project.directory, true) != directory_identity_) destination_changed(project.directory);
+  try {
+    if (read_file(lock_->fileName()) != lock_file_) destination_changed(lock_->fileName());
+  } catch (const SourceError&) { destination_changed(project.directory + "/.apollo.lock"); }
+  if (read_file(project.directory + '/' + manifest_name) != manifest_) destination_changed(project.directory + '/' + manifest_name);
+  if (read_file(project.screenplay_path()) != screenplay_) destination_changed(project.screenplay_path());
+}
+
+void ProjectSession::save(const QByteArray& bytes, const std::function<void(WritePhase)>& hook) {
+  check_destination();
+  replace_file(opened_.project.screenplay_path(), bytes, [&](WritePhase phase) {
+    if (phase == WritePhase::committed) {
+      // Record only the file containing our bytes, never silently adopt a
+      // noncooperating writer's later replacement as the expected destination.
+      auto current = read_file(opened_.project.screenplay_path());
+      if (current.bytes != bytes) destination_changed(opened_.project.screenplay_path());
+      screenplay_ = std::move(current);
+    }
+    if (hook) hook(phase);
+    if (phase == WritePhase::written || phase == WritePhase::committed) check_destination();
+  });
 }
 }

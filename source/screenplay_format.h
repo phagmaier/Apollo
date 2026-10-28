@@ -25,9 +25,11 @@ struct Screenplay {
 
 // newer_version: written by a later Apollo, so this one must not rewrite it.
 // malformed: unreadable or invalid source. io: the filesystem refused.
+// locked: another editable session. external_change: destination no longer
+// matches the session's verified source, manifest, folder, or lock.
 class SourceError : public std::runtime_error {
 public:
-  enum class Kind { malformed, newer_version, io };
+  enum class Kind { malformed, newer_version, io, locked, external_change };
   SourceError(Kind kind, const QString& message) : std::runtime_error(message.toStdString()), kind_(kind) {}
   Kind kind() const { return kind_; }
 private:

@@ -29,6 +29,19 @@ Rectangle {
     }
     Shortcut { sequence: "Ctrl+E"; onActivated: desk.exportPdf() }
     Shortcut { sequence: "Ctrl+\\"; onActivated: desk.toggleOutline() }
+    Shortcut { sequence: "Ctrl+Shift+S"; enabled: desk.autosaver !== null; onActivated: copyPanel.open() }
+    Connections {
+        target: desk.autosaver
+        function onLocationChanged() {
+            desk.exportDestination = desk.autosaver.location + ".pdf"
+            destination.text = desk.exportDestination
+            copyDestination.text = desk.autosaver.location + " copy"
+        }
+        function onCopyCompleted(success) {
+            if (!success)
+                copyPanel.open()
+        }
+    }
 
     component DeskButton: Button {
         id: button
@@ -58,7 +71,7 @@ Rectangle {
 
     Rectangle {
         id: header
-        height: 58
+        height: desk.autosaver ? 76 : 58
         anchors { left: parent.left; right: parent.right; top: parent.top }
         color: "#323842"
         Text {
@@ -71,7 +84,7 @@ Rectangle {
         }
         Rectangle { x: 110; y: 17; width: 1; height: 25; color: "#515761" }
         Text {
-            x: 130; y: 13; width: Math.max(60, (retryButton.visible ? retryButton.x : exportButton.x) - x - 24)
+            x: 130; y: 13; width: Math.max(60, (retryButton.visible ? retryButton.x : copyButton.visible ? copyButton.x : exportButton.x) - x - 24)
             text: desk.documentTitle
             elide: Text.ElideRight
             color: "#eff1f3"
@@ -81,7 +94,7 @@ Rectangle {
             id: saveStatus
             objectName: "saveStatus"
             x: 130; y: 34
-            width: Math.max(60, (retryButton.visible ? retryButton.x : exportButton.x) - x - 16)
+            width: Math.max(60, (retryButton.visible ? retryButton.x : copyButton.visible ? copyButton.x : exportButton.x) - x - 16)
             elide: Text.ElideRight
             text: desk.autosaver ? desk.autosaver.status : "Fountain file · edits are not saved"
             color: desk.autosaver && desk.autosaver.state === "failed" ? "#f19a8f" : "#aeb7c0"
@@ -90,15 +103,37 @@ Rectangle {
             ToolTip.text: saveStatus.text
             MouseArea { id: statusArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
         }
+        Text {
+            id: projectLocation
+            objectName: "projectLocation"
+            x: 130; y: 54; width: parent.width - x - 24
+            text: desk.autosaver ? desk.autosaver.location : ""
+            elide: Text.ElideMiddle
+            color: "#aeb7c0"
+            font { family: "Liberation Sans"; pixelSize: 11 }
+            ToolTip.visible: locationArea.containsMouse
+            ToolTip.text: text
+            MouseArea { id: locationArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+        }
         DeskButton {
             id: retryButton
             objectName: "retrySave"
-            anchors { right: exportButton.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
+            anchors { right: copyButton.left; rightMargin: 8; top: parent.top; topMargin: 10 }
             visible: desk.autosaver !== null && desk.autosaver.state === "failed"
             text: "Retry save"
             fill: "#8f3a32"; ink: "#fbecea"
             Accessible.name: "Retry saving to " + (desk.autosaver ? desk.autosaver.location : "")
             onClicked: { desk.autosaver.retry(); editorPage.focusEditor() }
+        }
+        DeskButton {
+            id: copyButton
+            objectName: "saveCopy"
+            anchors { right: exportButton.left; rightMargin: 8; top: parent.top; topMargin: 10 }
+            visible: desk.autosaver !== null
+            text: desk.autosaver && desk.autosaver.copyBusy ? "Copying…" : "Save a Copy…"
+            ink: "#eff1f3"
+            Accessible.name: "Save a Copy (Ctrl+Shift+S)"
+            onClicked: copyPanel.open()
         }
         DeskButton {
             id: exportButton
@@ -238,10 +273,75 @@ Rectangle {
         color: "#d4d9df"
         Text {
             anchors { left: parent.left; right: parent.right; margins: 20; verticalCenter: parent.verticalCenter }
-            text: desk.screenplayLayout.error || (desk.exportJob ? desk.exportJob.status : "")
+            text: desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.exportJob ? desk.exportJob.status : "")
             elide: Text.ElideMiddle
             color: desk.screenplayLayout.error ? "#9d3030" : "#4d5965"
             font { family: "Liberation Sans"; pixelSize: 11 }
+        }
+    }
+    Popup {
+        id: copyPanel
+        objectName: "copyPanel"
+        parent: desk
+        x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
+        width: Math.min(520, desk.width - 16)
+        height: copyContents.implicitHeight + 40
+        padding: 20
+        modal: true; focus: true
+        onOpened: {
+            if (!desk.autosaver.copyBusy) {
+                if (copyDestination.text.length === 0)
+                    copyDestination.text = desk.autosaver.location + " copy"
+                copyDestination.forceActiveFocus()
+                copyDestination.selectAll()
+            }
+        }
+        onClosed: editorPage.focusEditor()
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
+        Column {
+            id: copyContents
+            width: parent.width
+            spacing: 14
+            Text { text: "Save a Copy"; color: "#303843"; font { family: "Liberation Sans"; pixelSize: 16; weight: Font.DemiBold } }
+            Label {
+                width: parent.width
+                text: "Choose a new project folder inside an existing folder. Writing will continue in the copy."
+                wrapMode: Text.Wrap
+            }
+            TextField {
+                id: copyDestination
+                objectName: "copyDestination"
+                width: parent.width
+                enabled: !desk.autosaver || !desk.autosaver.copyBusy
+                selectByMouse: true
+                Accessible.name: "New project folder (absolute path)"
+                onAccepted: copyConfirm.clicked()
+            }
+            Label {
+                objectName: "copyMessage"
+                width: parent.width
+                visible: text.length > 0
+                text: desk.autosaver ? desk.autosaver.copyStatus : ""
+                wrapMode: Text.WrapAnywhere
+                color: desk.autosaver && desk.autosaver.copyError ? "#9d3030" : "#4d5965"
+            }
+            Row {
+                spacing: 12
+                DeskButton {
+                    text: "Keep Writing"; ink: "#303843"
+                    onClicked: copyPanel.close()
+                }
+                DeskButton {
+                    id: copyConfirm
+                    objectName: "copyConfirm"
+                    text: "Save and Use Copy"; fill: "#3c434d"; ink: "#eff1f3"
+                    enabled: desk.autosaver !== null && !desk.autosaver.copyBusy && copyDestination.text.trim().length > 0
+                    onClicked: {
+                        if (enabled && desk.autosaver.save_copy(copyDestination.text))
+                            copyPanel.close()
+                    }
+                }
+            }
         }
     }
     Popup {

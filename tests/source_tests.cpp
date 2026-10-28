@@ -5,10 +5,12 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QUuid>
 #include <QtTest>
 #include <limits>
+#include <unistd.h>
 
 using namespace apollo;
 using namespace apollo::source;
@@ -216,6 +218,48 @@ private slots:
     QCOMPARE(QDir(parent.path()).entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot), (QStringList{"empty", "full"}));
   }
 
+  // Import parsing is separate; complete project creation must retain even
+  // empty dependencies and original CRLF/non-ASCII bytes exactly.
+  void creates_a_project_with_import_dependencies() {
+    QTemporaryDir parent;
+    const ProjectAssets assets{QByteArray(), QByteArray("Title: Café\r\n\r\nAction.\r\n")};
+    const auto project = create_project(parent.filePath("copy"), example(), assets);
+    QVERIFY(QFile::exists(project.directory + "/imported-material.json"));
+    QCOMPARE(read_file(project.directory + "/imported-material.json"), QByteArray());
+    QCOMPARE(read_file(project.directory + "/imports/original.fountain"), QByteArray("Title: Café\r\n\r\nAction.\r\n"));
+    QVERIFY(open_project(project.directory).assets == assets);
+  }
+
+  void refuses_linked_or_unreadable_import_dependencies_data() {
+    QTest::addColumn<QString>("dependency");
+    for (const auto* name : {"material symlink", "imports symlink", "original symlink", "unreadable material"})
+      QTest::newRow(name) << QString::fromLatin1(name);
+  }
+  void refuses_linked_or_unreadable_import_dependencies() {
+    QFETCH(QString, dependency);
+    QTemporaryDir parent;
+    const auto project = create_project(parent.filePath("project"), example());
+    const auto data = parent.filePath("external");
+    QVERIFY(write_file(data, "keep"));
+    if (dependency == "material symlink") QVERIFY(QFile::link(data, project.directory + "/imported-material.json"));
+    if (dependency == "imports symlink") QVERIFY(QFile::link(parent.path(), project.directory + "/imports"));
+    if (dependency == "original symlink") {
+      QVERIFY(QDir().mkpath(project.directory + "/imports"));
+      QVERIFY(QFile::link(data, project.directory + "/imports/original.fountain"));
+    }
+    const auto material = project.directory + "/imported-material.json";
+    if (dependency == "unreadable material") {
+      QVERIFY(write_file(material, "unreadable"));
+      QVERIFY(QFile::setPermissions(material, {}));
+    }
+    auto restore = qScopeGuard([&] {
+      if (dependency == "unreadable material") QFile::setPermissions(material, QFile::ReadOwner | QFile::WriteOwner);
+    });
+    QVERIFY_THROWS_EXCEPTION(SourceError, ProjectSession{project.directory});
+    QCOMPARE(read_file(data), QByteArray("keep"));
+    QVERIFY(!QFile::exists(project.directory + "/.apollo.lock"));
+  }
+
   void rejects_invalid_projects_data() {
     QTest::addColumn<QByteArray>("manifest");
     QTest::addColumn<int>("kind");
@@ -253,6 +297,49 @@ private slots:
     } catch (const SourceError& error) {
       QCOMPARE(error.kind(), SourceError::Kind::io);
     }
+  }
+
+  // Renaming a folder retains its active edit lock. Closing the old session
+  // must release that lock without deleting one at a newly reused pathname.
+  void editable_lock_follows_the_folder() {
+    QTemporaryDir parent;
+    const auto path = parent.filePath("project"), moved = parent.filePath("moved");
+    create_project(path, example());
+    auto first = std::make_unique<ProjectSession>(path);
+    QVERIFY(QDir().rename(path, moved));
+    QVERIFY_THROWS_EXCEPTION(SourceError, ProjectSession{moved});
+    QVERIFY_THROWS_EXCEPTION(SourceError, first->check_destination());
+    create_project(path, example());
+    auto second = std::make_unique<ProjectSession>(path);
+    const auto second_lock = read_file(path + "/.apollo.lock");
+    first.reset();
+    QVERIFY(!QFile::exists(moved + "/.apollo.lock"));
+    QCOMPARE(read_file(path + "/.apollo.lock"), second_lock);
+    QVERIFY_THROWS_EXCEPTION(SourceError, ProjectSession{path});
+    ProjectSession moved_session(moved);
+    moved_session.check_destination();
+    second.reset();
+    ProjectSession reopened(path);
+    reopened.check_destination();
+  }
+
+  void editable_files_cannot_alias_other_projects_data() {
+    QTest::addColumn<bool>("symlink");
+    QTest::newRow("file symlink") << true;
+    QTest::newRow("file hard link") << false;
+  }
+  void editable_files_cannot_alias_other_projects() {
+    QFETCH(bool, symlink);
+    QTemporaryDir parent;
+    const auto project = create_project(parent.filePath("project"), example());
+    const auto original = parent.filePath("shared.json");
+    QVERIFY(QFile::rename(project.screenplay_path(), original));
+    if (symlink) QVERIFY(QFile::link(original, project.screenplay_path()));
+    else QVERIFY(::link(QFile::encodeName(original).constData(), QFile::encodeName(project.screenplay_path()).constData()) == 0);
+    const auto before = read_file(original);
+    QVERIFY_THROWS_EXCEPTION(SourceError, ProjectSession{project.directory});
+    QCOMPARE(read_file(original), before);
+    QVERIFY(!QFile::exists(project.directory + "/.apollo.lock"));
   }
 
   // Each phase of a failed replacement leaves the earlier complete file.

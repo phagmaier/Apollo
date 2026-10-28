@@ -112,4 +112,8 @@ if(APOLLO_BUILD_EDITOR)
     --editor "$<TARGET_FILE:apollo_editor>" --source "${CMAKE_CURRENT_SOURCE_DIR}/prototype/The Last Broadcast.fountain"
     --output "${CMAKE_CURRENT_BINARY_DIR}/autosave-crash-tests")
   set_tests_properties(autosave_crash_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1")
+  add_test(NAME project_lock_tests COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/tests/project_lock_tests.py"
+    --editor "$<TARGET_FILE:apollo_editor>" --source "${CMAKE_CURRENT_SOURCE_DIR}/prototype/The Last Broadcast.fountain"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/project-lock-tests")
+  set_tests_properties(project_lock_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
 endif()
