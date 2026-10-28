@@ -1,9 +1,8 @@
 # Apollo
 
 Apollo is a Linux desktop screenwriting app for its owner, targeting Omarchy on
-Arch Linux with Hyprland. The repository currently contains planning documents,
-fixtures, and reference tools; it does not yet contain the application or a
-build system.
+Arch Linux with Hyprland. The repository contains planning documents, fixtures,
+reference tools, and an early feasibility-spike build; it is not yet an app.
 
 ## Read before working
 
@@ -38,9 +37,13 @@ before recommending whether to keep or switch stacks.
 
 ## Working and verification
 
-- There are currently no application build, test, or CI commands. When the spike
-  introduces them, document the actual commands here and keep them current. Use
-  the tool and asset pins in the spike brief; record deviations and upgrades.
+- Install the tools in `mise.toml` using `mise install`. Run `mise run check` for
+  the release configure/build/test cycle and `mise run check-debug` for the
+  sanitizer build. These currently test only the initial layout slice; passing
+  them does not mean the spike or the fixture acceptance checks are complete.
+- The pinned Courier Prime fonts and OFL license are in `assets/courier-prime/`;
+  the build checks their hashes. Use the other pins in the spike brief and
+  record deviations and upgrades.
 - Existing Python reference tools use `uv run`, for example
   `uv run tools/generate_script.py --help` and `uv run tools/pdf_lines.py --help`.
   PDF inspection requires Poppler utilities. See the fixture guide for complete

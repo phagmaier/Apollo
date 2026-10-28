@@ -1,0 +1,11 @@
+[tools]
+cmake = "4.4.4"
+ninja = "1.13.2"
+
+[tasks.check]
+description = "Configure, build, and test the release spike"
+run = ["cmake --preset release", "cmake --build --preset release", "ctest --preset release"]
+
+[tasks.check-debug]
+description = "Configure, build, and test with address and undefined behavior sanitizers"
+run = ["cmake --preset debug", "cmake --build --preset debug", "ctest --preset debug"]

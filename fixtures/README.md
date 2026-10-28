@@ -52,12 +52,34 @@ A copy was saved during planning on 2026-10-27.
 
 Apollo should reproduce every line's text and slot, page by page, with these expected deviations:
 
-- **Page 5 top:** Final Draft draws the `(CONT’D)` cue above slot 1; Apollo puts it on slot 1.
-- **Page 6 → 7:** Final Draft breaks one speech early for no rule-based reason; Apollo keeps `JOE / How did we reach…` on page 6.
-- **Page 7:** the guide's extra blank lines after the centered date have no Apollo equivalent yet.
-- **Page 8 → 9:** `APRIL` is a Final Draft "Shot" line; as Apollo action it fits on page 8, slot 56.
+- **PDF page 5 / body page 4 top:** Final Draft draws the `(CONT’D)` cue above slot 1; Apollo puts it on slot 1, shifting this page's remaining slots by +1.
+- **PDF pages 6 → 7 / body pages 5 → 6:** Final Draft breaks one speech early for no rule-based reason; Apollo keeps `JOE / How did we reach…` in body page 5, slots 54–56.
+- **PDF page 7 / body page 6:** the guide's extra blank lines after the centered date have no Apollo equivalent yet. Automatic spacing shifts the following slots by −2.
+- **PDF pages 8 → 9 / body pages 7 → 8:** `APRIL` is a Final Draft "Shot" line; as Apollo action it fits in body page 7, slot 56.
 
 Because these deviations shift later content, compare each page starting from the reference page's first line.
+
+The repeatable engine-only comparison is:
+
+```sh
+mise run check
+uv run tools/compare_academy.py --probe build/release/layout_probe
+```
+
+This requires the three local Academy files and Poppler. The tool checks that
+the TSV still matches the PDF measurement and the Fountain file still matches
+the transcription. It lays out each reference page's suffix from its first
+line, retaining all subsequent text so page-end split/push decisions are tested.
+The continuation-page suffix starts with its continuation cue. It compares every
+first-page slot, element, and text after applying only the four changes above;
+body pages 1–3 and 8–11 have no allowances. It also checks the full unanchored
+document's paragraph/element text sequence, ignoring generated page continuations
+and rewrapping. A mismatch returns a nonzero exit status; reference files are
+never rewritten. Copyrighted inputs and temporary outputs remain local.
+
+This verifies engine lines, not Apollo PDF geometry or editor/PDF agreement.
+The Academy's final centered line follows a transition with two blank slots;
+that measured rule is part of the profile, not an additional deviation.
 
 ## Fountain syntax samples — `fountain-syntax/`
 

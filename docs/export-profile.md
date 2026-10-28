@@ -33,6 +33,10 @@ Those three are measured facts. Absolute positions below are the measured positi
 
 `tools/academy_reference.py` reproduces the measurement. It writes every body line Final Draft produced (`reference/academy/expected.tsv`) and a Fountain transcription.
 
+Sample page references below include the title page unless explicitly labelled
+as body pages. The TSV and `tools/compare_academy.py` number only body pages
+1–11, so their page numbers are one lower than the PDF's.
+
 ## Line wrapping (measured, exact)
 
 Each wrapped line in the 11 body pages was checked against the next word that did not fit:
@@ -81,6 +85,12 @@ Blank lines before each element, dropped at the top of a page (measured unless m
 | Scene heading | 2 (also after `FADE IN:` and transitions) |
 | Action, cue, transition, centered text, lyrics, dual block | 1 |
 | Parenthetical or dialogue within a speech | 0 |
+
+Exception: centered text immediately after a transition has **2** blank lines
+before it. The Academy ending has `FADE OUT.` at body slot 44 and `THE END` at
+slot 47. This corrects the earlier table's overgeneralization; centered text
+after other elements still uses 1 blank line. All leading spacing drops at the
+top of a page.
 
 The guide also shows extra blank lines a writer added after a centered line. Whether Apollo preserves author-added vertical space is an editor-behavior decision for later; v1 spacing is automatic.
 
