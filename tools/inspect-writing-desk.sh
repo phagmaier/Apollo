@@ -32,7 +32,7 @@ sample="$APOLLO_RUN_DIR/The Last Broadcast.fountain"
 if [[ ${1:-} == --smoke ]]; then
   run_logged native-look timeout 30s env APOLLO_TEST_OPENGL=1 "$project_dir/build/release/editor_tests" writing_desk_outline_and_focus
   run_logged native-export timeout 30s env QT_FATAL_WARNINGS=1 "$editor" "$sample" --agreement "$APOLLO_RUN_DIR/export"
-  printf 'Native screen, outline/focus checks, and sample export completed. Owner acceptance remains pending.\n'
+  printf 'Native screen, outline/focus checks, and sample export completed. These checks do not record new owner observations.\n'
   exit 0
 fi
 command -v xdg-open >/dev/null || { printf 'Missing command: xdg-open\n' >&2; exit 1; }
@@ -42,12 +42,13 @@ printf '\n%s\n' \
   'In each screen use the second rail icon to show/hide Scenes; QML also has Ctrl+\ and the × close button.' \
   'The outline is a read-only opening preview. Notes, stash, history, and scene navigation are outside this spike.' \
   'QML uses the real Courier Prime/profile layout. The HTML uses sample page 12 and approximate text layout.' \
-  'Type/select/undo briefly. Export opens options; Ctrl+E exports the current snapshot. The source is never saved.' \
+  'Type/select briefly; Ctrl+Z undoes and Ctrl+Shift+Z redoes. Export opens options; Ctrl+E exports the current snapshot.' \
+  'The source is never saved by this spike.' \
   'The sample and any PDF are in the review directory above.' \
-  'After closing QML, decide: accept the visual direction or request specific changes; keep Qt or switch/reassess.'
+  'The Writing desk foundation and Qt stack are accepted. Note any further refinements you want after inspection.'
 printf '\nPress Enter to open prototype B and the QML screen. '
 read -r _
 prototype_url=$(uv run python -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).as_uri() + "?variant=b")' "$project_dir/prototype/editor.html")
 xdg-open "$prototype_url" > "$APOLLO_RUN_DIR/browser.log" 2>&1
 run_logged editor "$editor" "$sample"
-printf '\nInspection ended. No acceptance has been recorded. See docs/spike-report.md and docs/spike-handoff.md.\n'
+printf '\nInspection ended. No new owner observations were recorded. See docs/spike-report.md and docs/spike-handoff.md.\n'

@@ -22,7 +22,7 @@ The owner wants an alternative to paid screenwriting applications. The central q
 
 The owner accepted staged delivery. First validate the complete formatted writing experience, Fountain import/export, accurate editor/PDF pagination and PDF export, and autosave/recovery. Then add notes/stash and the Git history, alternative-draft, whole-project sync, and conflict workflows. All agreed core features remain part of full v1; this sequencing does not remove them.
 
-Use a 200-page screenplay as the primary responsiveness workload and a 500-page screenplay as a stress test on the current computer. The owner does not expect to write 500-page scripts; that size is a robustness check. The current host reports an i5-9400, about 12 GiB RAM, Intel UHD Graphics 630, and Omarchy. Detailed proposed budgets and measurement conditions are in the [stack evaluation](stack.md); no performance results exist yet.
+Use a 200-page screenplay as the primary responsiveness workload and a 500-page screenplay as a stress test on the current computer. The owner does not expect to write 500-page scripts; that size is a robustness check. The current host reports an i5-9400, about 12 GiB RAM, Intel UHD Graphics 630, and Omarchy. Budgets are in the [stack evaluation](stack.md); measured spike results and their limitations are in the [spike report](spike-report.md).
 
 ## Confirmed writing experience and direction
 
@@ -32,7 +32,7 @@ Use a 200-page screenplay as the primary responsiveness workload and a 500-page 
 - The editor displays a formatted screenplay with element-specific appearance while the owner writes. Fountain markup stays hidden; a Fountain source-editing mode is not requested.
 - The owner permits a custom internal document format if appropriate. This is permission to evaluate storage options, not a selection of a custom format. Correct Fountain and PDF exports remain required regardless of internal representation.
 - Visual inspiration: macOS-style applications, especially Bear, iA Writer, StudioBinder, Superhuman, and Things 3. These are aesthetic references; Apollo remains a Linux application.
-- Refine the appearance through a later visual prototype. The owner prefers evaluating something visible to describing visual details abstractly. Colors, theme behavior, typography, and exact layout are not settled.
+- The owner prefers evaluating something visible to describing visual details abstractly. On 2026-10-28 they accepted the QML Writing desk reproduction of [prototype B](../prototype/editor.html?variant=b) as the visual foundation, with its compact rail and expandable/hideable outline. Individual visual details and later screens can be refined as they develop; this does not freeze all colors, theme behavior, typography, or layout choices.
 
 ## Requested capabilities
 
@@ -170,6 +170,6 @@ These are acceptance examples for the settled requirements, not an exhaustive te
 
 The owner delegated stack research and recommendations to the agent. Their clarified preference is native/low-level efficiency if development, maintenance, and visual customization remain manageable; Electron is acceptable if necessary. Concerns about C++ are time, code volume, maintainability, and achieving the desired appearance, including when agents write the code. They explicitly asked to consider Rust, Flutter, and Tauri.
 
-Owner decision (2026-10-27): adopt the [independent stack recommendation](stack-recommendation.md) provisionally: Qt 6 + C++20 + QML, with an Apollo-owned screenplay layout engine shared by the editor and PDF export. Electron + TypeScript + ProseMirror is the fallback if the editor/export feasibility spike fails its stated switch conditions. The choice is not yet validated by any prototype or benchmark. The earlier [stack evaluation](stack.md) remains as background research.
+Owner decisions: provisionally adopt Qt 6 + C++20 + QML on 2026-10-27, then keep that stack on 2026-10-28 after the editor/export feasibility spike and acceptance of the QML look. The Apollo-owned screenplay layout engine is shared by the editor and PDF export. The [spike report](spike-report.md) records the measured evidence and remaining limits; it does not establish production readiness. Electron + TypeScript + ProseMirror remains the fallback if later evidence warrants reassessment. The [independent stack recommendation](stack-recommendation.md) and earlier [stack evaluation](stack.md) remain as background research.
 
 The source schema, shared-material Git storage, exact dependency/tool version pins, and release packaging remain open.

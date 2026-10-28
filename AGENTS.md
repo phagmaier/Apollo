@@ -12,7 +12,7 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   order, and pass/fail checks.
 - [Export profile](docs/export-profile.md) and [fixture guide](fixtures/README.md):
   layout rules, independent expectations, and verification procedures.
-- [Stack recommendation](docs/stack-recommendation.md): provisional technical
+- [Stack recommendation](docs/stack-recommendation.md): technical
   direction and fallback; [Git design](docs/git-design.md) covers later history
   and sync work.
 
@@ -24,16 +24,18 @@ decisions or evidence change.
 
 ## Current direction
 
-Qt 6, C++20, and QML are provisionally selected, subject to the editor/export
-feasibility spike. The screenplay layout engine is intended to be shared by the
-editor and PDF export. Electron and ProseMirror are the fallback under the
-brief's switch conditions; do not present the Qt approach as validated yet.
+The owner accepted the QML Writing desk foundation and chose to keep Qt 6,
+C++20, and QML on 2026-10-28 after the editor/export feasibility spike. The
+screenplay layout engine is shared by the editor and PDF export. Keep the
+spike report's measured limits and known gaps explicit; this is not validation
+of a production app. Electron and ProseMirror remain the fallback if a later
+limitation warrants reassessment.
 
 The spike is an experiment, not the first release. Follow its stated boundaries:
 source schema, autosave, Git integration, notes, stash, and other product
-features are outside its scope. The owner will choose a visual direction and
-participate in the manual editing check; record measurements and limitations
-before recommending whether to keep or switch stacks.
+features were outside its scope. Next work needs a bounded plan for the first
+usable writing milestone. The accepted visual foundation can be refined as
+screens develop; the owner has not supplied or frozen every visual detail.
 
 ## Working and verification
 
@@ -69,9 +71,9 @@ before recommending whether to keep or switch stacks.
 - The bounded Writing desk shell is in `app/WritingDesk.qml`. Use
   `tools/inspect-writing-desk.sh` for the prototype/QML comparison, or `--smoke`
   for its automated native launch/outline/export check. See
-  `docs/spike-report.md` and `docs/spike-handoff.md`; owner visual acceptance
-  and the final stack decision remain pending. The opening scene list is a
-  read-only visual preview, not the product scene navigator.
+  `docs/spike-report.md` and `docs/spike-handoff.md` for the owner's acceptance
+  and the remaining limits. The opening scene list is a read-only visual
+  preview, not the product scene navigator. Undo is Ctrl+Z; redo is Ctrl+Shift+Z.
 - `reference/` contains local copyrighted or personal material and is ignored by
   Git. Generated workloads are also ignored; see the fixture guide for how to
   create them. Preserve fixture and third-party license information.

@@ -1,26 +1,30 @@
 # Apollo editor/export feasibility report
 
-2026-10-28. Agent implementation and technical review are complete; **owner
-visual acceptance and the keep/switch decision remain pending**. Qt 6, C++20,
-and QML are still provisional. This is a bounded experiment, not the writing
-release. The [brief](spike-brief.md) supplies the criteria; the
+2026-10-28. Agent implementation and technical review are complete. **The owner
+accepted the QML Writing desk foundation and chose to keep Qt 6, C++20, and
+QML** after comparing the two screens. This is a bounded experiment, not the
+writing release. The [brief](spike-brief.md) supplies the criteria; the
 [progress log](spike-progress.md) preserves the earlier investigations and
 measurements. Use the [manual handoff](spike-handoff.md) to inspect the result.
 
 ## Recommendation
 
-**Keep Qt/C++/QML, subject to the owner's look assessment and stack decision.**
+**Keep Qt/C++/QML; accepted by the owner on 2026-10-28.**
 The exercised engine, PDF, editing, native input, and primary-workload
 measurements support continuing. Stock QML `TextEdit` retained caret movement,
 selection, input methods, text storage, and undo; Apollo did not have to fork
 Qt or write a general text control. The approved Writing desk's key qualities
 can be expressed in QML. No switch trigger in the brief has been demonstrated.
 
-The recommendation is conditional, not a declaration that the owner has
-accepted the look or selected the production stack. The stress case has less
-latency headroom, and the editor/importer still have experiment-only rules and
-known gaps below. Electron + ProseMirror remains the fallback if the owner
-rejects the result or a later text-stack limitation meets the switch criteria.
+The owner found the screens very close, approved the look, and agreed to keep
+this direction. That accepts the visual foundation, not every future visual
+detail or extended writing comfort. The owner had not tested undo with Ctrl+Z
+and reported trying Ctrl+U; the shortcut guidance is now explicit in the
+handoff. Automated undo/redo evidence remains unchanged, and no successful
+owner undo test is claimed. The stress case has less latency headroom, and the
+editor/importer still have experiment-only rules and known gaps below.
+Electron + ProseMirror remains the fallback if a later text-stack limitation
+meets the switch criteria.
 No comparative Electron implementation or benchmark was run, so there is no
 claim that switching would improve speed or reduce total effort by a measured
 amount. Engine correctness work would carry over either way.
@@ -35,7 +39,7 @@ amount. Engine correctness work would carry over either way.
 | 4. Interaction | The brief's Enter/Tab, paste kinds, typing/type-change/scene-move undo/redo, page-gap caret/selection/copy, and dual-dialogue document-order checks pass. Native fcitx5 compose and dead-key commits and scene-move/undo/redo use actual Wayland virtual-keyboard input. Earlier owner observations reported typing, selection/copy, and Enter/Tab good. | Physical Compose-key use remains unverified (none is mapped). The owner's earlier session predates this shell. Scripts and captures do not establish extended writing comfort or acceptance of the final screen. |
 | 5. Responsiveness | Primary-workload measurements meet the observed numeric targets; final-screen values and methods are below. Both workloads complete typing and real export while typing. | Warm initialized-process opening, synthetic key dispatch, and sampled PSS have the limits below. The 500-page case is a stress observation, not a 33 ms typing-target pass. |
 | 6. Code shape | Pass: no private Qt includes or copied Qt sources; engine-only build/tests pass and `ldd` lists no Qt library. | Apollo owns pagination and screenplay commands; Qt retains the general editor mechanisms. The unused `ScreenplayLayout::draw` path is not validated by `TextEdit` tests. |
-| 7. Look | Agent judgment: native QML carries over B's slate header, compact rail, quiet desk, centered white paper, and C-style expandable/hideable pale outline. Native open/closed/compact captures were inspected alongside browser captures of the approved prototype. | **Owner acceptance pending.** Accurate Courier Prime/profile layout replaces HTML's approximate layout; the sample is page 1 with two actual scenes, not mock page 12 of 94. Read-only outline preview, dimmed placeholders, and accurate unsaved status preserve the spike boundary. |
+| 7. Look | Agent comparison passes; the owner also found the QML and prototype very close and accepted the look on 2026-10-28. QML carries over B's slate header, compact rail, quiet desk, centered paper, and expandable/hideable pale outline. | Acceptance establishes the visual foundation; later refinements remain possible. Accurate Courier Prime/profile layout replaces HTML's approximate layout; the sample has two actual scenes. The read-only outline and dimmed placeholders preserve the spike boundary. |
 
 Agreement counts (title pages included):
 
@@ -186,9 +190,10 @@ settings, packaging, or other product feature implementation in this work.
 - Native tests use virtual keyboard input through fcitx5, with earlier owner
   observations for manual typing. Extended comfort, physical Compose input,
   cold launch, peak memory, and other machines/Qt upgrades remain unverified.
-- QML appearance remains the owner's decision. The outline is static by
-  design and the HTML's approximate typography/page content is not a numeric
-  layout standard. Rejecting an individual visual detail would first call for
+- The QML visual foundation is accepted; specific future visual refinements
+  remain open. The outline is static by design and the HTML's approximate
+  typography/page content is not a numeric layout standard. Changing an
+  individual visual detail would first call for
   a focused QML refinement; it does not by itself demonstrate QML cannot
   achieve the direction.
 
@@ -248,8 +253,11 @@ the recommendation. The original `prompt.md` is preserved and excluded from
 the spike commits; other initial native/export changes belong to this reviewed
 spike and are included explicitly.
 
-The [handoff](spike-handoff.md) needs only two owner decisions: accept or refine
-the QML look, and keep Qt or switch/reassess after reading this report. Until
-both are accepted, **do not merge `spike/editor-export-final`**. No push or
-merge is part of this work. Source-schema, autosave, Git integration, and the
-rest of the product remain outside the spike.
+The owner has now accepted the QML look and the keep-Qt recommendation, so the
+previous visual/stack acceptance gate for `spike/editor-export-final` is clear.
+The measured evidence and known limitations remain unchanged by that decision.
+The [handoff](spike-handoff.md) remains available for further inspection and
+gives the undo/redo shortcuts.
+Source-schema, autosave, Git integration, and the rest of the product remain
+outside the completed spike. The next proposed task is to plan the first usable
+writing milestone, starting with the document format and save/recovery contract.

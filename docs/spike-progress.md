@@ -1,10 +1,10 @@
 # Editor/export spike progress
 
-The agent's implementation, technical verification, and review are prepared
-for owner assessment as of 2026-10-28. **The QML look and final stack decision
-remain unaccepted; Qt is provisional.** The [spike report](spike-report.md)
-records each brief check, final-screen measurements, limitations, and a
-conditional keep recommendation. Use the [manual handoff](spike-handoff.md)
+The bounded spike's implementation, technical verification, and review are
+complete. **The owner accepted the QML Writing desk foundation and chose to
+keep Qt/C++/QML on 2026-10-28.** The [spike report](spike-report.md)
+records each brief check, final-screen measurements, limitations, and the
+accepted keep recommendation. Use the [manual handoff](spike-handoff.md)
 to compare the native screen with the approved prototype. Earlier work and
 measurements below are a chronological record, not claims of owner acceptance.
 
@@ -19,9 +19,9 @@ asynchronous export, the Writing desk screen, and the final report.**
 The editor is stock QML `TextEdit` with Apollo's `ScreenplayLayout` and C++
 commands for the brief's Enter, Tab, paste, undo, and scene-move rules.
 The editor and PDF line dumps agree on all fixtures, both workloads, and the
-Academy transcription, before and after scripted workload edits. Qt remains
-provisional. Offscreen checks alone do not establish native behavior or a
-completed spike.
+Academy transcription, before and after scripted workload edits. The later
+native evidence and owner decision complete this bounded feasibility step;
+the documented product and measurement limitations remain.
 
 All eight hand-derived layout fixtures and their PDFs match the unchanged
 expected page, slot, element columns, text, and exercised style annotations.
@@ -961,6 +961,12 @@ Qt remains provisional. The owner must assess the look and choose keep or
 switch/reassess before `spike/editor-export-final` merges. No push or merge is
 part of this work; `prompt.md` is preserved outside the reviewed spike commits.
 
+## Earlier export-only handoff record (superseded)
+
+The following handoff predates the Writing desk/report work above and the owner
+acceptance recorded below. Its working-tree state and remaining-work list are
+historical, not the current task state.
+
 This completes the bounded PDF-export-while-typing experiment and review.
 The timing/memory method's limits above still apply: sampled PSS is not a
 guaranteed peak, input is synthetic, caches are warm, and extended-session
@@ -986,7 +992,7 @@ QT_QPA_PLATFORM=offscreen build/release/apollo_editor build/release/editor-pdf-t
 build/release/apollo_editor build/release/editor-pdf-tests/workload-175.fountain --check
 ```
 
-## Remaining work and next step
+### Earlier remaining work and next step
 
 The owner's observations and native automated checks/timings, including the
 bounded export experiment, are recorded above. Next is reproducing approved
@@ -1011,3 +1017,21 @@ The full spike still requires the QML visual screen, remaining evidence/review,
 and a final keep/switch recommendation in `docs/spike-report.md`. This task
 does not implement that screen or issue a final stack verdict. Qt remains
 provisional, and all product/import/layout limitations above remain explicit.
+
+## Owner acceptance and next step (2026-10-28)
+
+The owner reported that the native QML screen and approved prototype look very
+close, accepted the visual foundation, and chose to keep Qt/C++/QML. The prior
+look/stack merge gate is clear. Individual visual refinements remain possible;
+no further visual requests have been specified yet.
+
+The owner had not manually tried undo with Ctrl+Z, having tried Ctrl+U. The
+handoff now explicitly lists Ctrl+Z for undo and Ctrl+Shift+Z for redo. Existing
+automated undo/redo evidence is unchanged; no owner undo success or actual
+Ctrl+Z failure is claimed.
+
+The next proposed task is a bounded plan for the first usable writing milestone,
+starting with the document format and save/recovery contract. See
+[planning round 17](planning.md#round-17--spike-acceptance-and-next-milestone-2026-10-28).
+The spike remains an experiment with the report's known gaps, not a production
+writing build. No new product implementation is authorized by this record.

@@ -1,6 +1,6 @@
 # Apollo — editor/export feasibility spike brief
 
-Status: implementation, technical checks, and the [spike report](spike-report.md) are prepared for owner assessment. The owner approved visual direction B with C's expandable outline ([prototype](../prototype/editor.html)); acceptance of its QML reproduction remains pending. The provisional stack is Qt 6 + C++20 + QML ([stack recommendation](stack-recommendation.md)). The owner still decides whether to keep it or switch/reassess after inspecting the result. The criteria below are unchanged.
+Status: the owner accepted the QML reproduction of Writing desk B with C's expandable outline and chose to keep Qt 6 + C++20 + QML on 2026-10-28. The [spike report](spike-report.md) records the evidence, decision, and remaining limits. This settles the feasibility direction, not all visual details or production readiness. The owner has not manually retested undo with Ctrl+Z; the existing automated undo checks pass. The criteria below are unchanged.
 
 ## The question
 

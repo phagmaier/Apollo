@@ -168,6 +168,30 @@ Owner-confirmed:
 1. Where the Academy pages and prose disagree, follow the sample pages: dialogue at 3.0 in, cue at 4.0 in, page number at 7.25 in.
 2. Automatic (CONT'D) after action is on by default.
 
+## Round 17 — spike acceptance and next milestone (2026-10-28)
+
+Owner-confirmed: the native QML screen and approved prototype look very close;
+accept the Writing desk foundation and keep Qt 6 + C++20 + QML. This settles
+the spike's visual/stack acceptance gate. It does not freeze every visual detail
+or establish extended writing comfort. The owner has further visual ideas but
+has not specified them yet; record concrete requests when supplied and refine
+individual screens as they develop.
+
+The owner had not manually tested undo, having tried Ctrl+U. The existing
+automated Ctrl+Z undo and Ctrl+Shift+Z redo checks pass. The handoff now names
+those shortcuts. No successful owner undo test or reproduced Ctrl+Z defect is
+claimed. The [spike report](spike-report.md) retains the technical limitations.
+
+Agent recommendation for the next bounded task: plan the first usable writing
+milestone already accepted in round 12. Start with the authoritative document
+format, project layout, Fountain preservation/round-trip rules, and the
+save/recovery contract needed to meet the one-second application-crash target.
+Then implement creating/opening/importing a script, autosave/recovery, and the
+essential formatted editing and Fountain/PDF export workflow in small slices.
+Use the accepted visual foundation, refining controls as their behavior is
+implemented. Notes/stash and the full Git workflow remain later staged work.
+This is the proposed next task, not approval of a new schema or a full build.
+
 ## Subsequent decision branches
 
 Visual exploration: [editor prototype](../prototype/editor.html) presents three
@@ -175,11 +199,9 @@ workspace directions (Library, Writing desk, and Story outline). The owner
 approved B (Writing desk) as the overall visual direction, especially its compact
 left rail, with an expandable scene outline like C's that can be hidden again.
 B demonstrates that combination. Individual screens and details can be refined
-as they are developed. The QML reproduction and [spike report](spike-report.md)
-are now prepared for owner assessment, with a [one-command visual
-handoff](spike-handoff.md). This is agent evidence and a recommendation, not
-owner acceptance of the QML look or a final stack decision. Qt remains
-provisional and the spike branch must wait for those decisions before merging.
+as they are developed. The owner has now accepted the QML reproduction and
+chosen to keep Qt (round 17). The [spike report](spike-report.md) and
+[one-command visual handoff](spike-handoff.md) retain the evidence and limits.
 
 Ask these as their prerequisites settle, rather than presenting the entire list as a questionnaire.
 
@@ -195,7 +217,7 @@ Ask these as their prerequisites settle, rather than presenting the entire list 
 - Formatting assistance: settled US English and personal-dictionary behavior; still define dictionary persistence/sync, diagnostic rules and intentional exceptions. Formatting suggestions are explicitly applied and undoable.
 - Export: selected American feature submission profile, title-page form, required element coverage, and note/stash conversion/exclusion; still define full numeric rules, remaining Fountain mappings, pagination, font packaging, failures, and acceptance checks.
 - Performance: 200-page primary workload and 500-page stress test on the current machine accepted; proposed numeric targets are in the stack evaluation and need measurement.
-- Delivery: Qt/C++/QML provisionally selected (round 15), with Electron + ProseMirror as fallback, pending the feasibility spike. Still define package/install workflow on Arch/Omarchy, dependency pins, maintenance, and license if relevant.
+- Delivery: Qt/C++/QML retained after spike acceptance (round 17), with Electron + ProseMirror as fallback if later reassessment is needed. Still define package/install workflow on Arch/Omarchy, dependency pins, maintenance, and license if relevant.
 - Verification: representative writing tasks, reference exports, compatibility, recovery scenarios, and focused prototypes for unresolved feasibility risks.
 
 ## Research notes

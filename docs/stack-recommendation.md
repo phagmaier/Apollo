@@ -3,9 +3,10 @@
 Assessed 2026-10-27. Status: **provisionally adopted by the owner on 2026-10-27** (see [planning round 15](planning.md#round-15--provisional-stack-decision)). The adoption is pending the feasibility spike below. The [product spec](spec.md) remains authoritative for requirements; [stack.md](stack.md) is the earlier research this document re-examines. Nothing was prototyped, installed, or benchmarked for this assessment.
 
 The text below records the original assessment. The subsequent
-[spike report](spike-report.md) now provides implementation and measurement
-evidence and recommends keeping Qt, subject to the owner's visual assessment
-and final stack decision. Qt remains provisional; this is not owner acceptance.
+[spike report](spike-report.md) provides implementation and measurement
+evidence. On 2026-10-28 the owner accepted the QML look as the visual foundation
+and chose to keep Qt/C++/QML. The original provisional decision is superseded
+by that acceptance; the report's known gaps and measurement limits still apply.
 
 Evidence labels used below:
 

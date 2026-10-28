@@ -1,5 +1,9 @@
 # Inspect the Writing desk
 
+The owner accepted the QML look as the visual foundation and chose to keep
+Qt/C++/QML on 2026-10-28. This guide remains useful for further inspection.
+Individual visual details can be refined as screens develop.
+
 Run this from a terminal in your Hyprland session (any current directory):
 
 ```sh
@@ -21,7 +25,8 @@ Compare at roughly the same window size, ideally at least 1100 px wide:
    with × or the same icon; Ctrl+Backslash also toggles it. Check the pale
    panel's width and separation from the page, and whether hiding it restores
    the writing space. At narrow widths the page can scroll horizontally.
-3. **Live editing:** type a little, select and copy, undo/redo, and open/close
+3. **Live editing:** type a little, select and copy, undo with **Ctrl+Z**, redo
+   with **Ctrl+Shift+Z**, and open/close
    the outline with a selection. The caret and selection should stay intact.
    Enter/Tab use the spike rules. Longer page-gap and dual-dialogue behavior
    is already covered by the automated checks and earlier manual observations.
@@ -37,22 +42,16 @@ it does not track edits or the caret, navigate, or reorder. Notes and stash are
 dimmed placeholders. History, saving, and other product features are outside
 this spike; the header accurately says edits are not saved.
 
-The agent has inspected native Wayland/OpenGL captures with the outline open,
-closed, and in a compact window, and tested the native launch/export route.
-That establishes neither your visual acceptance nor extended writing comfort.
-See [the report](spike-report.md) for the measurements and recommendation.
+The owner has assessed and accepted the visual foundation. The agent also
+inspected native open/closed/compact captures and tested native launch/export.
+Extended writing comfort remains unestablished. The owner reported trying
+Ctrl+U and had not manually tested undo with Ctrl+Z yet; the existing automated
+undo/redo tests pass. This records an unperformed manual check, not a reproduced
+Ctrl+Z failure. See [the report](spike-report.md) for the measured limitations.
 
-Two decisions remain:
-
-- **Look:** accept this QML implementation of the approved direction, or name
-  concrete changes to make before acceptance.
-- **Stack:** keep Qt/C++/QML as recommended, or switch/reassess. The 500-page
-  stress case's measured slower typing and the documented remaining risks are
-  part of that decision. Qt stays provisional until you decide.
-
-The work stays on `spike/editor-export-final`; it must not merge before both
-decisions. No push or merge is included in this handoff. If either decision is
-deferred, the branch remains pending.
+The previous visual/stack gate for merging `spike/editor-export-final` is now
+clear. The runner records test output; further owner feedback must still be
+recorded separately.
 
 For reproducible automated native checks, including the 200-key measurements
 on both workloads, run `tools/check-wayland.sh`. For a brief automated check of

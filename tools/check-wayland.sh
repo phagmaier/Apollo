@@ -155,7 +155,7 @@ run_wizard() {
   say 'Recorded results still need review against the spike criteria.'
   say "Automated checks do not replace the owner's comfort or visual acceptance."
   say 'See docs/spike-report.md for the recommendation and tools/inspect-writing-desk.sh for visual review.'
-  say 'Qt remains provisional until the owner accepts the look and decides the stack.'
+  say 'The owner accepted the Writing desk foundation and chose to keep Qt; the report records the remaining limits.'
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
