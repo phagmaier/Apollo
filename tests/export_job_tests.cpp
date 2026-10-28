@@ -184,6 +184,14 @@ private slots:
     auto* editor = show_editor(view, *document, &job, path);
     view.show(); view.requestActivate(); editor->forceActiveFocus();
     QVERIFY(QTest::qWaitForWindowActive(&view));
+    auto* button = view.rootObject()->findChild<QQuickItem*>("exportButton");
+    auto* panel = view.rootObject()->findChild<QObject*>("exportPanel");
+    QVERIFY(button && panel);
+    QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, button->mapToScene(button->boundingRect().center()).toPoint());
+    QTRY_VERIFY(panel->property("visible").toBool());
+    QTest::keyClick(&view, Qt::Key_Escape);
+    QTRY_VERIFY(!panel->property("visible").toBool());
+    QVERIFY(editor->hasActiveFocus());
     QSignalSpy done(&job, &PdfExportJob::completed);
     QTest::keyClick(&view, Qt::Key_E, Qt::ControlModifier);
     QVERIFY(job.busy());

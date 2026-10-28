@@ -145,7 +145,7 @@ class EditorTests : public QObject {
     title_page = layout()->has_title_page();
     view_ = std::make_unique<QQuickView>();
     editor_ = show_editor(*view_, *document_);
-    view_->resize(static_cast<int>(page_width), static_cast<int>(2 * page_stride));
+    view_->resize(1100, static_cast<int>(2 * page_stride));
     view_->show();
     if (!QTest::qWaitForWindowExposed(view_.get())) return false;
     view_->requestActivate();
@@ -191,6 +191,18 @@ class EditorTests : public QObject {
   }
   int cursor() const { return editor_->property("cursorPosition").toInt(); }
   double caret_baseline(int position) const { return caret_rect(position).top() + QFontMetricsF(font_).ascent() * pt; }
+  QRect viewport() const {
+    const auto* flick = view_->rootObject()->findChild<QQuickItem*>("flick");
+    return flick->mapRectToScene(flick->boundingRect()).toAlignedRect().intersected(QRect(QPoint(), view_->size()));
+  }
+  int highlighted(const QImage& image, const QRectF& document_rect) const {
+    const auto region = editor_->mapRectToScene(document_rect).toAlignedRect().intersected(viewport()).intersected(image.rect());
+    int count = 0;
+    for (int y = region.top(); y <= region.bottom(); ++y)
+      for (int x = region.left(); x <= region.right(); ++x)
+        count += image.pixelColor(x, y) == QColor("#8fb4e8");
+    return count;
+  }
   // Pixels darker than the page or background that are outside every
   // expected line, and lines with no ink, in a grab of the current view.
   // Only lines inside the scrolled view must have ink.
@@ -198,20 +210,20 @@ class EditorTests : public QObject {
     editor_->setProperty("cursorVisible", false);
     const auto image = view_->grabWindow();
     image.save(QStringLiteral(APOLLO_ARTIFACT_DIR "/") + artifact + ".png");
-    const double scrolled = view_->rootObject()->findChild<QQuickItem*>("flick")->property("contentY").toDouble();
     std::vector<QRectF> regions;
     for (const auto& line : laid_out_lines(*document_))
       if (!line.text.isEmpty())
-        regions.push_back(QRectF(line.x * px_per_point, line.top * px_per_point - scrolled, line.width * px_per_point,
-                                 line.height * px_per_point).adjusted(-1, -1, 1, 1));
+        regions.push_back(editor_->mapRectToScene(QRectF(line.x * px_per_point, line.top * px_per_point,
+                                 line.width * px_per_point, line.height * px_per_point)).adjusted(-1, -1, 1, 1));
     const QFontMetricsF metrics(font_);
     for (const auto& decoration : layout()->decoration_list())
-      regions.push_back(QRectF(decoration.baseline.x(), decoration.baseline.y() - metrics.ascent() - scrolled,
-                               metrics.horizontalAdvance(decoration.text), metrics.height()).adjusted(-1, -1, 1, 1));
+      regions.push_back(editor_->mapRectToScene(QRectF(decoration.baseline.x(), decoration.baseline.y() - metrics.ascent(),
+                               metrics.horizontalAdvance(decoration.text), metrics.height())).adjusted(-1, -1, 1, 1));
     std::vector<bool> inked(regions.size());
     int stray = 0;
-    for (int y = 0; y < image.height(); ++y)
-      for (int x = 0; x < image.width(); ++x) {
+    const auto visible = viewport().intersected(image.rect());
+    for (int y = visible.top(); y <= visible.bottom(); ++y)
+      for (int x = visible.left(); x <= visible.right(); ++x) {
         if (qGray(image.pixel(x, y)) >= 96) continue;
         const QPointF point(x + 0.5, y + 0.5);
         bool inside = false;
@@ -220,7 +232,7 @@ class EditorTests : public QObject {
         stray += !inside;
       }
     int blank = 0;
-    for (std::size_t i = 0; i < regions.size(); ++i) blank += !inked[i] && QRectF(image.rect()).contains(regions[i]);
+    for (std::size_t i = 0; i < regions.size(); ++i) blank += !inked[i] && QRectF(visible).contains(regions[i]);
     return {stray, blank};
   }
 
@@ -237,6 +249,48 @@ private slots:
   // Any warning, such as a QML binding error, fails the test.
   void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral(".*"))); }
   void cleanup() { view_.reset(); document_.reset(); }
+
+  // The approved shell must leave the live editor and its selection intact
+  // when the outline is shown/hidden, including a compact desktop window.
+  void writing_desk_outline_and_focus() {
+    QVERIFY(open_elements(import_fountain(read(QStringLiteral(APOLLO_LOOK_SOURCE)))));
+    view_->rootObject()->setProperty("documentTitle", "The Last Broadcast");
+    view_->resize(1200, 1000);
+    auto* root = view_->rootObject();
+    auto* toggle = root->findChild<QQuickItem*>("outlineToggle");
+    auto* close = root->findChild<QQuickItem*>("outlineClose");
+    auto* outline = root->findChild<QQuickItem*>("sceneOutline");
+    QVERIFY(toggle && close && outline);
+    QVERIFY(!outline->isVisible());
+    const auto original = document_->toPlainText();
+    editor_->setProperty("cursorPosition", position_of(QStringLiteral("Then let's")));
+    press(Qt::Key_Right, Qt::ShiftModifier);
+    const auto selected = editor_->property("selectedText").toString();
+    const auto position = cursor();
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/writing-desk-closed.png"));
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, toggle->mapToScene(toggle->boundingRect().center()).toPoint());
+    QTRY_VERIFY(outline->isVisible());
+    QCOMPARE(outline->width(), 280.0);
+    QVERIFY(editor_->hasActiveFocus());
+    QCOMPARE(cursor(), position);
+    QCOMPARE(editor_->property("selectedText").toString(), selected);
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/writing-desk-open.png"));
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, close->mapToScene(close->boundingRect().center()).toPoint());
+    QTRY_VERIFY(!outline->isVisible());
+    press(Qt::Key_Backslash, Qt::ControlModifier);
+    QTRY_VERIFY(outline->isVisible());
+    view_->resize(640, 800);
+    QTest::qWait(30);
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/writing-desk-compact.png"));
+    const auto caret = editor_->mapRectToScene(editor_->property("cursorRectangle").toRectF());
+    QVERIFY(QRectF(viewport()).contains(caret.center()));
+    press(Qt::Key_Backslash, Qt::ControlModifier);
+    QTRY_VERIFY(!outline->isVisible());
+    QCOMPARE(document_->toPlainText(), original);
+    QCOMPARE(cursor(), position);
+    QCOMPARE(editor_->property("selectedText").toString(), selected);
+    QVERIFY(editor_->hasActiveFocus());
+  }
 
   // The document keeps each element's type, text, dual flag, and emphasis.
   void document_round_trips_elements() {
@@ -416,16 +470,11 @@ private slots:
     editor_->setProperty("cursorVisible", false);
     const auto image = view_->grabWindow();
     image.save(QStringLiteral(APOLLO_ARTIFACT_DIR "/selection-across-gap.png"));
-    const auto scroll = view_->rootObject()->findChild<QQuickItem*>("flick")->property("contentY").toDouble();
     // Highlight rows from just above each baseline, below the previous line.
     // A native compositor may limit the requested two-page window's height;
     // account for the resulting scroll when inspecting the captured pixels.
     auto highlighted = [&](double top, double bottom) {
-      int count = 0;
-      for (int y = std::max(0, static_cast<int>(top * px_per_point - scroll));
-           y < std::min(image.height(), static_cast<int>(bottom * px_per_point - scroll)); ++y)
-        for (int x = 144; x < 144 + 200; ++x) count += image.pixelColor(x, y) == QColor("#8fb4e8");
-      return count;
+      return this->highlighted(image, QRectF(144, top * px_per_point, 200, (bottom - top) * px_per_point));
     };
     QVERIFY(highlighted(baseline(1, 55) - 5, baseline(1, 55)) > 100);
     QVERIFY(highlighted(baseline(2, 1) - 5, baseline(2, 1)) > 100);
@@ -846,11 +895,12 @@ private slots:
     const auto image = view_->grabWindow();
     image.save(QStringLiteral(APOLLO_ARTIFACT_DIR "/dual-selection.png"));
     auto highlighted = [&](double x0, double x1, int slot) {
-      int count = 0;
-      for (int y = static_cast<int>((baseline(1, slot) - 5) * px_per_point); y < static_cast<int>(baseline(1, slot) * px_per_point); ++y)
-        for (int x = static_cast<int>(x0 * px_per_point); x < static_cast<int>(x1 * px_per_point); ++x)
-          count += image.pixelColor(x, y) == QColor("#8fb4e8");
-      return count;
+      // Include the upper selection background. At the presentation scale,
+      // native subpixel glyphs fill most of the five points above a baseline;
+      // counting exact background pixels there misses a correctly selected cue.
+      // Eight points stays clear of the preceding line's selection rectangle.
+      return this->highlighted(image, QRectF(x0 * px_per_point, (baseline(1, slot) - 8) * px_per_point,
+                                            (x1 - x0) * px_per_point, 8 * px_per_point));
     };
     QVERIFY(highlighted(108, 300, 12) > 100);
     QVERIFY(highlighted(108, 280, 13) > 100);

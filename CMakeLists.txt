@@ -62,7 +62,7 @@ if(APOLLO_BUILD_EDITOR)
   set_target_properties(apollo_editor_core PROPERTIES AUTOMOC ON)
   target_link_libraries(apollo_editor_core PUBLIC apollo_layout apollo_export_snapshot Qt6::Gui Qt6::Quick)
   target_compile_options(apollo_editor_core PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_definitions(apollo_editor_core PRIVATE APOLLO_EDITOR_QML="${CMAKE_CURRENT_SOURCE_DIR}/editor/ScreenplayEditor.qml")
+  target_compile_definitions(apollo_editor_core PRIVATE APOLLO_EDITOR_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/WritingDesk.qml")
   add_executable(apollo_editor tools/apollo_editor.cpp)
   target_link_libraries(apollo_editor PRIVATE apollo_editor_core apollo_pdf)
   add_dependencies(apollo_editor pdf_export)
@@ -73,6 +73,7 @@ if(APOLLO_BUILD_EDITOR)
   target_compile_definitions(editor_tests PRIVATE
     APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime"
     APOLLO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/layout"
+    APOLLO_LOOK_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/prototype/The Last Broadcast.fountain"
     APOLLO_ARTIFACT_DIR="${CMAKE_CURRENT_BINARY_DIR}/editor-tests")
   add_test(NAME editor_tests COMMAND editor_tests)
   set_tests_properties(editor_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

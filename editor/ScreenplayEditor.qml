@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 
 // The spike editor: a stock TextEdit showing a QTextDocument laid out by
 // ScreenplayLayout. Page cards and generated text are separate items because
@@ -8,144 +9,137 @@ Rectangle {
     id: root
     required property var screenplayLayout
     required property var commands
-    property var exportJob: null
-    property string exportDestination: ""
-    property bool includeTitle: true
-    color: "#d0d0d0"
-
-    function exportPdf() {
-        if (exportJob && !exportJob.busy) {
-            exportJob.request(destination.text, includeTitle)
-            editor.forceActiveFocus()
-        }
-    }
-    Shortcut { sequence: "Ctrl+E"; onActivated: root.exportPdf() }
-
-    // Temporary spike controls; the approved look screen is separate work.
-    Rectangle {
-        id: exportBar
-        width: parent.width
-        height: root.exportJob ? 76 : 0
-        visible: root.exportJob !== null
-        color: "#eeeeee"
-        Rectangle {
-            x: 8; y: 8; width: 112; height: 28
-            color: root.exportJob && root.exportJob.busy ? "#cccccc" : "#ffffff"
-            border.color: "#999999"
-            Text { anchors.centerIn: parent; text: "Export PDF (Ctrl+E)"; color: "black"; font.pixelSize: 11 }
-            MouseArea { anchors.fill: parent; onClicked: root.exportPdf() }
-        }
-        TextInput {
-            id: destination
-            objectName: "exportDestination"
-            x: 130; y: 13; width: Math.max(40, parent.width - 250); height: 22
-            text: root.exportDestination
-            selectByMouse: true; clip: true; color: "black"; font.pixelSize: 12
-        }
-        Text {
-            x: parent.width - 112; y: 13
-            text: (root.includeTitle ? "☑" : "☐") + " Title page"
-            color: "black"; font.pixelSize: 12
-            MouseArea { anchors.fill: parent; onClicked: root.includeTitle = !root.includeTitle }
-        }
-        Text {
-            x: 8; y: 43; width: parent.width - 16
-            text: root.exportJob ? root.exportJob.status : ""
-            color: "#333333"; font.pixelSize: 12; elide: Text.ElideMiddle
-        }
-    }
+    // Presentation scale only: the engine and TextEdit keep 96 dpi document
+    // coordinates. 0.75 gives the prototype's 612 px Letter page and 12 px type.
+    property real pageScale: 0.75
+    color: "#d4d9df"
+    function focusEditor() { editor.forceActiveFocus() }
 
     Flickable {
         id: flick
         objectName: "flick"
-        anchors { left: parent.left; right: parent.right; top: exportBar.bottom; bottom: parent.bottom }
-        contentWidth: root.screenplayLayout.pageWidth
-        contentHeight: root.screenplayLayout.documentHeight
+        anchors.fill: parent
+        contentWidth: Math.max(width, root.screenplayLayout.pageWidth * root.pageScale + 64)
+        contentHeight: root.screenplayLayout.documentHeight * root.pageScale + 36
         clip: true
 
-        Repeater {
-            model: root.screenplayLayout.pageCount
-            Rectangle {
-                required property int index
-                y: index * (root.screenplayLayout.pageHeight + root.screenplayLayout.pageGap)
-                width: root.screenplayLayout.pageWidth
-                height: root.screenplayLayout.pageHeight
-                color: "white"
-            }
-        }
-
-        TextEdit {
-            id: editor
-            objectName: "editor"
+        Item {
+            id: pages
+            x: (flick.contentWidth - width * scale) / 2
+            y: 12
             width: root.screenplayLayout.pageWidth
             height: root.screenplayLayout.documentHeight
-            focus: true
-            selectByMouse: true
-            persistentSelection: true
-            color: "black"
-            selectionColor: "#8fb4e8"
-            selectedTextColor: "black"
-            onCursorRectangleChanged: {
-                if (cursorRectangle.y < flick.contentY)
-                    flick.contentY = cursorRectangle.y
-                else if (cursorRectangle.y + cursorRectangle.height > flick.contentY + flick.height)
-                    flick.contentY = cursorRectangle.y + cursorRectangle.height - flick.height
-            }
+            scale: root.pageScale
+            transformOrigin: Item.TopLeft
 
-            function place(position) {
-                if (position >= 0)
-                    cursorPosition = position
-            }
-
-            Keys.onPressed: (event) => {
-                const shift = event.modifiers & Qt.ShiftModifier
-                const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
-                const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
-                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    // Shift+Enter included: TextEdit would insert a line
-                    // separator, which the engine does not break at.
-                    place(root.commands.enter(cursorPosition, selectionStart, selectionEnd))
-                } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
-                    root.commands.cycleType(cursorPosition, event.key === Qt.Key_Backtab || shift)
-                } else if (event.matches(StandardKey.Paste)) {
-                    place(root.commands.paste(cursorPosition, selectionStart, selectionEnd))
-                } else if (event.matches(StandardKey.Copy)) {
-                    root.commands.copy(selectionStart, selectionEnd)
-                } else if (event.matches(StandardKey.Cut)) {
-                    place(root.commands.cut(selectionStart, selectionEnd))
-                } else if (event.key === Qt.Key_Up && (event.modifiers & Qt.AltModifier) && shift) {
-                    place(root.commands.moveSceneUp(cursorPosition))
-                } else if (code >= 32 && code !== 127 && !command) {
-                    place(root.commands.typeText(cursorPosition, selectionStart, selectionEnd, event.text))
-                } else {
-                    return
+            Repeater {
+                model: root.screenplayLayout.pageCount
+                Rectangle {
+                    required property int index
+                    y: index * (root.screenplayLayout.pageHeight + root.screenplayLayout.pageGap)
+                    width: root.screenplayLayout.pageWidth
+                    height: root.screenplayLayout.pageHeight
+                    color: "white"
+                    Rectangle {
+                        z: -1; x: 0; y: 5
+                        width: parent.width; height: parent.height
+                        color: "#172331"; opacity: 0.08
+                    }
+                    Rectangle {
+                        z: -2; x: -4; y: 9
+                        width: parent.width + 8; height: parent.height
+                        color: "#172331"; opacity: 0.035
+                    }
                 }
-                event.accepted = true
+            }
+
+            TextEdit {
+                id: editor
+                objectName: "editor"
+                width: root.screenplayLayout.pageWidth
+                height: root.screenplayLayout.documentHeight
+                focus: true
+                selectByMouse: true
+                persistentSelection: true
+                color: "black"
+                selectionColor: "#8fb4e8"
+                selectedTextColor: "black"
+                function revealCursor() {
+                    const rect = mapToItem(flick.contentItem, cursorRectangle)
+                    if (rect.y < flick.contentY)
+                        flick.contentY = Math.max(0, rect.y - 12)
+                    else if (rect.y + rect.height > flick.contentY + flick.height)
+                        flick.contentY = rect.y + rect.height - flick.height
+                    if (rect.x < flick.contentX)
+                        flick.contentX = Math.max(0, rect.x - 12)
+                    else if (rect.x + rect.width > flick.contentX + flick.width)
+                        flick.contentX = rect.x + rect.width - flick.width + 12
+                }
+                onCursorRectangleChanged: revealCursor()
+
+                function place(position) {
+                    if (position >= 0)
+                        cursorPosition = position
+                }
+
+                Keys.onPressed: (event) => {
+                    const shift = event.modifiers & Qt.ShiftModifier
+                    const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
+                    const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        // Shift+Enter included: TextEdit would insert a line
+                        // separator, which the engine does not break at.
+                        place(root.commands.enter(cursorPosition, selectionStart, selectionEnd))
+                    } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+                        root.commands.cycleType(cursorPosition, event.key === Qt.Key_Backtab || shift)
+                    } else if (event.matches(StandardKey.Paste)) {
+                        place(root.commands.paste(cursorPosition, selectionStart, selectionEnd))
+                    } else if (event.matches(StandardKey.Copy)) {
+                        root.commands.copy(selectionStart, selectionEnd)
+                    } else if (event.matches(StandardKey.Cut)) {
+                        place(root.commands.cut(selectionStart, selectionEnd))
+                    } else if (event.key === Qt.Key_Up && (event.modifiers & Qt.AltModifier) && shift) {
+                        place(root.commands.moveSceneUp(cursorPosition))
+                    } else if (code >= 32 && code !== 127 && !command) {
+                        place(root.commands.typeText(cursorPosition, selectionStart, selectionEnd, event.text))
+                    } else {
+                        return
+                    }
+                    event.accepted = true
+                }
+            }
+
+            Repeater {
+                model: root.screenplayLayout.decorations
+                Text {
+                    required property string label
+                    required property real runX
+                    required property real runBaseline
+                    required property bool bold
+                    required property bool italic
+                    required property bool underline
+                    x: runX
+                    y: runBaseline - baselineOffset
+                    text: label
+                    textFormat: Text.PlainText
+                    font.family: root.screenplayLayout.font.family
+                    font.pixelSize: root.screenplayLayout.font.pixelSize
+                    font.kerning: false
+                    font.hintingPreference: Font.PreferNoHinting
+                    font.bold: bold
+                    font.italic: italic
+                    font.underline: underline
+                    color: "black"
+                }
             }
         }
-
-        Repeater {
-            model: root.screenplayLayout.decorations
-            Text {
-                required property string label
-                required property real runX
-                required property real runBaseline
-                required property bool bold
-                required property bool italic
-                required property bool underline
-                x: runX
-                y: runBaseline - baselineOffset
-                text: label
-                textFormat: Text.PlainText
-                font.family: root.screenplayLayout.font.family
-                font.pixelSize: root.screenplayLayout.font.pixelSize
-                font.kerning: false
-                font.hintingPreference: Font.PreferNoHinting
-                font.bold: bold
-                font.italic: italic
-                font.underline: underline
-                color: "black"
-            }
+        onWidthChanged: Qt.callLater(editor.revealCursor)
+        onHeightChanged: Qt.callLater(editor.revealCursor)
+        ScrollBar.vertical: ScrollBar {
+            contentItem: Rectangle { implicitWidth: 5; radius: 2; color: "#89939e"; opacity: parent.active ? 0.8 : 0.4 }
+        }
+        ScrollBar.horizontal: ScrollBar {
+            contentItem: Rectangle { implicitHeight: 5; radius: 2; color: "#89939e"; opacity: parent.active ? 0.8 : 0.4 }
         }
     }
 }

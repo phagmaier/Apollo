@@ -390,7 +390,8 @@ int main(int argc, char** argv) {
     QQuickView view;
     apollo::editor::show_editor(view, *document, &job, QFileInfo(QString::fromLocal8Bit(argv[1])).absolutePath() + "/" + QFileInfo(QString::fromLocal8Bit(argv[1])).completeBaseName() + ".pdf");
     view.setTitle(QStringLiteral("Apollo editor"));
-    view.resize(880, 1000);
+    view.setMinimumSize(QSize(560, 400));
+    view.resize(1280, 1000);
     view.show();
     return application.exec();
   } catch (const std::exception& error) {

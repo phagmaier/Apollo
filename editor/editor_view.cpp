@@ -4,6 +4,8 @@
 #include "editor/pdf_export_job.h"
 
 #include <QQuickTextDocument>
+#include <QFileInfo>
+#include <QTextBlock>
 #include <stdexcept>
 
 namespace apollo::editor {
@@ -11,10 +13,18 @@ QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob*
   auto* layout = qobject_cast<ScreenplayLayout*>(document.documentLayout());
   if (!layout) throw std::runtime_error("document does not use ScreenplayLayout");
   auto* commands = new EditorCommands(&document, &view);
+  QString title = export_destination.isEmpty() ? QStringLiteral("Screenplay") : QFileInfo(export_destination).completeBaseName();
+  QStringList scenes;
+  // Opening snapshot for the bounded visual check, not a scene navigator.
+  for (auto block = document.begin(); block != document.end(); block = block.next()) {
+    if (element_type(block) == ElementType::title) title = block.text();
+    if (element_type(block) == ElementType::heading) scenes.push_back(block.text().toUpper());
+  }
   view.setInitialProperties({{"screenplayLayout", QVariant::fromValue<QObject*>(layout)},
                              {"commands", QVariant::fromValue<QObject*>(commands)},
                              {"exportJob", QVariant::fromValue<QObject*>(export_job)},
-                             {"exportDestination", export_destination}});
+                             {"exportDestination", export_destination},
+                             {"documentTitle", title}, {"outlineScenes", scenes}});
   view.setResizeMode(QQuickView::SizeRootObjectToView);
   view.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_EDITOR_QML)));
   if (view.status() != QQuickView::Ready) {
