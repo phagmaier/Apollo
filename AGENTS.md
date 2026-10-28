@@ -66,6 +66,12 @@ before recommending whether to keep or switch stacks.
   full typing measurements).
   Automate the checks available to the agent; leave subjective comfort and
   appearance acceptance to the owner and state what was actually verified.
+- The bounded Writing desk shell is in `app/WritingDesk.qml`. Use
+  `tools/inspect-writing-desk.sh` for the prototype/QML comparison, or `--smoke`
+  for its automated native launch/outline/export check. See
+  `docs/spike-report.md` and `docs/spike-handoff.md`; owner visual acceptance
+  and the final stack decision remain pending. The opening scene list is a
+  read-only visual preview, not the product scene navigator.
 - `reference/` contains local copyrighted or personal material and is ignored by
   Git. Generated workloads are also ignored; see the fixture guide for how to
   create them. Preserve fixture and third-party license information.

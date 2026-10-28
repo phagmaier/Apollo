@@ -154,7 +154,8 @@ run_wizard() {
   say "Send this file back: $APOLLO_RESULTS"
   say 'Recorded results still need review against the spike criteria.'
   say "Automated checks do not replace the owner's comfort or visual acceptance."
-  say 'The look screen and the keep/switch report remain pending; compare measurements with the brief.'
+  say 'See docs/spike-report.md for the recommendation and tools/inspect-writing-desk.sh for visual review.'
+  say 'Qt remains provisional until the owner accepts the look and decides the stack.'
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

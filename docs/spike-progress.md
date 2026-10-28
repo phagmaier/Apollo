@@ -1,13 +1,12 @@
 # Editor/export spike progress
 
-The spike is in progress. **Checks 1 (engine fixtures), 2 (editor/PDF
-agreement), and 3 (PDF quality) pass for the exercised spike inputs**, as of
-2026-10-28. Native Wayland/OpenGL interaction and fcitx5 input checks now pass
-in release and sanitizer builds; the owner reported typing, selection/copy,
-and Enter/Tab good. Native typing/open-time/PSS measurements, the bounded
-asynchronous-export experiment, and its review are recorded below. The QML
-look screen and final keep/switch report remain open. See
-[spike-brief.md](spike-brief.md#passfail-checks).
+The agent's implementation, technical verification, and review are prepared
+for owner assessment as of 2026-10-28. **The QML look and final stack decision
+remain unaccepted; Qt is provisional.** The [spike report](spike-report.md)
+records each brief check, final-screen measurements, limitations, and a
+conditional keep recommendation. Use the [manual handoff](spike-handoff.md)
+to compare the native screen with the approved prototype. Earlier work and
+measurements below are a chronological record, not claims of owner acceptance.
 
 The first native window attempt exposed a render-thread crash; see the
 [native startup follow-up](#native-startup-follow-up). The subsequent
@@ -15,9 +14,8 @@ The first native window attempt exposed a render-thread crash; see the
 record the fix verification, actual input-method tests, and remaining
 interaction/discoverability limitations.
 
-**Done: PDF export (brief step 3) and the bounded QML `TextEdit` probe (step 4).
-The bounded step-5 editor/export work now includes native follow-up and
-asynchronous export; the approved look and final report are still pending.**
+**Done: engine/PDF, the bounded QML `TextEdit` probe, editor/native follow-up,
+asynchronous export, the Writing desk screen, and the final report.**
 The editor is stock QML `TextEdit` with Apollo's `ScreenplayLayout` and C++
 commands for the brief's Enter, Tab, paste, undo, and scene-move rules.
 The editor and PDF line dumps agree on all fixtures, both workloads, and the
@@ -850,7 +848,8 @@ No local reference was changed or added to Git. `bash -n`, help, and
 `git diff --check` pass. Existing display-selection/failure-log helper evidence
 is reused because those runner helpers did not change; ShellCheck remains
 unavailable. A final full native runner result is recorded with measurements
-below. No commit or push is part of this task.
+below. That export-only task did not include a commit or push; the final spike
+handoff includes reviewed local commits and no push or merge.
 
 ### Native export-while-typing results
 
@@ -898,6 +897,69 @@ executing caused a trailing read-offset syntax error. The unchanged runner was
 therefore rerun end to end; the clean-exit results above are the final evidence.
 Earlier preliminary timings overlapped verification or preceded the staging
 fix and are not used for the final comparison.
+
+## Writing desk and final spike handoff (2026-10-28)
+
+`app/WritingDesk.qml` now reproduces the approved B direction around the same
+live editor: 58 px slate header, 74 px compact rail, pale 280 px scene outline,
+gray desk, and centered white Letter paper. The second rail button, ×, and
+Ctrl+Backslash show/hide the outline. It is a read-only snapshot of headings
+at opening, with its first row highlighted as a preview; it does not navigate,
+reorder, or track edits/caret position. Notes/stash remain dimmed placeholders.
+The header accurately identifies unsaved spike edits. Export uses the existing
+job through a small options popover or Ctrl+E, with snapshot status in the footer.
+
+Document coordinates remain 96 dpi pixels, with a fixed 0.75 presentation
+scale giving the prototype's 612 px paper width. Caret reveal accounts for
+scale, centering, scroll, and compact-window overflow. Screenshot checks now
+map expected document rectangles into the real viewport. The independent
+fixture geometry remains unchanged. A shell interaction case checks mouse and
+shortcut toggles, close, compact resizing, and preservation of text, selection,
+caret, and typing focus. The export test also opens/closes the real options UI.
+
+The agent inspected native open/closed/compact captures alongside browser
+captures of prototype B. Courier Prime and the real profile intentionally
+replace the HTML's approximate typography and wrapping. The original sample
+text is in `prototype/The Last Broadcast.fountain`; no approved HTML was
+changed. **This is not owner acceptance of the QML screen.**
+
+The first full final-shell native run found a test-only highlight assertion:
+the correct selected dual cue appeared in the captured image, at the correct
+mapped coordinates, but native subpixel glyph ink left too few exact selection
+background pixels in a five-point sample strip. The test now samples eight
+points above the baseline, clear of the preceding line. The reproduced failure
+passes afterward, including unchanged checks that the right speech/gap are
+unselected. No editor workaround was added. The clean full runner was repeated.
+
+Final verification: release and ASan/UBSan suites pass 6/6 CTest checks;
+engine-only passes 2/2, with no Qt link dependency. After the screenshot-test
+correction, affected sanitizer editor/export checks pass 2/2; complete native
+sanitizer interaction/input and export suites pass 52/52 and 13/13 without
+diagnostics. Both Academy engine comparisons pass, and release editor/PDF
+agreement also passes with the Academy transcription before/after 50 edits.
+No expected fixture or reference was changed. Both scripts pass `bash -n` and
+help checks; ShellCheck is unavailable. The handoff's `--smoke` succeeds from
+`/tmp`, exercising the native screen, outline/focus, and sample export.
+
+The final full `tools/check-wayland.sh` exits 0, including 52/52 native
+interaction/input cases, 13/13 export cases, native snapshot/workload agreement,
+fatal-warning first paints, and all four 200-key measurements. Logs and raw
+timing events: `build/wayland-check-20261028-011329-aJ05ct/`. With the final
+screen, ordinary typing p95 is 15.3/36.4 ms (primary/stress); export-while-typing
+p95 is 19.9/43.4 ms, maxima 24.2/48.5 ms, with zero >100 ms stalls or missing
+frames in all four runs. Integrated export maxima are 718.3/721.7 ms; warm
+opening is 271.0/489.4 ms; sampled combined PSS maxima are 109.4/165.7 MiB.
+Real helper intervals overlap 153/167 keys and 199/199 frames on the two inputs.
+
+The primary observations meet the measured numeric targets. The stress typing
+p95 exceeds 33 ms; that numeric typing target applies to the primary workload.
+Successful stress runs support bounded scripted usability, not extended
+subjective comfort. The [final report](spike-report.md) gives the complete
+method, limits, per-check results, risks, and conditional keep recommendation.
+`tools/inspect-writing-desk.sh` provides the [manual handoff](spike-handoff.md).
+Qt remains provisional. The owner must assess the look and choose keep or
+switch/reassess before `spike/editor-export-final` merges. No push or merge is
+part of this work; `prompt.md` is preserved outside the reviewed spike commits.
 
 This completes the bounded PDF-export-while-typing experiment and review.
 The timing/memory method's limits above still apply: sampled PSS is not a

@@ -175,7 +175,11 @@ workspace directions (Library, Writing desk, and Story outline). The owner
 approved B (Writing desk) as the overall visual direction, especially its compact
 left rail, with an expandable scene outline like C's that can be hidden again.
 B demonstrates that combination. Individual screens and details can be refined
-as they are developed; the QML implementation remains to be validated.
+as they are developed. The QML reproduction and [spike report](spike-report.md)
+are now prepared for owner assessment, with a [one-command visual
+handoff](spike-handoff.md). This is agent evidence and a recommendation, not
+owner acceptance of the QML look or a final stack decision. Qt remains
+provisional and the spike branch must wait for those decisions before merging.
 
 Ask these as their prerequisites settle, rather than presenting the entire list as a questionnaire.
 

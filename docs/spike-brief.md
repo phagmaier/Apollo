@@ -1,6 +1,6 @@
 # Apollo — editor/export feasibility spike brief
 
-Status: started; the build scaffold and an initial layout slice exist, but the feasibility checks remain incomplete. The owner approved visual direction B with C's expandable outline ([prototype](../prototype/editor.html)). The provisional stack is Qt 6 + C++20 + QML ([stack recommendation](stack-recommendation.md)). This spike decides whether that holds or Apollo switches to Electron + ProseMirror.
+Status: implementation, technical checks, and the [spike report](spike-report.md) are prepared for owner assessment. The owner approved visual direction B with C's expandable outline ([prototype](../prototype/editor.html)); acceptance of its QML reproduction remains pending. The provisional stack is Qt 6 + C++20 + QML ([stack recommendation](stack-recommendation.md)). The owner still decides whether to keep it or switch/reassess after inspecting the result. The criteria below are unchanged.
 
 ## The question
 
