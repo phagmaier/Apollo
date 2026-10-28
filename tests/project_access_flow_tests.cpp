@@ -1,13 +1,21 @@
 #include "editor/project_access_flow.h"
 #include "editor/autosave.h"
+#include "editor/pdf_export_job.h"
 #include "editor/screenplay_layout.h"
 #include "source/recovery.h"
 
 #include <QDir>
 #include <QFile>
+#include <QKeyEvent>
 #include <QQuickItem>
 #include <QQuickView>
 #include <QTemporaryDir>
+#include <QScopeGuard>
+#include <QSignalSpy>
+#include <csignal>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <QTextCursor>
 #include <QtTest>
 
@@ -30,14 +38,27 @@ QQuickItem* find_item(QQuickItem* root, const QString& name) {
 struct Window {
   QQuickView view;
   ProjectAccessFlow flow;
-  Window(const QFont& font, const QString& state, const QString& project = {})
-      : flow(view, font, QStringLiteral(APOLLO_FONT_DIR), {}, state) {
+  Window(const QFont& font, const QString& state, const QString& project = {}, const QString& exporter = {})
+      : flow(view, font, QStringLiteral(APOLLO_FONT_DIR),
+             exporter.isEmpty() ? QCoreApplication::applicationDirPath() + "/pdf_export" : exporter, state) {
     view.resize(1000, 1000);
     flow.start(project);
     view.show();
   }
-  QQuickItem* item(const char* name) { return find_item(view.rootObject(), QString::fromLatin1(name)); }
+  QQuickItem* item(const char* name) {
+    if (auto* found = view.rootObject()->findChild<QQuickItem*>(QString::fromLatin1(name))) return found;
+    return find_item(view.rootObject(), QString::fromLatin1(name));
+  }
+  void type(const QString& text) {
+    for (const auto ch : text) {
+      QKeyEvent press(QEvent::KeyPress, ch.toUpper().unicode(), Qt::NoModifier, QString(ch));
+      QKeyEvent release(QEvent::KeyRelease, ch.toUpper().unicode(), Qt::NoModifier, QString(ch));
+      QCoreApplication::sendEvent(&view, &press);
+      QCoreApplication::sendEvent(&view, &release);
+    }
+  }
   bool click(const char* name) {
+    QTest::qWait(30); // Let one frame polish changed form/Popup geometry.
     auto* button = item(name);
     if (!button || !button->isVisible() || !button->isEnabled()) return false;
     // ScrollView controls are real mouse targets, including those below the fold.
@@ -45,7 +66,8 @@ struct Window {
     while (content && !content->inherits("QQuickFlickable")) content = content->parentItem();
     if (content) {
       const auto y = button->mapToItem(content, QPointF()).y() + content->property("contentY").toReal();
-      content->setProperty("contentY", qMax(0.0, y - 40));
+      const auto maximum = qMax(0.0, content->property("contentHeight").toReal() - content->height());
+      content->setProperty("contentY", qBound(0.0, y - 40, maximum));
     }
     QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, button->mapToScene(button->boundingRect().center()).toPoint());
     return true;
@@ -285,6 +307,265 @@ private slots:
     QVERIFY(window.click("openProject"));
     QTRY_VERIFY(window.flow.document());
     QCOMPARE(window.flow.autosaver()->project_id(), replacement.id);
+  }
+  void home_flushes_latest_writing_and_switches_without_cross_project_edits() {
+    const auto first = project(), second = project();
+    const auto second_before = bytes(second.screenplay_path());
+    const auto state = path("session");
+    Window window(font_, state, first.directory);
+    QTRY_VERIFY(window.flow.document());
+    window.flow.editor()->setProperty("cursorPosition", 0);
+    window.flow.editor()->forceActiveFocus();
+    window.type(QStringLiteral("Latest "));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!window.flow.document());
+    QTRY_VERIFY(!window.flow.busy());
+    QCOMPARE(open_project(first.directory).screenplay.elements.front().text, std::string("Latest Current writing."));
+    QCOMPARE(bytes(second.screenplay_path()), second_before);
+    { ProjectSession released(first.directory); }
+    QVERIFY(window.item("recentProject0"));
+    window.item("openLocation")->setProperty("text", second.directory);
+    QVERIFY(window.click("openProject"));
+    QTRY_VERIFY(window.flow.document());
+    QCOMPARE(window.flow.autosaver()->project_id(), second.id);
+    QCOMPARE(window.flow.document()->toPlainText(), QStringLiteral("Current writing.\nSecond paragraph."));
+    window.type(QStringLiteral("Other "));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!window.flow.document());
+    QTRY_VERIFY(!window.flow.busy());
+    QCOMPARE(open_project(second.directory).screenplay.elements.front().text, std::string("Other Current writing."));
+    QCOMPARE(open_project(first.directory).screenplay.elements.front().text, std::string("Latest Current writing."));
+    auto* recent = window.item("recentProject1");
+    QVERIFY(recent);
+    window.view.rootObject()->forceActiveFocus();
+    for (int key = 0; key < 12 && !recent->hasActiveFocus(); ++key) QTest::keyClick(&window.view, Qt::Key_Tab);
+    QVERIFY(recent->hasActiveFocus());
+    QTest::keyClick(&window.view, Qt::Key_Space);
+    QTRY_VERIFY(window.flow.document());
+    QCOMPARE(window.flow.autosaver()->project_id(), first.id);
+    QCOMPARE(window.flow.document()->toPlainText(), QStringLiteral("Latest Current writing.\nSecond paragraph."));
+  }
+
+  void failed_leave_keeps_writing_and_undo_until_retry_succeeds() {
+    const auto p = project();
+    const auto state = path("session");
+    Window window(font_, state, p.directory);
+    QTRY_VERIFY(window.flow.document());
+    const auto moved = path("moved");
+    QVERIFY(QDir().rename(p.directory, moved));
+    window.flow.editor()->forceActiveFocus();
+    window.type(QStringLiteral("Retained "));
+    auto* document = window.flow.document();
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(window.item("leaveKeepWriting") && window.item("leaveKeepWriting")->isVisible());
+    QCOMPARE(window.flow.document(), document);
+    QCOMPARE(document->toPlainText(), QStringLiteral("Retained Current writing.\nSecond paragraph."));
+    QVERIFY(document->isUndoAvailable());
+    QVERIFY(window.click("leaveKeepWriting"));
+    QCOMPARE(window.flow.document(), document);
+    QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document->toPlainText(), QStringLiteral("Current writing.\nSecond paragraph."));
+    QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document->toPlainText(), QStringLiteral("Retained Current writing.\nSecond paragraph."));
+    QVERIFY(QDir().rename(moved, p.directory));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(window.item("leaveRetry") && window.item("leaveRetry")->isVisible());
+    QVERIFY(window.click("leaveRetry"));
+    QTRY_VERIFY(!window.flow.document());
+    QTRY_VERIFY(!window.flow.busy());
+    QCOMPARE(open_project(p.directory).screenplay.elements.front().text, std::string("Retained Current writing."));
+  }
+  void new_project_controls_handle_collisions_locations_and_failure_without_empty_activation() {
+    const auto state = path("session");
+    const auto parent = path("chosen-parent");
+    QVERIFY(QDir().mkpath(parent));
+    replace_file(parent + "/My script", "Retained collision.");
+    Window window(font_, state);
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.document());
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/home.png")));
+    QVERIFY(window.click("showNewProject"));
+    window.item("newProjectName")->setProperty("text", "My script");
+    window.item("newProjectParent")->setProperty("text", parent + "/missing");
+    QVERIFY(window.click("createProject"));
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.error().isEmpty());
+    QVERIFY(!window.flow.document());
+    QVERIFY(!SessionState(state).load());
+    QVERIFY(ProjectLibrary(state + ".recents").load().empty());
+    QVERIFY(!QFileInfo::exists(parent + "/missing"));
+    window.item("newProjectParent")->setProperty("text", parent);
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/new-project.png")));
+    QVERIFY(window.click("createProject"));
+    QTRY_VERIFY(window.flow.document());
+    QCOMPARE(window.flow.autosaver()->location(), parent + "/My script (2)");
+    QCOMPARE(window.flow.document()->toPlainText(), QString());
+    window.type(QStringLiteral("A new opening."));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(bytes(parent + "/My script"), QByteArray("Retained collision."));
+    QCOMPARE(open_project(parent + "/My script (2)").screenplay.elements.front().text, std::string("A new opening."));
+    QCOMPARE(ProjectLibrary(state + ".recents").load().front().directory, parent + "/My script (2)");
+    QVERIFY(window.click("recentProject0"));
+    QTRY_VERIFY(window.flow.document());
+    QCOMPARE(window.flow.document()->toPlainText(), QStringLiteral("A new opening."));
+  }
+
+  void stale_recent_identity_and_moved_project_use_safe_access_without_replacing_last_success() {
+    const auto p = project(), replacement = project();
+    const auto state = path("session");
+    ProjectLibrary(state + ".recents").record({p.directory, p.id});
+    const auto moved = path("moved");
+    QVERIFY(QDir().rename(p.directory, moved));
+    QVERIFY(QDir().rename(replacement.directory, p.directory));
+    const auto replacement_before = bytes(p.screenplay_path());
+    Window window(font_, state);
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(window.click("recentProject0"));
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.document());
+    QVERIFY(!window.flow.current_available());
+    QVERIFY(!window.flow.error().isEmpty());
+    QCOMPARE(bytes(p.screenplay_path()), replacement_before);
+    QVERIFY(!SessionState(state).load());
+    QCOMPARE(ProjectLibrary(state + ".recents").load().front().project_id, p.id);
+    window.item("openLocation")->setProperty("text", moved);
+    QVERIFY(window.click("openProject"));
+    QTRY_VERIFY(window.flow.document());
+    QCOMPARE(window.flow.autosaver()->project_id(), p.id);
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(ProjectLibrary(state + ".recents").load().size(), std::size_t(1));
+    QCOMPARE(ProjectLibrary(state + ".recents").load().front().directory, moved);
+    QVERIFY(window.click("recentProject0"));
+    QTRY_VERIFY(window.flow.document());
+    QCOMPARE(window.flow.autosaver()->location(), moved);
+  }
+
+  void both_save_destinations_failing_keep_memory_and_copy_can_enable_safe_departure() {
+    const auto p = project();
+    const auto state = path("session");
+    Window window(font_, state, p.directory);
+    QTRY_VERIFY(window.flow.document());
+    const auto emergency = RecoveryStore::emergency_directory(p);
+    QVERIFY(QDir().mkpath(QFileInfo(emergency).absolutePath()));
+    replace_file(emergency, "Unavailable emergency destination.");
+    const auto moved = path("moved");
+    QVERIFY(QDir().rename(p.directory, moved));
+    const auto original_before = bytes(moved + "/screenplay.json");
+    window.type(QStringLiteral("Keep this "));
+    auto* document = window.flow.document();
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(window.flow.leave_failed());
+    QVERIFY(!window.flow.autosaver()->current_protected());
+    QCOMPARE(window.flow.document(), document);
+    QCOMPARE(document->toPlainText(), QStringLiteral("Keep this Current writing.\nSecond paragraph."));
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/leave-failure.png")));
+    QVERIFY(window.click("leaveSaveCopy"));
+    window.item("copyDestination")->setProperty("text", moved);
+    QVERIFY(window.click("copyConfirm"));
+    QTRY_VERIFY(!window.flow.autosaver()->copy_busy());
+    QVERIFY(!window.flow.autosaver()->copy_error().isEmpty());
+    QCOMPARE(window.flow.document(), document);
+    QCOMPARE(document->toPlainText(), QStringLiteral("Keep this Current writing.\nSecond paragraph."));
+    QCOMPARE(bytes(moved + "/screenplay.json"), original_before);
+    const auto copy = path("safe-copy");
+    window.item("copyDestination")->setProperty("text", copy);
+    QVERIFY(window.click("copyConfirm"));
+    QTRY_COMPARE(window.flow.autosaver()->location(), copy);
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(open_project(copy).screenplay.elements.front().text, std::string("Keep this Current writing."));
+    QCOMPARE(bytes(moved + "/screenplay.json"), original_before);
+    QCOMPARE(SessionState(state).load()->directory, copy);
+  }
+
+  void leaving_waits_for_worker_recovery_and_pdf_without_blocking_the_gui() {
+    const auto p = project();
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool released = false;
+    std::atomic<bool> entered = false;
+    Window window(font_, path("session"), p.directory);
+    QTRY_VERIFY(window.flow.document());
+    auto* saver = window.flow.autosaver();
+    saver->set_hook([&](Autosaver::Phase phase, std::uint64_t) {
+      if (phase != Autosaver::Phase::snapshotting) return;
+      std::unique_lock lock(mutex);
+      entered = true;
+      condition.wait(lock, [&] { return released; });
+    });
+    const auto release = qScopeGuard([&] {
+      { std::lock_guard lock(mutex); released = true; }
+      condition.notify_all();
+    });
+    auto* job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(job);
+    const auto pdf = path("export") + ".pdf";
+    QVERIFY(job->request(pdf));
+    QVERIFY(job->busy());
+    window.type(QStringLiteral("Drained "));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(entered.load());
+    QVERIFY(window.flow.leaving());
+    QVERIFY(window.flow.document());
+    bool heartbeat = false;
+    QTimer::singleShot(0, [&] { heartbeat = true; });
+    QTRY_VERIFY(heartbeat);
+    QVERIFY(window.flow.document());
+    {
+      std::lock_guard lock(mutex);
+      released = true;
+    }
+    condition.notify_all();
+    QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(open_project(p.directory).screenplay.elements.front().text, std::string("Drained Current writing."));
+    QVERIFY(bytes(pdf).startsWith("%PDF-"));
+    { ProjectSession released_session(p.directory); }
+  }
+
+  void broken_recent_list_is_visible_and_does_not_block_writing_or_get_overwritten() {
+    const auto p = project();
+    const auto state = path("session");
+    replace_file(state + ".recents", "Retained malformed recent list.");
+    Window window(font_, state, p.directory);
+    QTRY_VERIFY(window.flow.document());
+    QTRY_VERIFY(window.flow.notice().contains("Recent projects"));
+    window.type(QStringLiteral("Saved independently "));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(bytes(state + ".recents"), QByteArray("Retained malformed recent list."));
+    QCOMPARE(open_project(p.directory).screenplay.elements.front().text, std::string("Saved independently Current writing."));
+    QVERIFY(window.item("accessNotice")->property("text").toString().contains("Recent projects"));
+  }
+  void destination_failure_while_export_finishes_keeps_the_live_writer() {
+    const auto p = project();
+    const auto wrapper = path("held-exporter");
+    replace_file(wrapper, "#!/bin/sh\nkill -STOP $$\nexec \"" +
+        (QCoreApplication::applicationDirPath() + "/pdf_export").toUtf8() + "\" \"$@\"\n");
+    QVERIFY(QFile::setPermissions(wrapper, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+    Window window(font_, path("session"), p.directory, wrapper);
+    QTRY_VERIFY(window.flow.document());
+    auto* document = window.flow.document();
+    auto* job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(job && job->request(path("held") + ".pdf"));
+    QTRY_VERIFY(job->worker_pid() > 0);
+    const auto pid = static_cast<pid_t>(job->worker_pid());
+    const auto resume_worker = qScopeGuard([&] { ::kill(pid, SIGCONT); });
+    QSignalSpy ready(window.flow.autosaver(), &Autosaver::leaveReady);
+    window.type(QStringLiteral("Saved before export "));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!ready.empty());
+    QVERIFY(ready.front().front().toBool());
+    QVERIFY(window.flow.document());
+    const auto moved = path("moved-after-save");
+    QVERIFY(QDir().rename(p.directory, moved));
+    QCOMPARE(::kill(pid, SIGCONT), 0);
+    QTRY_VERIFY(window.flow.leave_failed());
+    QCOMPARE(window.flow.document(), document);
+    QCOMPARE(document->toPlainText(), QStringLiteral("Saved before export Current writing.\nSecond paragraph."));
+    QCOMPARE(open_project(moved).screenplay.elements.front().text, std::string("Saved before export Current writing."));
+    QVERIFY(window.click("leaveKeepWriting"));
   }
 };
 QTEST_MAIN(ProjectAccessFlowTests)

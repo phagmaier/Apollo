@@ -6,13 +6,13 @@ within the implementation slices. No owner question from this interview remains
 pending. Implementation requires task-specific authorization; the progress
 record below distinguishes completed work from remaining proposals.
 
-**Current status (2026-10-28):** slice 1 and tasks **2.1–2.4** are done.
+**Current status (2026-10-28):** slice 1 and tasks **2.1–2.5** are done.
 Project sessions are guarded; Save a Copy becomes active without resetting the
 editor; Reload preserves current writing first; recovery/emergency packages and
 explicit failure-close choices are implemented and verified as recorded below.
-**2.4 — Safe project access and resume is done.** Explicit recovery selection/
-reconciliation and app-local last-project/cursor resume pass failure/app-flow,
-release, sanitizer and native checks. Next slice 2 work: home/create/import.
+**2.5 — Bounded home/new/open is done.** Task 2.4 was finalized and committed
+as `2d61ac4`; task 2.5 adds verified recents, staged blank creation with safe
+collision handling/selectable locations, and lossless in-window switching.
 Leak detection and crash loss during copying remain unverified. The other slice 2
 flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
@@ -325,9 +325,17 @@ milestone includes all slices; an earlier slice is not the usable writing build.
   conflicts require a choice; recovery forks preserve original/package evidence.
   App-local last-project/cursor state updates only after successful activation.
   Failure/app-flow, required release/sanitizer/engine and native checks pass.
-- Remaining slice 2 work is pending: home/create/import, imported-material
-  reader, broader switching/library flows, stale temporary cleanup, and focusing
-  another process's existing window.
+- **2.5 — Bounded home/new/open (done 2026-10-28).** Depends on
+  2.1–2.4. Recent projects use identity-checked safe access; complete staged blank
+  projects use the default Documents/Apollo location or a selected parent, without
+  overwriting collisions. Home/leave flushes writing asynchronously; save failure
+  retains the writer with Keep Writing, Retry and Save a Copy. Real controls,
+  failure paths, release/sanitizer/engine checks and review pass as recorded below.
+- **2.6 — Fountain import and imported-material reader (pending).** Separate
+  task; this home/new/open authorization does not implement import.
+- Remaining slice 2 work is pending: stale temporary cleanup and focusing another
+  process's existing window. Archive/delete and broader library lifecycle remain
+  deferred milestone boundaries as described above.
 
 Task 2.1 evidence and review:
 
@@ -454,10 +462,75 @@ return cases retain the original and recovery evidence.
 The complete contract, commands, evidence/log paths, native harness limits and
 unmeasured cases are in
 [source-format.md](source-format.md#safe-project-access-and-resume-slice-2-task-24).
-Home/create/import, imported-material reading, full in-window project switching,
-focus-existing-process IPC and stale-stage cleanup remain separate slice 2 work.
+At this checkpoint home/new/open and full switching were pending; task 2.5 below
+adds them. Fountain import/reader, focus-existing-process IPC and stale-stage
+cleanup remain separate slice 2 work.
 No new representative timing, physical-input latency, power-loss or copying-loss
 claim is added; task 2.3's I/O-contention limitation remains.
+
+### Task 2.5 evidence and review
+
+The bounded home/new/open workflow is implemented without Fountain import.
+The working contract is in
+[source-format.md](source-format.md#bounded-homenewopen-slice-2-task-25).
+Recent entries are app-local navigation hints, not authoritative screenplay
+storage. No-argument last-project/cursor resume is retained; Home is accessible
+from the writer with Ctrl+Shift+H.
+
+| Exercised check | Result |
+| --- | --- |
+| Blank staged creation | `project_creation_tests` 21/21: complete editable projects, unique identities, file/empty-folder/nonempty-folder/dangling-link collisions, parent aliases, invalid names/parents, actual permissions and stage cleanup |
+| Recent list | `project_library_tests` 25/25: MRU order/cap, aliases/moves/replacements, cross-instance merge/lock contention, malformed/newer/nonregular evidence, source independence and real atomic-write failure |
+| Real QML behavior | `project_access_flow_tests` 19/19 in release, ASan/UBSan and native Wayland: create/open/recent controls, identity refusal, lossless switching, retained undo, Retry/Copy/Keep Writing, both save destinations failing, corrupt recents and recovery |
+| Departure concurrency | A held real exporter exposes destination loss after the initial save drain; failure retains the writer. A gated real recovery operation leaves the GUI event loop responsive, retains writing and waits for export before Home |
+| Required checks | `mise run check` 17/17; `mise run check-debug` 17/17 with `ASAN_OPTIONS=detect_leaks=0`; `mise run check-engine` 2/2 |
+| Independent layout | Academy comparison passes with the same four documented deviations; required suites retain independent PDF fixtures and editor/PDF agreement |
+| Actual native executable | Isolated Home → real folder chooser → selected-location creation → writing → Home; missing default Documents/Apollo creation; restart/resume; explicit opening; Tab/Space recent selection and folder-dialog cancellation. Independently read saved JSON retains the exact typed writing |
+
+Direct and independent reviews covered the new storage helpers, UI, lifecycle
+and test necessity. The first Home-transition checks failed before implementation.
+Review found an unchecked interval while waiting for PDF export, and project
+lock deletion still occurring on the GUI thread. A focused held-exporter
+regression failed before the correction. Final validation and session/lock
+teardown now run on the saver worker after export and app-state work finish;
+failure returns to the unchanged live writer. Review follow-up found no remaining
+in-scope correctness issue. Native exploration also exposed missing recent-entry
+Tab focus; explicit focus policy plus keyboard activation now have a regression
+check. The existing editor suite caught a null-saver QML action binding; it is
+guarded without changing the retained unsaved-file/instrumentation paths.
+
+After the final ownership/merge cleanup, native and ASan/UBSan flow suites again
+pass 19/19, and release/debug recent-list suites pass 25/25 each. This includes
+the keyboard recent-selection regression and preserved malformed-list evidence.
+
+Logs: `build/task-2.5-{release,debug,engine,academy}.log`,
+`build/task-2.5-native-flow.log`, `build/task-2.5-debug-flow.log`,
+`build/task-2.5-debug-creation.log`, `build/task-2.5-library.log`, and
+`build/task-2.5-debug-library.log`. Native executable commands/environment,
+screenshots and exact retained writing are recorded in
+`build/task-2.5-native/results.txt`. QML screenshots are in
+`build/release/project-access-tests/` (`home.png`, `new-project.png`,
+`leave-failure.png` plus existing recovery surfaces).
+
+Remaining limits: Fountain import/reader is task 2.6, not implemented here.
+Focus-existing-window IPC, stale-stage cleanup and archive/delete/library
+lifecycle remain outside this bounded task. Recent history is capped at 20;
+only the last project's cursor is persisted. A publication-time collision is
+fail-safe but is not deterministically injected in the new helper suite.
+Failure checks use temporary filesystem changes/permissions and a stopped real
+export worker, not a physical drive disconnect or a measured slow lock unlink.
+Native keys are synthetic, software-rendered in the QML suite; executable
+screenshots do not establish physical-input latency, extended comfort or normal
+compositor-close behavior. Leak detection, power loss, unavailable-storage loss
+bounds, crash loss during Save a Copy and new representative performance remain
+unverified. Task 2.3's measured I/O-contention limitation is unchanged.
+
+Finalization review re-inspected the complete uncommitted implementation and
+tests; no remaining in-scope finding was identified. A fresh release check
+passes 17/17 (`build/task-2.5-final-release-cache.log`). Its first invocation
+could not write uv's default cache under the sandbox; `UV_CACHE_DIR=/tmp/apollo-uv-cache`
+resolved that environmental failure. The prior sanitizer, engine and native
+results above apply to the same implementation; no new timing claim is made.
 
 ### Slice 1 result (done 2026-10-28)
 

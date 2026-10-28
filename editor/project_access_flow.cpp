@@ -3,6 +3,7 @@
 #include "editor/editor_view.h"
 #include "editor/pdf_export_job.h"
 #include "editor/screenplay_layout.h"
+#include "source/project_creation.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -12,7 +13,8 @@
 
 namespace apollo::editor {
 ProjectAccessFlow::ProjectAccessFlow(QQuickView& view, QFont font, QString font_directory, QString exporter, QString session_path)
-    : view_(view), font_(std::move(font)), font_directory_(std::move(font_directory)), exporter_(std::move(exporter)), state_(std::move(session_path)) {
+    : view_(view), font_(std::move(font)), font_directory_(std::move(font_directory)), exporter_(std::move(exporter)),
+      state_(session_path), library_(session_path.isEmpty() ? QString() : session_path + ".recents") {
   state_timer_.setSingleShot(true);
   state_timer_.setInterval(250);
   connect(&state_timer_, &QTimer::timeout, this, &ProjectAccessFlow::persist_session);
@@ -22,8 +24,6 @@ QQuickItem* ProjectAccessFlow::editor() const { return editor_; }
 ProjectAccessFlow::~ProjectAccessFlow() {
   state_timer_.stop();
   if (worker_.joinable()) worker_.join();
-  // The final cursor is independent of whether writing was saved to its
-  // original destination or protected by the close-failure flow.
   if (saver_ && document_ && editor_) {
     try { state_.save(SessionState::capture(saver_->location(), saver_->project_id(), *document_, editor_->property("cursorPosition").toInt())); }
     catch (const std::exception& error) { qWarning("Session resume not saved: %s", error.what()); }
@@ -39,15 +39,47 @@ void ProjectAccessFlow::launch(std::function<void()> operation) {
   worker_ = std::thread(std::move(operation));
 }
 
-void ProjectAccessFlow::start(const QString& directory) {
+QVariantList ProjectAccessFlow::recent_projects() const {
+  QVariantList result;
+  for (const auto& recent : recents_)
+    result.push_back(QVariantMap{{"name", QFileInfo(recent.directory).fileName()}, {"location", recent.directory}});
+  return result;
+}
+QUrl ProjectAccessFlow::folder_url(const QString& path) const { return QUrl::fromLocalFile(path); }
+QString ProjectAccessFlow::local_folder(const QUrl& url) const { return url.isLocalFile() ? url.toLocalFile() : QString(); }
+
+void ProjectAccessFlow::show_access() {
   view_.setResizeMode(QQuickView::SizeRootObjectToView);
   view_.setInitialProperties({{"access", QVariant::fromValue<QObject*>(this)}});
   view_.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_ACCESS_QML)));
   if (view_.status() != QQuickView::Ready) throw std::runtime_error("cannot load project access QML");
-  try { resume_ = state_.load(); }
-  catch (const std::exception& error) { set_notice(QStringLiteral("Session resume unavailable: %1").arg(QString::fromUtf8(error.what()))); }
-  if (!directory.isEmpty()) inspect(directory, {});
-  else if (resume_) inspect(resume_->directory, resume_->project_id);
+}
+
+void ProjectAccessFlow::start(const QString& directory) {
+  show_access();
+  busy_ = true;
+  emit changed();
+  launch([this, directory] {
+    std::optional<ResumeState> resume;
+    std::vector<RecentProject> recents;
+    QString session_error, library_error;
+    try { resume = state_.load(); }
+    catch (const std::exception& error) { session_error = QStringLiteral("Session resume unavailable: %1").arg(QString::fromUtf8(error.what())); }
+    try { recents = library_.load(); }
+    catch (const std::exception& error) { library_error = QStringLiteral("Recent projects unavailable: %1").arg(QString::fromUtf8(error.what())); }
+    const auto default_location = source::default_project_location();
+    QMetaObject::invokeMethod(this, [this, directory, resume = std::move(resume), recents = std::move(recents), session_error, library_error, default_location]() mutable {
+      busy_ = false;
+      resume_ = std::move(resume);
+      recents_ = std::move(recents);
+      default_location_ = default_location;
+      session_notice_ = session_error;
+      library_notice_ = library_error;
+      update_notice();
+      if (!directory.isEmpty()) inspect(directory, {});
+      else if (resume_) inspect(resume_->directory, resume_->project_id);
+    }, Qt::QueuedConnection);
+  });
 }
 
 void ProjectAccessFlow::open_project(const QString& directory) {
@@ -58,6 +90,32 @@ void ProjectAccessFlow::open_project(const QString& directory) {
     return;
   }
   inspect(directory, {});
+}
+void ProjectAccessFlow::open_recent(int index) {
+  if (busy_ || document_ || index < 0 || static_cast<std::size_t>(index) >= recents_.size()) return;
+  const auto& recent = recents_[static_cast<std::size_t>(index)];
+  inspect(recent.directory, recent.project_id);
+}
+
+void ProjectAccessFlow::create_project(const QString& parent, const QString& name) {
+  if (busy_ || document_) return;
+  busy_ = true;
+  error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
+  emit changed();
+  launch([this, parent, name] {
+    access_.reset();
+    std::optional<source::Project> project;
+    QString failure;
+    try { project = source::create_blank_project(parent, name); }
+    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    QMetaObject::invokeMethod(this, [this, project, failure] {
+      busy_ = false;
+      if (!project) { error_ = failure; emit changed(); return; }
+      // Even our freshly published projects acquire safe edit access and check
+      // the expected UUID; a competing open or changed project is not bypassed.
+      inspect(project->directory, project->id);
+    }, Qt::QueuedConnection);
+  });
 }
 
 void ProjectAccessFlow::inspect(const QString& directory, const QString& expected_id) {
@@ -85,8 +143,6 @@ void ProjectAccessFlow::inspect(const QString& directory, const QString& expecte
         }
       }
       emit changed();
-      // Healthy current saves open directly. Recovery is never automatic,
-      // including when it is newer than the authoritative file.
       if (current_available_ && candidates_.empty()) open_current();
     }, Qt::QueuedConnection);
   });
@@ -106,17 +162,15 @@ void ProjectAccessFlow::select(int index, const QString& destination) {
     QString failure;
     try { session = index < 0 ? access_->open_current() : access_->recover(static_cast<std::size_t>(index), destination); }
     catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    if (session) access_.reset();
     QMetaObject::invokeMethod(this, [this, session = std::move(session), failure]() mutable {
       busy_ = false;
       if (!session) { error_ = failure; emit changed(); return; }
-      access_.reset();
       try { install(std::move(session)); }
       catch (const std::exception& error) {
-        // Do not publish an empty writer as a successful recovery.
         error_ = QString::fromUtf8(error.what());
         view_.setSource({}); export_job_.reset(); saver_.reset(); document_.reset();
-        view_.setInitialProperties({{"access", QVariant::fromValue<QObject*>(this)}});
-        view_.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_ACCESS_QML)));
+        show_access();
         current_available_ = false; candidates_.clear();
         emit changed();
       }
@@ -131,6 +185,7 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   export_job_ = std::make_unique<PdfExportJob>(document_.get(), font_directory_, exporter_, project.directory);
   view_.setSource({});
   editor_ = show_editor(view_, *document_, export_job_.get(), project.directory + ".pdf", saver_.get());
+  view_.rootObject()->setProperty("projectFlow", QVariant::fromValue<QObject*>(this));
   view_.rootObject()->setProperty("sessionNotice", notice_);
   saver_->guard_close(view_);
   if (resume_ && resume_->project_id == project.id)
@@ -138,36 +193,106 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   editor_->forceActiveFocus();
   connect(editor_, SIGNAL(cursorPositionChanged()), this, SLOT(schedule_session()));
   connect(document_.get(), &QTextDocument::contentsChanged, this, &ProjectAccessFlow::schedule_session);
-  connect(saver_.get(), &Autosaver::locationChanged, this, &ProjectAccessFlow::schedule_session);
+  connect(saver_.get(), &Autosaver::locationChanged, this, [this] { library_dirty_ = true; schedule_session(); });
+  connect(saver_.get(), &Autosaver::leaveReady, this, [this](bool success) {
+    if (!success) {
+      leaving_ = false; leave_failed_ = true;
+      if (state_dirty_) state_timer_.start();
+      emit changed(); return;
+    }
+    saver_drained_ = true;
+    finish_leave();
+  });
+  connect(saver_.get(), &Autosaver::released, this, [this] {
+    view_.setSource({});
+    export_job_.reset(); saver_.reset(); document_.reset();
+    leaving_ = false; saver_drained_ = false; leave_failed_ = false;
+    location_.clear(); error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
+    show_access(); emit changed();
+  });
+  connect(export_job_.get(), &PdfExportJob::completed, this, [this](bool) { finish_leave(); });
+  library_dirty_ = true;
   schedule_session();
   emit activated();
 }
 
-void ProjectAccessFlow::schedule_session() {
+void ProjectAccessFlow::home() {
+  if (busy_ || leaving_) return;
+  if (document_) { begin_leave(false); return; }
+  busy_ = true; emit changed();
+  launch([this] {
+    access_.reset();
+    QMetaObject::invokeMethod(this, [this] {
+      location_.clear(); error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
+      busy_ = false; show_access(); emit changed();
+    }, Qt::QueuedConnection);
+  });
+}
+void ProjectAccessFlow::retry_leave() { begin_leave(true); }
+void ProjectAccessFlow::keep_writing() {
+  if (leaving_) return;
+  leave_failed_ = false;
+  emit changed();
+  if (editor_) editor_->forceActiveFocus();
+}
+void ProjectAccessFlow::begin_leave(bool retry) {
+  if (!saver_ || leaving_ || saver_->copy_busy() || saver_->reload_busy()) return;
+  state_timer_.stop();
+  leaving_ = true; leave_failed_ = false; saver_drained_ = false;
+  emit changed();
+  saver_->prepare_leave(retry);
+}
+void ProjectAccessFlow::finish_leave() {
+  if (!leaving_ || !saver_drained_ || state_writing_ || export_job_->busy()) return;
+  // The saver has drained including recovery I/O, and PDF export is finished.
+  // Persist the final cursor on the access worker before releasing this writer.
   state_dirty_ = true;
-  // Bounded capture, not a typing debounce.
-  if (!state_timer_.isActive()) state_timer_.start();
+  persist_session();
 }
 
+void ProjectAccessFlow::schedule_session() {
+  state_dirty_ = true;
+  if (!leaving_ && !state_timer_.isActive()) state_timer_.start();
+}
 void ProjectAccessFlow::set_notice(const QString& notice) {
-  notice_ = notice;
+  session_notice_ = notice;
+  update_notice();
+}
+void ProjectAccessFlow::update_notice() {
+  notice_ = session_notice_;
+  if (!library_notice_.isEmpty()) notice_ += (notice_.isEmpty() ? QString() : QStringLiteral("\n")) + library_notice_;
   if (document_ && view_.rootObject()) view_.rootObject()->setProperty("sessionNotice", notice_);
   emit changed();
 }
 
 void ProjectAccessFlow::persist_session() {
   if (!saver_ || !document_ || !editor_ || !state_dirty_) return;
-  if (state_writing_) { state_timer_.start(); return; }
+  if (state_writing_) { if (!leaving_) state_timer_.start(); return; }
   const auto snapshot = SessionState::capture(saver_->location(), saver_->project_id(), *document_, editor_->property("cursorPosition").toInt());
-  state_dirty_ = false; state_writing_ = true;
-  launch([this, snapshot] {
-    QString failure;
+  const bool record_library = library_dirty_;
+  const bool departing = leaving_ && saver_drained_;
+  state_dirty_ = false; state_writing_ = true; library_dirty_ = false;
+  launch([this, snapshot, record_library, departing] {
+    QString failure, library_error;
+    std::optional<std::vector<RecentProject>> recents;
     try { state_.save(snapshot); }
     catch (const std::exception& error) { failure = QStringLiteral("Session resume not saved: %1").arg(QString::fromUtf8(error.what())); }
-    QMetaObject::invokeMethod(this, [this, failure] {
+    if (record_library) {
+      try { library_.record({snapshot.directory, snapshot.project_id}); recents = library_.load(); }
+      catch (const std::exception& error) { library_error = QStringLiteral("Recent projects not saved: %1").arg(QString::fromUtf8(error.what())); }
+    }
+    QMetaObject::invokeMethod(this, [this, snapshot, failure, record_library, departing, library_error, recents = std::move(recents)]() mutable {
       state_writing_ = false;
+      resume_ = snapshot;
+      if (record_library) library_notice_ = library_error;
+      if (recents) recents_ = std::move(*recents);
       set_notice(failure);
-      if (state_dirty_ && !state_timer_.isActive()) state_timer_.start();
+      if (departing && leaving_ && saver_drained_ && !export_job_->busy() && !state_dirty_) {
+        // Validate again after export and app-state I/O, then release the
+        // project lock on the saver worker. Failure retains the live writer.
+        saver_->release_for_leave();
+      } else if (leaving_) finish_leave();
+      else if (state_dirty_ && !state_timer_.isActive()) state_timer_.start();
     }, Qt::QueuedConnection);
   });
 }

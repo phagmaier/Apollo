@@ -10,6 +10,8 @@ Rectangle {
     required property var commands
     property var exportJob: null
     property var autosaver: null
+    property var projectFlow: null
+    property bool departing: projectFlow !== null && projectFlow.leaving
     property string exportDestination: ""
     property string documentTitle: "Screenplay"
     property var outlineScenes: []
@@ -24,14 +26,24 @@ Rectangle {
         editorPage.focusEditor()
     }
     function exportPdf() {
-        if (exportJob && !exportJob.busy)
+        if (exportJob && !exportJob.busy && !departing)
             exportJob.request(destination.text, includeTitle)
         exportPanel.close()
         editorPage.focusEditor()
     }
     Shortcut { sequence: "Ctrl+E"; onActivated: desk.exportPdf() }
     Shortcut { sequence: "Ctrl+\\"; onActivated: desk.toggleOutline() }
-    Shortcut { sequence: "Ctrl+Shift+S"; enabled: desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
+    Shortcut { sequence: "Ctrl+Shift+S"; enabled: !desk.departing && desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
+    Shortcut { sequence: "Ctrl+Shift+H"; enabled: desk.projectFlow !== null && !desk.departing; onActivated: desk.projectFlow.home() }
+    Connections {
+        target: desk.projectFlow
+        function onChanged() {
+            if (desk.projectFlow.leaveFailed)
+                leavePanel.open()
+            else
+                leavePanel.close()
+        }
+    }
     Connections {
         target: desk.autosaver
         function onLocationChanged() {
@@ -86,6 +98,7 @@ Rectangle {
 
     Rectangle {
         id: header
+        enabled: !desk.departing
         height: (desk.autosaver ? 76 : 58) + (desk.sessionNotice.length > 0 ? 22 : 0)
         anchors { left: parent.left; right: parent.right; top: parent.top }
         color: "#323842"
@@ -186,12 +199,21 @@ Rectangle {
 
     Rectangle {
         id: rail
+        enabled: !desk.departing
         width: desk.width < 700 ? 52 : 74
         anchors { left: parent.left; top: header.bottom; bottom: parent.bottom }
         color: "#3c434d"
         Column {
             anchors { top: parent.top; topMargin: 24; horizontalCenter: parent.horizontalCenter }
             spacing: 12
+            DeskButton {
+                objectName: "goHome"
+                width: 44; height: 44; text: "Home"; ink: "#eff1f3"; padding: 0
+                visible: desk.projectFlow !== null
+                enabled: desk.autosaver !== null && !desk.departing && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy
+                Accessible.name: "Save and return Home (Ctrl+Shift+H)"
+                onClicked: desk.projectFlow.home()
+            }
             DeskButton {
                 width: 44; height: 44; text: "▤"; font.pixelSize: 22
                 fill: "#637080"; ink: "white"
@@ -297,7 +319,7 @@ Rectangle {
         }
         ScreenplayEditor {
             id: editorPage
-            enabled: !desk.autosaver || !desk.autosaver.reloadBusy
+            enabled: (!desk.autosaver || !desk.autosaver.reloadBusy) && !desk.departing
             anchors { left: parent.left; right: parent.right; top: workbar.bottom; bottom: parent.bottom }
             screenplayLayout: desk.screenplayLayout
             commands: desk.commands
@@ -319,6 +341,59 @@ Rectangle {
             color: desk.screenplayLayout.error ? "#9d3030" : "#4d5965"
             font { family: "Liberation Sans"; pixelSize: 11 }
         }
+    }
+    Popup {
+        id: leavePanel
+        objectName: "leavePanel"
+        parent: desk
+        x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
+        width: Math.min(650, desk.width - 16)
+        height: Math.min(desk.height - header.height - 16, leaveContents.implicitHeight + 40)
+        padding: 20; modal: true; focus: true
+        onClosed: {
+            if (desk.projectFlow) desk.projectFlow.keep_writing()
+            editorPage.focusEditor()
+        }
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
+        ScrollView {
+            id: leaveScroll
+            anchors.fill: parent
+            contentWidth: availableWidth
+            Column {
+                id: leaveContents; width: leaveScroll.availableWidth; spacing: 14
+                Label { text: "Save before leaving"; font.pixelSize: 18 }
+                Label {
+                    width: parent.width; wrapMode: Text.WrapAnywhere; textFormat: Text.PlainText
+                    text: desk.autosaver ? desk.autosaver.status : ""
+                }
+                Label {
+                    width: parent.width; wrapMode: Text.Wrap
+                    text: "Your writing is still open here. Retry the project save, or save and use a new copy, then return Home. An emergency copy alone does not leave this project."
+                }
+                Flow {
+                    width: parent.width; spacing: 12
+                    DeskButton {
+                        objectName: "leaveKeepWriting"; text: "Keep Writing"; ink: "#303843"
+                        onClicked: desk.projectFlow.keep_writing()
+                    }
+                    DeskButton {
+                        objectName: "leaveRetry"; text: "Retry and Leave"; fill: "#3c434d"; ink: "#eff1f3"
+                        onClicked: desk.projectFlow.retry_leave()
+                    }
+                    DeskButton {
+                        objectName: "leaveSaveCopy"; text: "Save a Copy…"; ink: "#303843"
+                        onClicked: { desk.projectFlow.keep_writing(); copyPanel.open() }
+                    }
+                }
+            }
+        }
+    }
+    Label {
+        anchors.centerIn: parent
+        visible: desk.departing
+        padding: 20; text: "Saving writing and finishing background work…"
+        color: "#303843"
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
     }
     Popup {
         id: reloadPanel

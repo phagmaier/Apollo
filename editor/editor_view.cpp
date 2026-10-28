@@ -14,7 +14,7 @@ QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob*
                         Autosaver* autosaver) {
   auto* layout = qobject_cast<ScreenplayLayout*>(document.documentLayout());
   if (!layout) throw std::runtime_error("document does not use ScreenplayLayout");
-  auto* commands = new EditorCommands(&document, &view);
+  auto* commands = new EditorCommands(&document, &document);
   QString title = export_destination.isEmpty() ? QStringLiteral("Screenplay") : QFileInfo(export_destination).completeBaseName();
   QStringList scenes;
   // Opening snapshot for the bounded visual check, not a scene navigator.

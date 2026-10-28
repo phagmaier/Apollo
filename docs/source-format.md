@@ -1,7 +1,7 @@
 # Apollo source format and saving (version 1)
 
 2026-10-28. Status: implemented in [writing-build-plan](writing-build-plan.md)
-slice 1 and slice 2 tasks 2.1–2.4. This is the working contract for the first usable
+slice 1 and slice 2 tasks 2.1–2.5. This is the working contract for the first usable
 writing build, not yet a long-term compatibility promise: later slices may add files or fields
 under a new format version. The owner chose a portable project folder with
 versioned structured text; the details below are agent engineering choices.
@@ -9,13 +9,15 @@ versioned structured text; the details below are agent engineering choices.
 Code: `source/screenplay_format.*` (schema), `source/project.*` (folder and
 file replacement), `source/recovery.*` (recovery packages),
 `source/project_access.*` (safe open/recovery decisions),
-`editor/project_access_flow.*` (open/recovery UI orchestration),
+`source/project_creation.*` (named blank creation),
+`editor/project_access_flow.*` (home/open/recovery and writer transitions),
+`editor/project_library.*` (app-local recents),
 `editor/session_state.*` (app-local resume), `editor/screenplay_layout.cpp`
 (Qt document adapter), and `editor/autosave.*` (saving).
 Tests include `source_tests`, `autosave_tests`, `recovery_tests`,
-`project_access_tests`, `session_state_tests`, `project_access_flow_tests`,
-`autosave_crash_tests.py`, `project_lock_tests.py`, and
-`project_access_process_tests.py`.
+`project_creation_tests`, `project_library_tests`, `project_access_tests`,
+`session_state_tests`, `project_access_flow_tests`, `autosave_crash_tests.py`,
+`project_lock_tests.py`, and `project_access_process_tests.py`.
 
 ## Project folder
 
@@ -33,8 +35,8 @@ are present, opening retains their bytes in memory and Save a Copy preserves
 them verbatim (including empty files).
 Unreadable or symlinked dependencies are refused rather than silently omitted;
 the `imports` folder must also be an ordinary directory. Import parsing and
-its read-only reader remain pending. Session state lives outside the project
-folder, as documented in task 2.4 below; a library/recents list remains pending.
+its read-only reader remain pending. Session state and recents live outside the
+portable folder, as documented in tasks 2.4–2.5 below.
 
 `project.json`, exactly these keys:
 
@@ -600,12 +602,91 @@ for the writer. Alt+F4 did not close that compositor window, so cleanup used
 SIGKILL; this launcher smoke does not establish normal window-close behavior.
 The existing close/save suites remain the close contract's automated evidence.
 
-Home/library/create/import UI, full in-window switching, focus-existing-process
-IPC and stale-stage cleanup remain separate work. Leak detection, power loss,
+At the 2.4 checkpoint, home/new/open and switching were still pending; task 2.5
+below adds them. Import, focus-existing-process IPC and stale-stage cleanup remain
+separate work. Leak detection, power loss,
 unavailable-storage loss bounds, crash loss during Save a Copy and fresh
 representative startup/typing/recovery-discovery performance remain unverified.
 The earlier workload timings and I/O-contention limit remain unchanged.
 No extended comfort, physical-input latency or new universal crash-loss claim.
+
+### Bounded home/new/open (slice 2 task 2.5)
+
+The home screen lists recent successfully activated Apollo projects, and offers
+New Project and Open Project. A no-argument launch still resumes the last
+project/cursor from task 2.4; Home does not erase that resume entry. In the
+writer, **Home / Ctrl+Shift+H** saves and leaves the project before opening this
+screen. Switching uses Home, then new/open/recent selection, not a second editor
+or a silent document replacement. Fountain import is explicitly task 2.6.
+
+#### New project and locations
+
+The delegated default is the platform's Documents location plus `/Apollo`,
+falling back to `$HOME/Apollo` when no Documents location exists. The missing
+default path can be created automatically; other parent locations must already
+exist. The form supports a typed parent path and an actual folder chooser.
+Folder URLs are converted with `QUrl::toLocalFile`, not stripped as strings.
+Folder-chooser cancellation does not submit creation or change writing.
+
+The name is a trimmed single folder component, not screenplay/title-page
+content. Empty names, `.`, `..`, separators, control characters and invalid
+Unicode are refused; filesystem name-length and permission failures are reported.
+Creation starts one empty action element at revision 0. No Fountain is parsed.
+Existing files, empty/nonempty folders and dangling links are collisions:
+try `Name`, `Name (2)`, etc., up to 1,000 candidates. Display the actual
+activated canonical location. Existing parent aliases resolve canonically.
+
+`create_project` remains the single staging/publication implementation:
+write and independently read back the complete project beside its destination,
+then publish with `RENAME_NOREPLACE`. A destination appearing during publication
+fails safely; it is not overwritten or treated as an arbitrary retryable I/O
+error. Ordinary failure removes the private stage, not unrelated data.
+Interrupted-process stages are retained for the later stale-stage task.
+After publication, the UI routes through `ProjectAccess` with the new UUID.
+If activation fails, retain the complete published folder and show its location;
+do not pretend an empty writer opened or delete potentially useful writing.
+
+#### Recent projects
+
+`$XDG_DATA_HOME/Apollo/recent-projects.json` is a separate version-1
+`apollo-recent-projects` object with a `projects` array of `{directory,
+projectId}` entries, most recent first, capped at 20. Entries display the
+folder name and full location. It is not a source index, directory scan or
+cross-process window registry. Record only successful activations, including
+Save a Copy; failed create/open/recovery does not promote a project.
+Merge under a nonblocking `QLockFile`, with stale-age expiry disabled, then
+atomically replace the list. Deduplicate by UUID or canonical location.
+Opening a moved folder explicitly updates its existing UUID entry; missing
+paths remain visible and can offer identity-matched recovery. A replacement
+UUID at an old recent location is refused until explicitly opened.
+
+Every recent/open choice uses the same guarded `ProjectAccess` decisions as
+task 2.4. Locks, damaged source, recovery choices and stale evidence are never
+bypassed. Malformed/newer/nonregular recents remain untouched and visibly
+reported; list or cursor-state failure does not prevent saving screenplay
+writing at its active project. Cursor resume is still the last-project entry,
+not a persisted cursor for every recent project.
+
+#### Leaving without losing writing
+
+Home retains the live document and temporarily disables editing while flushing
+its current revision. The ordered saver drains original saves and local/
+emergency recovery work; accepted PDF export and final cursor/list I/O also
+finish. After that work, a final saver-worker destination check precedes
+worker-side `ProjectSession`/lock teardown. Only its successful release replaces
+the writer with Home. GUI teardown does not unlink the project lock on storage.
+
+On a failed save or final check, retain the same writing, selection/cursor and
+undo history. Show **Keep Writing**, **Retry and Leave**, and **Save a Copy**.
+Retry must protect current writing before leaving. Copy failure keeps the
+original writer; successful Copy becomes active as before, then Home can leave
+the saved copy. No implicit emergency-only departure and no discard choice are
+added to switching. The existing explicit window-close failure choices remain
+unchanged. Session/list failure is shown separately after writing is safely
+saved; restart may then have stale or unavailable app-local navigation state.
+
+Verification and review results are recorded with task 2.5 in
+[writing-build-plan.md](writing-build-plan.md#task-25-evidence-and-review).
 
 ### Crash-loss measurements
 

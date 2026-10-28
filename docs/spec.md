@@ -165,7 +165,9 @@ These capabilities come from the owner's brief. Except where explicitly noted, t
 - For the first usable writing build, use a simple home screen listing scripts,
   a default project location, and the option to create/open projects elsewhere.
   The owner delegated this workflow choice and accepted it as reasonable.
-  The default path and on-disk schema remain to be selected.
+  The implementation-selected default is the platform Documents location plus
+  `Apollo`, with a home-folder fallback. The portable source and app-local recent
+  list contracts are documented in [source-format.md](source-format.md).
 - Archive a project to hide it from the main home view without deleting it; allow restoring archived projects. Keep explicit local deletion separate. Archiving or deleting locally must not delete the GitHub repository. Detailed local deletion/recovery behavior remains to be specified.
 - Provide named project notes with basic formatting. Search notes by their name/title. Detailed formatting controls and any body-text search remain to be specified.
 - Links from notes to positions in the screenplay are tentative. The owner expressed interest but uncertainty; evaluate the idea in the later prototype before treating scene links or text-range comments as required.

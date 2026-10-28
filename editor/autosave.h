@@ -64,6 +64,12 @@ public:
   Q_INVOKABLE void close_with_copy_or_discard();
   // Captures now rather than at the end of the interval.
   void flush();
+  // Flush and drain accepted worker I/O without blocking the GUI. Success
+  // leaves the saver quiescent; after other departure work finishes, call
+  // release_for_leave for final validation and worker-side lock teardown.
+  // Freeze the document and retain it through released or leaveReady(false).
+  void prepare_leave(bool retry_save = false);
+  void release_for_leave();
   // Keeps the window open while saving; failures require an explicit close
   // choice after an emergency-copy attempt.
   void guard_close(QWindow& window);
@@ -91,6 +97,8 @@ signals:
   void copyCompleted(bool success);
   void recoveryChanged();
   void reloadCompleted(bool success);
+  void leaveReady(bool success);
+  void released();
 
 protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -144,6 +152,8 @@ private:
   // it. Destruction can queue later writing before that acknowledgment.
   std::optional<std::uint64_t> copy_base_;
   bool verify_requested_ = false;
+  std::optional<std::uint64_t> leave_request_, release_request_;
+  bool leaving_ = false, releasing_ = false; // GUI thread.
   std::atomic<bool> paused_{false};
   std::atomic<bool> reload_cancelled_{false};
   bool stopping_ = false;

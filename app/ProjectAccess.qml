@@ -1,12 +1,13 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 
-// Uses the accepted Writing desk palette/type. This is a bounded open/recovery
-// surface, not the milestone's future project library or import workflow.
+// Bounded project home and safe-access chooser, using the Writing desk palette.
 Rectangle {
     id: page
     required property var access
     property int selectedIndex: -1
+    property bool creating: false
     color: "#d4d9df"
     Connections {
         target: page.access
@@ -24,8 +25,17 @@ Rectangle {
         }
         Text {
             x: 130; anchors.verticalCenter: parent.verticalCenter
-            text: "Open a screenplay"; color: "#eff1f3"
+            text: page.access.location.length > 0 ? "Open a screenplay" : "Your screenplays"
+            color: "#eff1f3"
             font { family: "Liberation Sans"; pixelSize: 16 }
+        }
+        Button {
+            objectName: "accessHome"
+            anchors { right: parent.right; rightMargin: 28; verticalCenter: parent.verticalCenter }
+            visible: page.access.location.length > 0
+            enabled: !page.access.busy
+            text: "Home"
+            onClicked: page.access.home()
         }
     }
     ScrollView {
@@ -35,7 +45,60 @@ Rectangle {
             width: Math.min(820, parent.width)
             spacing: 16
             Label {
+                visible: page.creating
+                text: "New screenplay"
+                font { family: "Liberation Sans"; pixelSize: 26; weight: Font.DemiBold }
+                color: "#303843"
+            }
+            Flow {
+                width: parent.width; spacing: 12
+                visible: page.access.location.length === 0
+                Button {
+                    objectName: "showNewProject"
+                    text: page.creating ? "Cancel New Project" : "New Project"
+                    enabled: !page.access.busy
+                    onClicked: page.creating = !page.creating
+                }
+            }
+            Column {
+                width: parent.width; spacing: 12
+                visible: page.creating
+                Label { text: "Project name"; color: "#303843" }
+                TextField {
+                    id: newName; objectName: "newProjectName"
+                    width: parent.width; enabled: !page.access.busy; selectByMouse: true
+                    placeholderText: "Untitled screenplay"
+                    Accessible.name: "New project folder name"
+                }
+                Label { text: "Create inside"; color: "#303843" }
+                TextField {
+                    id: newParent; objectName: "newProjectParent"
+                    width: parent.width; text: page.access.defaultLocation
+                    enabled: !page.access.busy; selectByMouse: true
+                    Accessible.name: "Parent folder for the new project"
+                }
+                Label {
+                    width: parent.width; wrapMode: Text.Wrap; color: "#4d5965"
+                    text: "Apollo creates a complete project in a new folder. Existing folders and files stay untouched; a number is added to the name when needed."
+                }
+                Flow {
+                    width: parent.width; spacing: 12
+                    Button {
+                        objectName: "chooseNewParent"; text: "Choose Location…"
+                        enabled: !page.access.busy
+                        onClicked: { folders.forCreation = true; folders.currentFolder = page.access.folder_url(newParent.text); folders.open() }
+                    }
+                    Button {
+                        objectName: "createProject"
+                        text: page.access.busy ? "Creating…" : "Create and Write"
+                        enabled: !page.access.busy && newName.text.trim().length > 0 && newParent.text.trim().length > 0
+                        onClicked: page.access.create_project(newParent.text, newName.text)
+                    }
+                }
+            }
+            Label {
                 width: parent.width; wrapMode: Text.Wrap
+                visible: !page.creating
                 text: "Choose an Apollo project folder. Opening never replaces its writing with a recovery copy."
                 font { family: "Liberation Sans"; pixelSize: 14 }
                 color: "#303843"
@@ -44,6 +107,7 @@ Rectangle {
                 id: projectFolder
                 objectName: "openLocation"
                 width: parent.width
+                visible: !page.creating
                 text: page.access.location
                 enabled: !page.access.busy
                 selectByMouse: true
@@ -51,11 +115,51 @@ Rectangle {
                 Accessible.name: "Existing Apollo project folder"
                 onAccepted: if (!page.access.busy) page.access.open_project(text)
             }
-            Button {
-                objectName: "openProject"
-                text: page.access.busy ? "Checking project…" : "Open Project"
-                enabled: !page.access.busy && projectFolder.text.trim().length > 0
-                onClicked: page.access.open_project(projectFolder.text)
+            Flow {
+                width: parent.width; spacing: 12
+                visible: !page.creating
+                Button {
+                    objectName: "chooseOpenFolder"; text: "Choose Project Folder…"
+                    enabled: !page.access.busy
+                    onClicked: { folders.forCreation = false; folders.currentFolder = page.access.folder_url(projectFolder.text || page.access.defaultLocation); folders.open() }
+                }
+                Button {
+                    objectName: "openProject"
+                    text: page.access.busy ? "Checking project…" : "Open Project"
+                    enabled: !page.access.busy && projectFolder.text.trim().length > 0
+                    onClicked: page.access.open_project(projectFolder.text)
+                }
+            }
+            Label {
+                visible: !page.creating && page.access.location.length === 0
+                text: "Recent projects"; color: "#303843"
+                font { family: "Liberation Sans"; pixelSize: 18; weight: Font.DemiBold }
+            }
+            Label {
+                width: parent.width; wrapMode: Text.Wrap; color: "#4d5965"
+                visible: !page.creating && page.access.location.length === 0 && page.access.recentProjects.length === 0
+                text: "No recent projects yet. Create a screenplay or open an Apollo project folder."
+            }
+            Repeater {
+                model: !page.creating && page.access.location.length === 0 ? page.access.recentProjects : []
+                ItemDelegate {
+                    required property var modelData
+                    required property int index
+                    objectName: "recentProject" + index
+                    width: parent.width; enabled: !page.access.busy
+                    focusPolicy: Qt.StrongFocus
+                    onClicked: page.access.open_recent(index)
+                    contentItem: Label {
+                        text: modelData.name + "\n" + modelData.location
+                        textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere
+                        font { family: "Liberation Sans"; pixelSize: 14 }
+                        color: "#303843"
+                    }
+                    background: Rectangle {
+                        color: parent.hovered ? "#eff1f3" : "#e3e6e9"; radius: 7
+                        border.width: parent.visualFocus ? 2 : 0; border.color: "#7a83af"
+                    }
+                }
             }
             Label {
                 objectName: "accessNotice"
@@ -123,7 +227,7 @@ Rectangle {
             }
             Label {
                 width: parent.width; wrapMode: Text.Wrap
-                visible: !page.access.busy && !page.access.currentAvailable && page.access.error.length > 0 && page.access.candidates.length === 0
+                visible: !page.creating && page.access.location.length > 0 && !page.access.busy && !page.access.currentAvailable && page.access.error.length > 0 && page.access.candidates.length === 0
                 text: "No verified recovery copy is available. Nothing has been overwritten or replaced with an empty screenplay. Keep this folder and its recovery material for investigation, or open another project."
                 color: "#303843"
             }
@@ -147,6 +251,19 @@ Rectangle {
                 text: "Recover Selected Copy as New Project"
                 enabled: !page.access.busy && page.selectedIndex >= 0 && recoveryFolder.text.trim().length > 0
                 onClicked: page.access.recover(page.selectedIndex, recoveryFolder.text)
+            }
+        }
+    }
+    FolderDialog {
+        id: folders
+        objectName: "projectFolderDialog"
+        property bool forCreation: false
+        title: forCreation ? "Create a project inside this folder" : "Choose an Apollo project folder"
+        onAccepted: {
+            const path = page.access.local_folder(selectedFolder)
+            if (path.length > 0) {
+                if (forCreation) newParent.text = path
+                else projectFolder.text = path
             }
         }
     }

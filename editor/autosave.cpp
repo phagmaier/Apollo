@@ -84,6 +84,7 @@ void Autosaver::watch_destination() {
 }
 
 void Autosaver::request_verification() {
+  if (leaving_) return;
   {
     std::lock_guard lock(mutex_);
     verify_requested_ = true;
@@ -106,7 +107,7 @@ void Autosaver::retry() {
 }
 
 bool Autosaver::save_copy(const QString& destination) {
-  if (copy_busy_ || reload_busy_ || !document_) return false;
+  if (leaving_ || copy_busy_ || reload_busy_ || !document_) return false;
   copy_error_.clear();
   if (destination.isEmpty() || !QFileInfo(destination).isAbsolute()) {
     copy_error_ = QStringLiteral("Choose an absolute path for the new project folder.");
@@ -136,6 +137,33 @@ bool Autosaver::save_copy(const QString& destination) {
 
 void Autosaver::flush() { capture(false); }
 
+void Autosaver::prepare_leave(bool retry_save) {
+  if (leaving_ || copy_busy_ || reload_busy_ || !document_) return;
+  leaving_ = true;
+  verification_timer_.stop();
+  capture(retry_save);
+  {
+    std::lock_guard lock(mutex_);
+    leave_request_ = revision_;
+  }
+  wake_.notify_one();
+}
+
+void Autosaver::release_for_leave() {
+  if (!leaving_ || releasing_) return;
+  if (state() != QStringLiteral("saved")) {
+    leaving_ = false;
+    prepare_leave();
+    return;
+  }
+  releasing_ = true;
+  {
+    std::lock_guard lock(mutex_);
+    release_request_ = revision_;
+  }
+  wake_.notify_one();
+}
+
 void Autosaver::capture(bool force) {
   timer_.stop();
   if (!document_ || copy_busy_ || reload_busy_ || (!force && captured_ == revision_)) return;
@@ -153,7 +181,7 @@ void Autosaver::capture(bool force) {
 }
 
 bool Autosaver::reload() {
-  if (copy_busy_ || reload_busy_ || !document_) return false;
+  if (leaving_ || copy_busy_ || reload_busy_ || !document_) return false;
   timer_.stop();
   reload_busy_ = true;
   reload_status_ = QStringLiteral("Preserving writing and reloading…");
@@ -265,10 +293,17 @@ void Autosaver::write_loop() {
     std::optional<Snapshot> snapshot;
     std::optional<ReloadRequest> reload;
     std::optional<CopyRequest> copy;
+    std::optional<std::uint64_t> leave, release;
     {
       std::unique_lock lock(mutex_);
-      wake_.wait(lock, [this] { return pending_ || copy_request_ || reload_request_ || verify_requested_ || stopping_; });
+      wake_.wait(lock, [this] { return pending_ || copy_request_ || reload_request_ || verify_requested_ || leave_request_ || release_request_ || stopping_; });
       if (!pending_ && !copy_request_ && !reload_request_ && stopping_) return;
+      if (!pending_ && !copy_request_ && !reload_request_) {
+        leave = leave_request_;
+        leave_request_.reset();
+        release = release_request_;
+        release_request_.reset();
+      }
       copy = std::move(copy_request_);
       copy_request_.reset();
       reload = std::move(reload_request_);
@@ -278,6 +313,46 @@ void Autosaver::write_loop() {
         pending_.reset();
       }
       verify_requested_ = false;
+    }
+    if (release) {
+      QString failure;
+      try { session_->check_destination(); }
+      catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+      if (failure.isEmpty()) {
+        // QLockFile removes the filesystem lock in its destructor. Do that
+        // here, not later in the GUI-thread Autosaver destructor.
+        session_.reset();
+        QMetaObject::invokeMethod(this, [this] { emit released(); }, Qt::QueuedConnection);
+        return;
+      }
+      QMetaObject::invokeMethod(this, [this, failure] {
+        releasing_ = leaving_ = false;
+        error_ = failure;
+        verification_timer_.start();
+        emit statusChanged();
+        emit leaveReady(false);
+      }, Qt::QueuedConnection);
+      continue;
+    }
+    if (leave) {
+      QString failure;
+      try { session_->check_destination(); }
+      catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+      QMetaObject::invokeMethod(this, [this, revision = *leave, failure] {
+        if (revision != revision_) {
+          leaving_ = false;
+          prepare_leave();
+          return;
+        }
+        if (!failure.isEmpty()) { error_ = failure; emit statusChanged(); }
+        const bool ready = failure.isEmpty() && state() == QStringLiteral("saved");
+        if (!ready) {
+          leaving_ = false;
+          verification_timer_.start();
+        }
+        emit leaveReady(ready);
+      }, Qt::QueuedConnection);
+      continue;
     }
     if (reload) {
       QString error;
@@ -453,6 +528,10 @@ void Autosaver::close_with_copy_or_discard() {
 }
 
 bool Autosaver::eventFilter(QObject* watched, QEvent* event) {
+  if (watched == closing_ && event->type() == QEvent::Close && leaving_) {
+    event->ignore();
+    return true;
+  }
   if (watched == closing_ && event->type() == QEvent::Close && (copy_busy_ || reload_busy_)) {
     event->ignore();
     close_requested_ = true;
