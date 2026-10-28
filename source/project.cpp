@@ -1,4 +1,5 @@
 #include "source/project.h"
+#include "source/fountain_intake.h"
 
 #include <QDir>
 #include <QFile>
@@ -31,7 +32,9 @@ QByteArray read_all(const QString& path) {
   return bytes;
 }
 
-QByteArray manifest(const QString& id, const QString& screenplay_file) {
+QByteArray manifest(const QString& id, const QString& screenplay_file, bool review) {
+  if (review) return QJsonDocument(QJsonObject{{"format", "apollo-project"}, {"version", 2}, {"id", id},
+      {"screenplay", screenplay_file}, {"mode", "import-review"}}).toJson();
   return "{\n  \"format\": \"apollo-project\",\n  \"version\": " + QByteArray::number(project_version) + ",\n  \"id\": \"" +
          id.toUtf8() + "\",\n  \"screenplay\": \"" + screenplay_file.toUtf8() + "\"\n}\n";
 }
@@ -45,10 +48,12 @@ Project read_manifest(const QString& directory, const QByteArray& bytes) {
   if (error.error != QJsonParseError::NoError || !json.isObject() || root.value("format").toString() != QLatin1String("apollo-project"))
     malformed(QStringLiteral("%1 is not an Apollo project file").arg(path));
   const auto version = root.value("version");
-  if (version.isDouble() && version.toDouble() > project_version)
+  if (version.isDouble() && version.toDouble() > 2)
     throw SourceError(SourceError::Kind::newer_version, QStringLiteral("project format version %1 needs a newer Apollo").arg(version.toDouble()));
-  if (!version.isDouble() || version.toDouble() != project_version) malformed(QStringLiteral("unsupported project format version in %1").arg(path));
-  if (root.size() != 4 || !root.contains("id") || !root.contains("screenplay")) malformed(QStringLiteral("unexpected fields in %1").arg(path));
+  const bool review = version == 2;
+  if (!version.isDouble() || (version.toDouble() != project_version && !review)) malformed(QStringLiteral("unsupported project format version in %1").arg(path));
+  if (root.size() != (review ? 5 : 4) || (review && root.value("mode") != "import-review") ||
+      !root.contains("id") || !root.contains("screenplay")) malformed(QStringLiteral("unexpected fields in %1").arg(path));
   const auto id = root.value("id").toString(), screenplay = root.value("screenplay").toString();
   // The canonical lowercase form, so one project has one spelling.
   if (QUuid::fromString(id).isNull() || QUuid::fromString(id).toString(QUuid::WithoutBraces) != id)
@@ -56,7 +61,7 @@ Project read_manifest(const QString& directory, const QByteArray& bytes) {
   if (!screenplay.endsWith(QLatin1String(".json")) || screenplay.startsWith(QLatin1Char('.')) || screenplay.contains(QLatin1Char('/')) ||
       screenplay.contains(QLatin1Char('\\')))
     malformed(QStringLiteral("invalid screenplay file name in %1").arg(path));
-  return {directory, id, screenplay};
+  return {directory, id, screenplay, review};
 }
 
 ProjectAssets read_assets(const Project& project) {
@@ -64,14 +69,33 @@ ProjectAssets read_assets(const Project& project) {
     const auto path = project.directory + '/' + name;
     const QFileInfo info(path);
     if (info.isSymLink() || (info.exists() && !info.isFile())) io_error(QStringLiteral("import dependency %1 must be a regular file").arg(path));
-    return info.exists() ? std::optional(read_all(path)) : std::nullopt;
+    if (!info.exists()) return std::nullopt;
+    const int fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) io_error(QStringLiteral("cannot read import dependency %1: %2").arg(path, QString::fromLocal8Bit(std::strerror(errno))));
+    QFile file;
+    if (!file.open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) { ::close(fd); io_error(QStringLiteral("cannot hold import dependency %1").arg(path)); }
+    struct stat status {};
+    if (::fstat(fd, &status) != 0 || !S_ISREG(status.st_mode)) io_error(QStringLiteral("import dependency %1 must be a regular file").arg(path));
+    const auto limit = name == QLatin1String("imported-material.json") ? qsizetype(65536) : maximum_fountain_bytes;
+    const auto bytes = project.import_review ? file.read(limit + 1) : file.readAll();
+    if (file.error() != QFileDevice::NoError || (project.import_review && bytes.size() > limit))
+      io_error(QStringLiteral("cannot read import dependency %1 within its size limit").arg(path));
+    return bytes;
   };
   ProjectAssets assets;
   if (project.screenplay_file != QLatin1String("imported-material.json")) assets.imported_material = dependency("imported-material.json");
   const auto imports = QFileInfo(project.directory + "/imports");
   if (imports.isSymLink() || (imports.exists() && !imports.isDir())) io_error(QStringLiteral("import folder %1 must be a directory").arg(imports.filePath()));
   assets.original_fountain = dependency("imports/original.fountain");
+  if (project.import_review) validate_fountain_intake(assets);
+  else if (is_fountain_intake(assets)) malformed(QStringLiteral("Fountain intake requires a review-only project manifest"));
   return assets;
+}
+void validate_review_screenplay(const Project& project, const Screenplay& screenplay) {
+  if (project.import_review && (screenplay.revision != 0 || screenplay.elements.size() != 1 ||
+      screenplay.elements.front().type != ElementType::action || !screenplay.elements.front().text.empty() ||
+      !screenplay.elements.front().styles.empty() || screenplay.elements.front().dual_right))
+    malformed(QStringLiteral("review-only intake cannot contain converted screenplay writing"));
 }
 }
 
@@ -100,11 +124,19 @@ OpenedProject open_project(const QString& directory) {
   if (!QFileInfo(absolute).isDir()) io_error(QStringLiteral("project folder %1 does not exist").arg(absolute));
   auto project = read_manifest(absolute, read_all(absolute + '/' + manifest_name));
   auto screenplay = parse_screenplay(read_all(project.screenplay_path()));
+  validate_review_screenplay(project, screenplay);
   auto assets = read_assets(project);
   return {std::move(project), std::move(screenplay), std::move(assets)};
 }
 
 Project create_project(const QString& destination, Screenplay screenplay, const ProjectAssets& assets) {
+  const bool review = is_fountain_intake(assets);
+  if (review) {
+    validate_fountain_intake(assets);
+    if (screenplay.revision != 0 || screenplay.elements.size() != 1 || screenplay.elements.front().type != ElementType::action ||
+        !screenplay.elements.front().text.empty() || !screenplay.elements.front().styles.empty() || screenplay.elements.front().dual_right)
+      malformed(QStringLiteral("review-only intake cannot contain converted screenplay writing"));
+  }
   const QFileInfo target(destination);
   const auto parent = target.absolutePath(), path = target.absoluteFilePath();
   if (target.exists() || target.isSymLink()) io_error(QStringLiteral("%1 already exists").arg(path));
@@ -120,7 +152,7 @@ Project create_project(const QString& destination, Screenplay screenplay, const 
   if (!staging.isValid()) io_error(QStringLiteral("cannot create a staging folder in %1: %2").arg(parent, staging.errorString()));
   const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
   replace_file(staging.filePath(default_screenplay), source);
-  replace_file(staging.filePath(manifest_name), manifest(id, default_screenplay));
+  replace_file(staging.filePath(manifest_name), manifest(id, default_screenplay, review));
   if (assets.imported_material) replace_file(staging.filePath("imported-material.json"), *assets.imported_material);
   if (assets.original_fountain) {
     if (!QDir(staging.path()).mkdir("imports")) io_error(QStringLiteral("cannot create staged import folder"));
@@ -136,7 +168,7 @@ Project create_project(const QString& destination, Screenplay screenplay, const 
                   RENAME_NOREPLACE) != 0)
     io_error(QStringLiteral("cannot create %1: %2").arg(path, QString::fromLocal8Bit(std::strerror(errno))));
   staging.setAutoRemove(false);
-  return {path, id, default_screenplay};
+  return {path, id, default_screenplay, review};
 }
 
 namespace {
@@ -206,6 +238,7 @@ void ProjectSession::load_current() {
   opened_.project = read_manifest(canonical, manifest_.bytes);
   screenplay_ = read_file(opened_.project.screenplay_path());
   opened_.screenplay = parse_screenplay(screenplay_.bytes);
+  validate_review_screenplay(opened_.project, opened_.screenplay);
   // Read dependencies while the locked original is available. Later copy
   // requests use this snapshot, never a changed or missing original folder.
   opened_.assets = read_assets(opened_.project);
@@ -230,6 +263,7 @@ void ProjectSession::check_destination() const {
 }
 
 void ProjectSession::save(const QByteArray& bytes, const std::function<void(WritePhase)>& hook) {
+  if (opened_.project.import_review) malformed(QStringLiteral("Fountain intake is read-only; screenplay conversion is pending"));
   check_destination();
   replace_file(opened_.project.screenplay_path(), bytes, [&](WritePhase phase) {
     if (phase == WritePhase::committed) {
@@ -251,9 +285,11 @@ OpenedProject ProjectSession::read_reload() const {
   const auto manifest = read_file(project.directory + '/' + manifest_name);
   const auto current = read_manifest(project.directory, manifest.bytes);
   // A replaced project identity requires the explicit open/copy workflow.
-  if (current.id != project.id) destination_changed(project.directory + '/' + manifest_name);
+  if (current.id != project.id || current.import_review != project.import_review)
+    destination_changed(project.directory + '/' + manifest_name);
   const auto screenplay = read_file(current.screenplay_path());
   OpenedProject candidate{current, parse_screenplay(screenplay.bytes), read_assets(current)};
+  validate_review_screenplay(current, candidate.screenplay);
   if (read_file(project.directory + '/' + manifest_name) != manifest || read_file(current.screenplay_path()) != screenplay)
     destination_changed(project.directory);
   return candidate;

@@ -271,7 +271,7 @@ private slots:
     QTest::newRow("parent path") << QByteArray("{\"format\": \"apollo-project\", \"version\": 1, " + id + ", \"screenplay\": \"../screenplay.json\"}") << malformed;
     QTest::newRow("subfolder") << QByteArray("{\"format\": \"apollo-project\", \"version\": 1, " + id + ", \"screenplay\": \"a/screenplay.json\"}") << malformed;
     QTest::newRow("unknown key") << QByteArray("{\"format\": \"apollo-project\", \"version\": 1, " + id + ", \"screenplay\": \"screenplay.json\", \"git\": 1}") << malformed;
-    QTest::newRow("newer") << QByteArray(R"({"format": "apollo-project", "version": 2})") << static_cast<int>(SourceError::Kind::newer_version);
+    QTest::newRow("newer") << QByteArray(R"({"format": "apollo-project", "version": 3})") << static_cast<int>(SourceError::Kind::newer_version);
     QTest::newRow("missing screenplay") << QByteArray("{\"format\": \"apollo-project\", \"version\": 1, " + id + ", \"screenplay\": \"other.json\"}")
                                         << static_cast<int>(SourceError::Kind::io);
   }

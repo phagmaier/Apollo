@@ -22,6 +22,7 @@ namespace {
 }
 bool same_project(const OpenedProject& a, const OpenedProject& b) {
   return a.project.id == b.project.id && a.project.screenplay_file == b.project.screenplay_file &&
+         a.project.import_review == b.project.import_review &&
          a.screenplay == b.screenplay && a.assets == b.assets;
 }
 bool valid_id(const QString& id) {

@@ -5,6 +5,7 @@
 #include "source/recovery.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QKeyEvent>
 #include <QQuickItem>
@@ -17,6 +18,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <QTextCursor>
+#include <QThread>
 #include <QtTest>
 
 using namespace apollo;
@@ -38,11 +40,11 @@ QQuickItem* find_item(QQuickItem* root, const QString& name) {
 struct Window {
   QQuickView view;
   ProjectAccessFlow flow;
-  Window(const QFont& font, const QString& state, const QString& project = {}, const QString& exporter = {})
+  Window(const QFont& font, const QString& state, const QString& project = {}, const QString& exporter = {}, const QString& fountain = {})
       : flow(view, font, QStringLiteral(APOLLO_FONT_DIR),
              exporter.isEmpty() ? QCoreApplication::applicationDirPath() + "/pdf_export" : exporter, state) {
     view.resize(1000, 1000);
-    flow.start(project);
+    flow.start(project, fountain);
     view.show();
   }
   QQuickItem* item(const char* name) {
@@ -566,6 +568,190 @@ private slots:
     QCOMPARE(document->toPlainText(), QStringLiteral("Saved before export Current writing.\nSecond paragraph."));
     QCOMPARE(open_project(moved).screenplay.elements.front().text, std::string("Saved before export Current writing."));
     QVERIFY(window.click("leaveKeepWriting"));
+  }
+
+  void import_review_publish_reopen_and_switch_through_real_controls() {
+    const auto state = path("intake-session");
+    const auto source = path("input") + ".fountain";
+    const QByteArray original("\xef\xbb\xbf" "Title: Retained\r\n\r\nA line. [[<b>note</b>]]\r\n/*omitted*/\r\n# Section\r\n");
+    replace_file(source, original);
+    const auto parent = path("intake-parent");
+    QVERIFY(QDir().mkpath(parent));
+    replace_file(parent + "/Imported", "collision evidence");
+    const auto writing = project();
+    QString published;
+    QByteArray metadata;
+    {
+      Window window(font_, state);
+      QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(window.click("showImport"));
+      window.item("importSourcePath")->setProperty("text", source);
+      QVERIFY(window.click("previewImport"));
+      QTRY_VERIFY(window.flow.intake_preview());
+      QVERIFY(window.flow.intake_summary().contains("entire source is pending"));
+      QVERIFY(!window.flow.document());
+      QVERIFY(!window.flow.autosaver());
+      QCOMPARE(bytes(source), original);
+      QVERIFY(!SessionState(state).load());
+      QVERIFY(ProjectLibrary(state + ".recents").load().empty());
+      auto* reader = window.item("intakeSource");
+      QVERIFY(reader && reader->property("readOnly").toBool());
+      const auto shown = reader->property("text").toString();
+      QVERIFY(shown.contains("[[<b>note</b>]]"));
+      QVERIFY(window.item("intakeFindingText")->property("text").toString().contains("[[<b>note</b>]]"));
+      reader->forceActiveFocus();
+      window.type("Must not edit");
+      QCOMPARE(reader->property("text").toString(), shown);
+      window.item("intakeProjectName")->setProperty("text", "Imported");
+      window.item("intakeProjectParent")->setProperty("text", parent + "/missing");
+      QVERIFY(window.click("publishIntake"));
+      QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(!window.flow.error().isEmpty());
+      QVERIFY(window.flow.intake_preview());
+      QVERIFY(!QFileInfo::exists(parent + "/missing"));
+      // Commit retains the reviewed snapshot. Never re-read or write the external file.
+      replace_file(source, "Changed externally after preview.");
+      window.item("intakeProjectParent")->setProperty("text", parent);
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/import-preview.png")));
+      QVERIFY(window.click("publishIntake"));
+      QTRY_VERIFY(window.flow.intake_active());
+      QTRY_VERIFY(!window.flow.busy());
+      published = window.flow.location();
+      QCOMPARE(published, parent + "/Imported (2)");
+      QVERIFY(!window.flow.document());
+      QVERIFY(!window.flow.autosaver());
+      QCOMPARE(bytes(published + "/imports/original.fountain"), original);
+      QCOMPARE(bytes(source), QByteArray("Changed externally after preview."));
+      QCOMPARE(bytes(parent + "/Imported"), QByteArray("collision evidence"));
+      metadata = bytes(published + "/imported-material.json");
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/import-reader.png")));
+      QCOMPARE(SessionState(state).load()->directory, published);
+      QVERIFY(window.click("intakeHome"));
+      QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(!window.flow.intake_active());
+      { ProjectSession unlocked(published); }
+      window.item("openLocation")->setProperty("text", writing.directory);
+      QVERIFY(window.click("openProject"));
+      QTRY_VERIFY(window.flow.document());
+      window.type("Separate writer ");
+      QVERIFY(window.click("goHome"));
+      QTRY_VERIFY(!window.flow.document());
+      QTRY_VERIFY(!window.flow.busy());
+      QCOMPARE(open_project(writing.directory).screenplay.elements.front().text, std::string("Separate writer Current writing."));
+      QCOMPARE(bytes(published + "/imports/original.fountain"), original);
+      QVERIFY(window.click("recentProject1"));
+      QTRY_VERIFY(window.flow.intake_active());
+      QTRY_VERIFY(!window.flow.busy());
+      QCOMPARE(window.flow.location(), published);
+    }
+    {
+      Window restarted(font_, state);
+      QTRY_VERIFY(restarted.flow.intake_active());
+      QTRY_VERIFY(!restarted.flow.busy());
+      QCOMPARE(restarted.flow.location(), published);
+      QVERIFY(!restarted.flow.document());
+      QVERIFY(restarted.flow.intake_source().contains("/*omitted*/"));
+      QVERIFY(restarted.click("intakeHome"));
+      QTRY_VERIFY(!restarted.flow.busy());
+    }
+    QCOMPARE(bytes(published + "/imports/original.fountain"), original);
+    QCOMPARE(bytes(published + "/imported-material.json"), metadata);
+  }
+  void cancelled_and_failed_imports_do_not_publish_or_replace_resume() {
+    const auto state = path("intake-cancel-session");
+    const auto source = path("candidate");
+    replace_file(source, "Retain this source.");
+    Window window(font_, state);
+    QTRY_VERIFY(!window.flow.busy());
+    window.flow.preview_import(source + "-missing");
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.error().isEmpty());
+    QVERIFY(!window.flow.intake_preview());
+    window.flow.preview_import(source);
+    QTRY_VERIFY(window.flow.intake_preview());
+    QVERIFY(window.click("intakeHome"));
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.intake_preview());
+    QVERIFY(!window.flow.intake_active());
+    QVERIFY(!SessionState(state).load());
+    QVERIFY(ProjectLibrary(state + ".recents").load().empty());
+    QCOMPARE(bytes(source), QByteArray("Retain this source."));
+  }
+  void damaged_intake_uses_existing_recovery_controls_and_stays_read_only() {
+    const auto source = path("retained-source");
+    replace_file(source, "A source. [[retained note]]\n");
+    const auto intake = read_fountain_intake(source);
+    const auto p = create_project(path("review-project"), {0, {{ElementType::action, ""}}}, intake.assets);
+    const auto opened = open_project(p.directory);
+    RecoveryStore store(p, opened.assets, p.directory + "/.recovery");
+    const auto package = store.preserve(opened.screenplay, "reload", QDateTime::currentDateTimeUtc());
+    replace_file(p.directory + "/imported-material.json", "damaged imported evidence");
+    const auto state = path("recovered-review-session");
+    Window window(font_, state, p.directory);
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.intake_active());
+    QVERIFY(!window.flow.document());
+    QCOMPARE(window.flow.candidates().size(), 1);
+    QVERIFY(window.click("recoveryChoice0"));
+    const auto destination = path("recovered-review");
+    window.item("recoveryDestination")->setProperty("text", destination);
+    QVERIFY(window.click("recoverProject"));
+    QTRY_VERIFY(window.flow.intake_active());
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.autosaver());
+    QCOMPARE(bytes(destination + "/imports/original.fountain"), QByteArray("A source. [[retained note]]\n"));
+    QCOMPARE(bytes(p.directory + "/imported-material.json"), QByteArray("damaged imported evidence"));
+    QVERIFY(open_project(destination).project.import_review);
+    Window competing(font_, path("competing-state"), destination);
+    QTRY_VERIFY(!competing.flow.busy());
+    QVERIFY(!competing.flow.intake_active());
+    QVERIFY(competing.flow.error().contains("locked"));
+    QCOMPARE(bytes(package.directory + "/imports/original.fountain"), QByteArray("A source. [[retained note]]\n"));
+  }
+  void explicit_fountain_preview_takes_precedence_over_remembered_project() {
+    const auto p = project();
+    const auto state = path("dispatch-state");
+    SessionState(state).save({p.directory, p.id, {}, 0, 0});
+    const auto state_before = bytes(state);
+    const auto source = path("explicit") + ".fountain";
+    replace_file(source, "Explicit preview source.");
+    Window window(font_, state, {}, {}, source);
+    QTRY_VERIFY(window.flow.intake_preview());
+    QVERIFY(!window.flow.document());
+    QCOMPARE(bytes(state), state_before);
+    QCOMPARE(window.flow.intake_source(), QString("Explicit preview source."));
+  }
+  void changed_published_intake_cannot_activate_as_the_reviewed_snapshot() {
+    const auto state = path("publication-session");
+    const auto input = path("reviewed");
+    const auto replacement = path("replacement");
+    replace_file(input, "The reviewed original.");
+    replace_file(replacement, "Different valid retained source.");
+    const auto other = read_fountain_intake(replacement);
+    const auto parent = path("publication-parent");
+    QVERIFY(QDir().mkdir(parent));
+    Window window(font_, state);
+    QTRY_VERIFY(!window.flow.busy());
+    window.flow.preview_import(input);
+    QTRY_VERIFY(window.flow.intake_preview());
+    window.flow.publish_import(parent, "Review");
+    const auto published = parent + "/Review";
+    // Hold GUI callbacks until the real worker publishes. Mutate the complete
+    // package before safe-access activation, retaining its expected UUID.
+    QElapsedTimer deadline; deadline.start();
+    while (!QFileInfo::exists(published + "/project.json") && deadline.elapsed() < 5000) QThread::msleep(1);
+    QVERIFY(QFileInfo::exists(published + "/project.json"));
+    replace_file(published + "/imported-material.json", *other.assets.imported_material);
+    replace_file(published + "/imports/original.fountain", *other.assets.original_fountain);
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.intake_active());
+    QVERIFY(!window.flow.document());
+    QVERIFY(window.flow.error().contains("differs from the reviewed bytes"));
+    QCOMPARE(window.flow.location(), published);
+    QVERIFY(!SessionState(state).load());
+    QVERIFY(ProjectLibrary(state + ".recents").load().empty());
+    QCOMPARE(bytes(input), QByteArray("The reviewed original."));
+    QCOMPARE(bytes(published + "/imports/original.fountain"), QByteArray("Different valid retained source."));
   }
 };
 QTEST_MAIN(ProjectAccessFlowTests)

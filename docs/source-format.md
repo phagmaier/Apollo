@@ -1,21 +1,23 @@
-# Apollo source format and saving (version 1)
+# Apollo source format and saving (editable v1; review-only v2)
 
 2026-10-28. Status: implemented in [writing-build-plan](writing-build-plan.md)
-slice 1 and slice 2 tasks 2.1–2.5. This is the working contract for the first usable
-writing build, not yet a long-term compatibility promise: later slices may add files or fields
+slice 1 and slice 2 tasks 2.1–2.5, plus bounded import intake 2.6a. This is the
+working contract for the first usable writing build, not yet a long-term compatibility promise: later slices may add files or fields
 under a new format version. The owner chose a portable project folder with
 versioned structured text; the details below are agent engineering choices.
 
 Code: `source/screenplay_format.*` (schema), `source/project.*` (folder and
 file replacement), `source/recovery.*` (recovery packages),
 `source/project_access.*` (safe open/recovery decisions),
-`source/project_creation.*` (named blank creation),
+`source/project_creation.*` (named staged creation),
+`source/fountain_intake.*` (lossless intake, integrity and review hints),
 `editor/project_access_flow.*` (home/open/recovery and writer transitions),
 `editor/project_library.*` (app-local recents),
 `editor/session_state.*` (app-local resume), `editor/screenplay_layout.cpp`
 (Qt document adapter), and `editor/autosave.*` (saving).
 Tests include `source_tests`, `autosave_tests`, `recovery_tests`,
-`project_creation_tests`, `project_library_tests`, `project_access_tests`,
+`project_creation_tests`, `fountain_intake_tests`, `fountain_intake_process_tests.py`,
+`project_library_tests`, `project_access_tests`,
 `session_state_tests`, `project_access_flow_tests`, `autosave_crash_tests.py`,
 `project_lock_tests.py`, and `project_access_process_tests.py`.
 
@@ -29,14 +31,15 @@ Tests include `source_tests`, `autosave_tests`, `recovery_tests`,
 | `.apollo.lock` | Runtime edit lock; released on normal exit, recovered by process identity after a crash; exclude from future Git history |
 
 Autosave changes the authoritative `screenplay.json` and adds bounded recovery
-packages under `.recovery/`. The import flow does not yet create the plan's
-`imported-material.json` or `imports/original.fountain`. If the two import files
-are present, opening retains their bytes in memory and Save a Copy preserves
-them verbatim (including empty files).
+packages under `.recovery/`. Task 2.6a creates `imported-material.json` and
+`imports/original.fountain` for explicit review-only intakes (see its contract
+below). Existing editable projects with legacy opaque import dependencies
+retain those bytes in memory, and Save a Copy preserves them verbatim
+(including empty files).
 Unreadable or symlinked dependencies are refused rather than silently omitted;
-the `imports` folder must also be an ordinary directory. Import parsing and
-its read-only reader remain pending. Session state and recents live outside the
-portable folder, as documented in tasks 2.4–2.5 below.
+the `imports` folder must also be an ordinary directory. Complete editable
+import remains pending; the 2.6a reader retains the whole unconverted source.
+Session state and recents live outside the portable folder, as documented in tasks 2.4–2.5 below.
 
 `project.json`, exactly these keys:
 
@@ -464,8 +467,9 @@ were not repeated, and no new performance or physical-input claim is made.
 `apollo_editor PROJECT` uses the bounded open/recovery screen. A healthy current
 save opens directly unless a verified newer revision or same-revision conflict
 needs an explicit choice. A missing path is a project-open failure, never an
-empty screenplay or a guessed Fountain import. An existing `.fountain` file
-still opens unsaved through the retained spike path. Instrumentation modes
+empty screenplay or a guessed Fountain import. At the 2.4 checkpoint, an existing
+`.fountain` file opened unsaved through the spike path; 2.6a replaces ordinary
+Fountain opening with the review preview. Instrumentation modes
 (`--check`, `--measure`, `--agreement`, `--snapshot`, `--measure-export`,
 `--autosave-typing`) and `--create` do not change the owner's resume state.
 
@@ -786,3 +790,95 @@ and during-save regression checks failed against the original saver; a later
 failing regression exposed and fixed missed captures during slow Retry. All
 added checks passed after the fixes. See the plan's task 2.1 evidence table for
 the specific competing-instance and destination-change scenarios.
+
+### Lossless Fountain intake and review (slice 2 task 2.6a)
+
+This is a deliberately bounded first subtask of 2.6, not editable Fountain
+import. See [fountain-compatibility.md](fountain-compatibility.md) for every
+official sample, independent expectations, canonical export decisions and the
+remaining editing/round-trip gate.
+
+Home offers **Import Fountain for Review…**. Choose/type a local file, review
+the captured source and candidate findings, then **Retain for Review** in a
+named new project. The parent/default-folder and collision naming rules are the
+same as blank creation. Preview and cancellation create no project and do not
+change session/recents. A publication failure keeps the preview available to
+retry or cancel. Publication uses the exact previewed snapshot; external-file
+changes or removal after preview do not alter it. Apollo never writes the
+external file. A publication/activation failure retains the complete published
+folder and shows its path through safe access rather than claiming activation. Activation compares the locked, inspected
+project assets against the reviewed snapshot as well as checking its UUID;
+consistent replacement of both dependencies cannot silently substitute a
+different import during handoff.
+
+An ordinary `.fountain` command-line input now opens this preview, taking
+precedence over last-project resume. Explicit instrumentation (`--check`,
+`--agreement`, `--create [FILE]`, measurements) still uses the limited spike
+parser for fixtures. That old `--create [FILE]` is not the product import path
+and has no preservation/compatibility guarantee. For repeatable byte-preserving
+intake without UI, use:
+
+```sh
+build/release/apollo_editor /absolute/new/project --retain-fountain /absolute/source.fountain
+build/release/apollo_editor /absolute/new/project
+```
+
+Review-only projects use **project manifest version 2**, exactly version 1's
+four keys plus `"mode": "import-review"` and `"version": 2`. Ordinary editable
+projects remain version 1. Older Apollo builds refuse version 2. The v2 source
+is a revision-zero screenplay with one empty action and an identity, a reserved
+structural placeholder, never a converted screenplay. Loading refuses authored
+writing in that placeholder. ProjectSession saving, Autosaver construction and
+editor layout/export instrumentation refuse review-only projects. The UI
+installs a reader with no writing document, autosaver or PDF job. It cannot
+claim clean screenplay output or silently treat retained writing as empty.
+
+Required immutable dependencies:
+
+| File | Contract |
+| --- | --- |
+| `imports/original.fountain` | Exact captured bytes, including empty files, BOM, all whitespace/line endings, invalid encodings and control characters |
+| `imported-material.json` | JSON object with exactly `format: "apollo-fountain-intake"`, `version: 1`, `status: "pending-conversion"`, `origin` (captured absolute source path), `bytes` (integer byte length), and `sha256` (lowercase SHA-256 of original) |
+
+Validation checks both files, schema/version, length and hash on staging and
+reopen. Missing/damaged/newer dependencies remain evidence, not a successful
+empty writer. Reserved intake metadata in a version 1 project is refused, so a
+manifest-only downgrade cannot enable editing. Existing opaque pre-intake
+assets retain their earlier byte-preserving copy contract. Source intake opens
+one regular file descriptor with no-follow/nonblocking flags and checks its
+size/timestamps before and after reading. Input symlinks, FIFOs, directories,
+unreadable files and files over **16 MiB** are refused. Reopened v2 originals
+are bounded to 16 MiB and metadata to 64 KiB. Parent-folder aliases are allowed;
+source file aliases must be selected by their actual target path.
+
+The reader exposes the complete retained source as plain selectable read-only
+text. It removes a UTF-8 BOM from the display only, visibly escapes control and
+format characters (including bidirectional controls), and uses a hex byte view
+for invalid UTF-8/other encodings. Text rendering can normalize line endings;
+the file copy remains authoritative. Candidate findings include note/boneyard
+delimiters, organization, production numbers, whitespace and syntax needing
+interpretation, with one-based lines and zero-based half-open original byte
+ranges. The list is capped at 200 with explicit notice; excerpts are bounded
+and labelled when truncated. The full source remains accessible. Findings are
+regenerated review hints, not stored semantic conversion, named notes/stash,
+font diagnostics, or exhaustive syntax recognition. Nested/escaped delimiters
+and malformed note boundaries remain unresolved, and all source remains pending
+regardless of the number or absence of findings.
+
+Active readers use the same identity-checked project access and lock, recents
+and no-argument resume. Home releases the lock on the worker, and normal writer
+switching still drains writing before Home/import. Reader selection/scroll is
+not persisted yet. Changes to the external source do not affect the retained
+project; later changes to retained dependencies are refused on reopen. During
+a session the reader is the validated in-memory snapshot. Recovery packages
+and new copies preserve both dependencies and automatically retain review-only
+mode; damaged intake uses the existing explicit recovery chooser. The reader
+has no writing to autosave and does not create routine snapshots or expose a
+Save a Copy UI of its own. Original project, existing recovery evidence and
+published copies remain untouched by recovery selection.
+
+Verification is recorded with task 2.6a in [writing-build-plan.md](writing-build-plan.md).
+Full conversion, note/stash naming, correction, editing, canonical Fountain
+serialization and independent semantic round-trip remain incomplete. No new
+representative performance, physical-input, power-loss or import interruption
+loss bound is claimed.

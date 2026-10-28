@@ -13,6 +13,9 @@ explicit failure-close choices are implemented and verified as recorded below.
 **2.5 — Bounded home/new/open is done.** Task 2.4 was finalized and committed
 as `2d61ac4`; task 2.5 adds verified recents, staged blank creation with safe
 collision handling/selectable locations, and lossless in-window switching.
+Task 2.5 is finalized as `be35108`. **2.6a — lossless intake and read-only
+review is done**, as a bounded first subtask; full editable import remains
+incomplete. See its evidence below and the [compatibility table](fountain-compatibility.md).
 Leak detection and crash loss during copying remain unverified. The other slice 2
 flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
@@ -331,8 +334,10 @@ milestone includes all slices; an earlier slice is not the usable writing build.
   overwriting collisions. Home/leave flushes writing asynchronously; save failure
   retains the writer with Keep Writing, Retry and Save a Copy. Real controls,
   failure paths, release/sanitizer/engine checks and review pass as recorded below.
-- **2.6 — Fountain import and imported-material reader (pending).** Separate
-  task; this home/new/open authorization does not implement import.
+- **2.6 — Fountain import and imported-material reader (partial).** The
+  compatibility investigation scoped completed 2.6a to lossless intake and read-only review;
+  complete editable conversion, named notes/stash and export compatibility are
+  still pending. See [compatibility table](fountain-compatibility.md).
 - Remaining slice 2 work is pending: stale temporary cleanup and focusing another
   process's existing window. Archive/delete and broader library lifecycle remain
   deferred milestone boundaries as described above.
@@ -532,12 +537,82 @@ could not write uv's default cache under the sandbox; `UV_CACHE_DIR=/tmp/apollo-
 resolved that environmental failure. The prior sanitizer, engine and native
 results above apply to the same implementation; no new timing claim is made.
 
+### Task 2.6a evidence and review
+
+Commit finalization re-reviewed the complete intake changes on 2026-10-28.
+Fresh release and ASan/UBSan suites pass 19/19, engine-only 2/2, and the three
+focused native Wayland import/reopen/cancel/recovery cases pass (5/5 including
+suite setup/cleanup). Logs: `build/task-2.6a-commit-{release,debug,engine,native}.log`.
+The first sandboxed attempts could not use uv's cache or LeakSanitizer process
+inspection; rerunning with native process/cache access passed, including default
+leak detection in this run. No new latency, physical-input or power-loss claim
+is added. Direct review found no further in-scope defect.
+
+The compatibility investigation found task 2.6 too large for one reviewable
+change. [fountain-compatibility.md](fountain-compatibility.md) records every
+checked-in official sample, independent original semantic expectations,
+selected canonical export treatment and the remaining gates. The completed
+first subtask is **lossless intake and review**, not editable import. It retains
+all source as pending conversion; no converted note/stash or clean screenplay
+export is claimed. The on-disk/UI contract is in
+[source-format.md](source-format.md#lossless-fountain-intake-and-review-slice-2-task-26a).
+
+| Check | Result |
+| --- | --- |
+| Intake/storage | `fountain_intake_tests` 32/32: byte-exact capture/staged reopen for all 16 official samples plus the independent example; empty/BOM/CRLF/Unicode/control/invalid-encoding bytes, located and bounded hints, nonregular/unreadable/oversize input, actual short-write rollback, typed metadata/hash/version validation, downgrade/hidden-writing refusal, copy/recovery and mode-changing Reload refusal |
+| Actual QML import/reopen | `project_access_flow_tests` 24/24 in final release, sanitizer and native Wayland runs: review/publish controls, read-only plain text and note access, missing-parent Retry, collisions, external source changed after preview, retained-original reopen/resume, writer switching, cancellation, damaged-import recovery and competing reader lock |
+| Publication/activation | A controlled real worker publication followed by replacement of both valid import dependencies (same UUID) is refused before activation; retained evidence/path and unchanged session/recents are checked |
+| Executable workflow | `fountain_intake_process_tests`: real `--retain-fountain` → explicit reopen → SIGKILL → no-argument resume; Python independently checks SHA-256, length and all evidence bytes; editing/layout/PDF instrumentation and existing-destination publication refuse the intake |
+| Required suites | Final release `mise run check` 19/19; `mise run check-debug` 19/19 (`ASAN_OPTIONS=detect_leaks=0`), followed by final rebuilt related sanitizer suites 10/10 after the last activation safeguard; engine-only 2/2 |
+| Independent layout | Academy comparison passes with the same four documented deviations; required checks retain hand-derived PDF fixtures and editor/PDF agreement |
+| Native path | `tools/check-wayland.sh --preflight` passes compositor/fcitx input (55 editor checks), export lifecycle (13), project flows, independent export checks and OpenGL first paint. Final rebuilt project-flow suite passes 24/24 using software rendering and synthetic Qt keys |
+
+Direct implementation review covered staging, integrity, original-byte
+preservation, version compatibility, worker ownership, safe access/recovery,
+output refusal and test necessity. It removed a race between UI access to the
+reader session and worker teardown during departure, refused mode-changing
+Reload into a writer, and
+added comparison against the reviewed bytes before activating a published
+intake. Final checks pass; no remaining in-scope finding was identified. The
+preview/reader screenshots were visually inspected. The first intake test run
+had invalid test fixtures missing required source IDs; its QtTest exception
+caused SIGABRT, confirmed in coredump metadata. Corrected fixtures pass; this
+was not an application import crash. Repeated per-sample save-refusal checks
+were consolidated into one focused contract check.
+
+Logs: `build/task-2.6-final-release.log`, `build/task-2.6-debug.log`,
+`build/task-2.6-debug-final-related.log`, `build/task-2.6-engine.log`,
+`build/task-2.6-academy.log`, `build/task-2.6-native-preflight.log`, and
+`build/task-2.6-native-flow-final.log`. Native preflight artifacts/results are
+in `build/wayland-check-20261028-154102-SQSGlu/`; actual executable logs are in
+`build/{release,debug}/intake-process-tests/`. UI captures are
+`build/release/project-access-tests/import-{preview,reader}.png`.
+The sandbox's uv cache needs `UV_CACHE_DIR=/tmp/apollo-uv-cache`; no tool/font
+pins or dependencies were changed.
+
+Remaining **2.6** work: semantic conversion and precise unresolved ranges,
+named read-only converted notes/stash and metadata associations, migration from
+review-only intake, correction/editing access, output-specific diagnostics,
+canonical Fountain serialization and independent edited semantic round-trip.
+Slice 3's deliberate breaks, case/CONT'D, whitespace and complete authoring/layout
+contracts remain necessary. The reader has no Save a Copy UI or persisted
+selection/scroll. Its hints are not exhaustive syntax recognition, and invalid
+encoding is retained as bytes rather than guessed. Native file/folder chooser
+acceptance was not newly exercised for import; the native tests entered paths
+directly through the real controls.
+No deterministic simultaneous input-file mutation during its read, kill during
+staging/publication, new representative import performance, physical-input
+latency, leak detection or power-loss guarantee is established. Existing
+copying/crash-loss and I/O-contention limits remain unchanged.
+
 ### Slice 1 result (done 2026-10-28)
 
 The implemented contract and measurements are in [source-format.md](source-format.md);
 it supersedes the proposals above where they differ. A project folder opens
 in `apollo_editor` with autosave (`apollo_editor DIR --create [FILE.fountain]`
-creates one); a Fountain path still opens unsaved.
+created one); at that checkpoint a Fountain path opened unsaved. Task 2.6a
+now routes ordinary Fountain opening to the review preview; explicit spike
+instrumentation retains its limited parser.
 
 | Required evidence | Result |
 | --- | --- |

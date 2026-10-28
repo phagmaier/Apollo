@@ -34,11 +34,6 @@ ProjectAccessFlow::~ProjectAccessFlow() {
   saver_.reset();
 }
 
-void ProjectAccessFlow::launch(std::function<void()> operation) {
-  if (worker_.joinable()) worker_.join(); // Previous result has already arrived.
-  worker_ = std::thread(std::move(operation));
-}
-
 QVariantList ProjectAccessFlow::recent_projects() const {
   QVariantList result;
   for (const auto& recent : recents_)
@@ -55,11 +50,11 @@ void ProjectAccessFlow::show_access() {
   if (view_.status() != QQuickView::Ready) throw std::runtime_error("cannot load project access QML");
 }
 
-void ProjectAccessFlow::start(const QString& directory) {
+void ProjectAccessFlow::start(const QString& directory, const QString& fountain) {
   show_access();
   busy_ = true;
   emit changed();
-  launch([this, directory] {
+  launch([this, directory, fountain] {
     std::optional<ResumeState> resume;
     std::vector<RecentProject> recents;
     QString session_error, library_error;
@@ -68,7 +63,7 @@ void ProjectAccessFlow::start(const QString& directory) {
     try { recents = library_.load(); }
     catch (const std::exception& error) { library_error = QStringLiteral("Recent projects unavailable: %1").arg(QString::fromUtf8(error.what())); }
     const auto default_location = source::default_project_location();
-    QMetaObject::invokeMethod(this, [this, directory, resume = std::move(resume), recents = std::move(recents), session_error, library_error, default_location]() mutable {
+    QMetaObject::invokeMethod(this, [this, directory, fountain, resume = std::move(resume), recents = std::move(recents), session_error, library_error, default_location]() mutable {
       busy_ = false;
       resume_ = std::move(resume);
       recents_ = std::move(recents);
@@ -76,14 +71,15 @@ void ProjectAccessFlow::start(const QString& directory) {
       session_notice_ = session_error;
       library_notice_ = library_error;
       update_notice();
-      if (!directory.isEmpty()) inspect(directory, {});
+      if (!fountain.isEmpty()) preview_import(fountain);
+      else if (!directory.isEmpty()) inspect(directory, {});
       else if (resume_) inspect(resume_->directory, resume_->project_id);
     }, Qt::QueuedConnection);
   });
 }
 
 void ProjectAccessFlow::open_project(const QString& directory) {
-  if (busy_ || document_) return;
+  if (busy_ || document_ || review_session_ || intake_) return;
   if (directory.trimmed().isEmpty()) {
     error_ = QStringLiteral("Choose an existing Apollo project folder.");
     emit changed();
@@ -92,13 +88,13 @@ void ProjectAccessFlow::open_project(const QString& directory) {
   inspect(directory, {});
 }
 void ProjectAccessFlow::open_recent(int index) {
-  if (busy_ || document_ || index < 0 || static_cast<std::size_t>(index) >= recents_.size()) return;
+  if (busy_ || document_ || review_session_ || intake_ || index < 0 || static_cast<std::size_t>(index) >= recents_.size()) return;
   const auto& recent = recents_[static_cast<std::size_t>(index)];
   inspect(recent.directory, recent.project_id);
 }
 
 void ProjectAccessFlow::create_project(const QString& parent, const QString& name) {
-  if (busy_ || document_) return;
+  if (busy_ || document_ || review_session_ || intake_) return;
   busy_ = true;
   error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
   emit changed();
@@ -118,16 +114,92 @@ void ProjectAccessFlow::create_project(const QString& parent, const QString& nam
   });
 }
 
-void ProjectAccessFlow::inspect(const QString& directory, const QString& expected_id) {
+void ProjectAccessFlow::show_intake() {
+  view_.setInitialProperties({{"access", QVariant::fromValue<QObject*>(this)}});
+  view_.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_INTAKE_QML)));
+  if (view_.status() != QQuickView::Ready) throw std::runtime_error("cannot load imported material QML");
+}
+
+void ProjectAccessFlow::preview_import(const QString& path) {
+  if (busy_ || document_ || review_session_) return;
+  busy_ = true; error_.clear(); emit changed();
+  launch([this, path] {
+    access_.reset();
+    std::optional<source::FountainIntake> intake;
+    QString failure;
+    try { intake = source::read_fountain_intake(path); }
+    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    QMetaObject::invokeMethod(this, [this, intake = std::move(intake), failure]() mutable {
+      busy_ = false;
+      error_ = failure;
+      if (intake) { intake_ = std::move(intake); location_.clear(); candidates_.clear(); current_available_ = false; show_intake(); }
+      emit changed();
+    }, Qt::QueuedConnection);
+  });
+}
+
+void ProjectAccessFlow::publish_import(const QString& parent, const QString& name) {
+  if (busy_ || document_ || review_session_ || !intake_) return;
+  busy_ = true; error_.clear(); emit changed();
+  launch([this, parent, name, assets = intake_->assets] {
+    std::optional<source::Project> project;
+    QString failure;
+    try { project = source::create_named_project(parent, name, {0, {{ElementType::action, ""}}}, assets); }
+    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    QMetaObject::invokeMethod(this, [this, project, failure] {
+      busy_ = false;
+      if (!project) { error_ = failure; emit changed(); return; }
+      const auto expected = intake_->assets;
+      intake_.reset();
+      show_access();
+      // Activation can still fail (changed/locked project). Retain the
+      // published folder and its path through the existing safe-access UI.
+      inspect(project->directory, project->id, expected);
+    }, Qt::QueuedConnection);
+  });
+}
+
+void ProjectAccessFlow::install_intake(std::unique_ptr<source::ProjectSession> session, source::FountainIntake intake) {
+  const auto project = session->opened().project;
+  review_session_ = std::move(session);
+  intake_ = std::move(intake);
+  location_ = project.directory;
+  show_intake();
+  // There is no screenplay cursor yet. Persist only the active project and
+  // identity, using the same validated session format and recent-list merge.
+  busy_ = true; emit changed();
+  launch([this, project] {
+    QString failure, library_error;
+    std::optional<std::vector<RecentProject>> recents;
+    const ResumeState snapshot{project.directory, project.id, {}, 0, 0};
+    try { state_.save(snapshot); }
+    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    try { library_.record({project.directory, project.id}); recents = library_.load(); }
+    catch (const std::exception& error) { library_error = QString::fromUtf8(error.what()); }
+    QMetaObject::invokeMethod(this, [this, snapshot, failure, library_error, recents = std::move(recents)]() mutable {
+      busy_ = false; resume_ = snapshot;
+      session_notice_ = failure; library_notice_ = library_error;
+      if (recents) recents_ = std::move(*recents);
+      update_notice(); emit activated();
+    }, Qt::QueuedConnection);
+  });
+}
+
+void ProjectAccessFlow::inspect(const QString& directory, const QString& expected_id, std::optional<source::ProjectAssets> expected_assets) {
   busy_ = true;
   location_ = QFileInfo(directory).absoluteFilePath();
   error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
   emit changed();
-  launch([this, path = location_, expected_id] {
+  launch([this, path = location_, expected_id, expected_assets = std::move(expected_assets)] {
     access_.reset();
     QString failure;
-    try { access_ = std::make_unique<source::ProjectAccess>(path, expected_id); }
-    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    try {
+      access_ = std::make_unique<source::ProjectAccess>(path, expected_id);
+      if (expected_assets && source::open_project(path).assets != *expected_assets)
+        throw source::SourceError(source::SourceError::Kind::external_change,
+            QStringLiteral("Published import at %1 differs from the reviewed bytes. It was retained but not activated; inspect its evidence before opening again.").arg(path));
+    }
+    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); access_.reset(); }
     QMetaObject::invokeMethod(this, [this, failure] {
       busy_ = false;
       error_ = failure;
@@ -155,21 +227,27 @@ void ProjectAccessFlow::recover(int index, const QString& destination) {
 }
 
 void ProjectAccessFlow::select(int index, const QString& destination) {
-  if (busy_ || document_ || !access_ || (index < 0 && !current_available_)) return;
+  if (busy_ || document_ || review_session_ || intake_ || !access_ || (index < 0 && !current_available_)) return;
   busy_ = true; error_.clear(); emit changed();
   launch([this, index, destination] {
     std::unique_ptr<source::ProjectSession> session;
     QString failure;
-    try { session = index < 0 ? access_->open_current() : access_->recover(static_cast<std::size_t>(index), destination); }
-    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    std::optional<source::FountainIntake> intake;
+    try { session = index < 0 ? access_->open_current() : access_->recover(static_cast<std::size_t>(index), destination);
+      if (session->opened().project.import_review) intake = source::open_fountain_intake(session->opened().assets);
+    }
+    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); session.reset(); }
     if (session) access_.reset();
-    QMetaObject::invokeMethod(this, [this, session = std::move(session), failure]() mutable {
+    QMetaObject::invokeMethod(this, [this, session = std::move(session), intake = std::move(intake), failure]() mutable {
       busy_ = false;
       if (!session) { error_ = failure; emit changed(); return; }
-      try { install(std::move(session)); }
+      try {
+        if (intake) install_intake(std::move(session), std::move(*intake));
+        else install(std::move(session));
+      }
       catch (const std::exception& error) {
         error_ = QString::fromUtf8(error.what());
-        view_.setSource({}); export_job_.reset(); saver_.reset(); document_.reset();
+        view_.setSource({}); export_job_.reset(); saver_.reset(); document_.reset(); review_session_.reset(); intake_.reset();
         show_access();
         current_available_ = false; candidates_.clear();
         emit changed();
@@ -220,9 +298,12 @@ void ProjectAccessFlow::home() {
   if (busy_ || leaving_) return;
   if (document_) { begin_leave(false); return; }
   busy_ = true; emit changed();
-  launch([this] {
+  auto review = std::move(review_session_);
+  launch([this, review = std::move(review)]() mutable {
     access_.reset();
+    review.reset();
     QMetaObject::invokeMethod(this, [this] {
+      intake_.reset();
       location_.clear(); error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
       busy_ = false; show_access(); emit changed();
     }, Qt::QueuedConnection);

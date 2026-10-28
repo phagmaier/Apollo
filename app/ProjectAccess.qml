@@ -8,6 +8,7 @@ Rectangle {
     required property var access
     property int selectedIndex: -1
     property bool creating: false
+    property bool importing: false
     color: "#d4d9df"
     Connections {
         target: page.access
@@ -57,7 +58,37 @@ Rectangle {
                     objectName: "showNewProject"
                     text: page.creating ? "Cancel New Project" : "New Project"
                     enabled: !page.access.busy
-                    onClicked: page.creating = !page.creating
+                    onClicked: { page.creating = !page.creating; page.importing = false }
+                }
+                Button {
+                    objectName: "showImport"
+                    text: page.importing ? "Cancel Import" : "Import Fountain for Review…"
+                    enabled: !page.access.busy
+                    onClicked: { page.importing = !page.importing; page.creating = false }
+                }
+            }
+            Column {
+                width: parent.width; spacing: 12; visible: page.importing
+                Label {
+                    width: parent.width; wrapMode: Text.Wrap; color: "#303843"
+                    text: "Retain and read an exact copy of your Fountain file in a new project. Editable conversion and screenplay exports are still pending. Review the source before retaining it."
+                }
+                TextField {
+                    id: importSource; objectName: "importSourcePath"
+                    width: parent.width; selectByMouse: true; enabled: !page.access.busy
+                    placeholderText: "/path/to/script.fountain"; Accessible.name: "Fountain source file"
+                }
+                Flow {
+                    width: parent.width; spacing: 12
+                    Button {
+                        objectName: "chooseImportSource"; text: "Choose Fountain File…"; enabled: !page.access.busy
+                        onClicked: importFiles.open()
+                    }
+                    Button {
+                        objectName: "previewImport"; text: "Review Import"
+                        enabled: !page.access.busy && importSource.text.length > 0
+                        onClicked: page.access.preview_import(importSource.text)
+                    }
                 }
             }
             Column {
@@ -98,7 +129,7 @@ Rectangle {
             }
             Label {
                 width: parent.width; wrapMode: Text.Wrap
-                visible: !page.creating
+                visible: !page.creating && !page.importing
                 text: "Choose an Apollo project folder. Opening never replaces its writing with a recovery copy."
                 font { family: "Liberation Sans"; pixelSize: 14 }
                 color: "#303843"
@@ -107,7 +138,7 @@ Rectangle {
                 id: projectFolder
                 objectName: "openLocation"
                 width: parent.width
-                visible: !page.creating
+                visible: !page.creating && !page.importing
                 text: page.access.location
                 enabled: !page.access.busy
                 selectByMouse: true
@@ -117,7 +148,7 @@ Rectangle {
             }
             Flow {
                 width: parent.width; spacing: 12
-                visible: !page.creating
+                visible: !page.creating && !page.importing
                 Button {
                     objectName: "chooseOpenFolder"; text: "Choose Project Folder…"
                     enabled: !page.access.busy
@@ -266,5 +297,12 @@ Rectangle {
                 else projectFolder.text = path
             }
         }
+    }
+    FileDialog {
+        id: importFiles; objectName: "importFileDialog"
+        title: "Choose a Fountain source to retain"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["Fountain scripts (*.fountain)", "All files (*)"]
+        onAccepted: importSource.text = page.access.local_folder(selectedFile)
     }
 }

@@ -48,9 +48,8 @@ std::string read_fountain(const char* path) {
   return source.str();
 }
 
-// A Fountain file opens unsaved, as in the spike. A project folder opens
-// with autosave; the saver is declared after the document so it is
-// destroyed first.
+// Explicit spike/instrumentation path: Fountain parses unsaved; editable
+// projects use autosave. Ordinary product opening uses ProjectAccessFlow.
 struct Opened {
   std::unique_ptr<QTextDocument> document;
   std::unique_ptr<Autosaver> saver;
@@ -68,6 +67,7 @@ Opened open_document(const char* path) {
   }
   auto session = std::make_unique<apollo::source::ProjectSession>(info.absoluteFilePath());
   const auto& project = session->opened();
+  if (project.project.import_review) throw std::runtime_error("Fountain intake is review-only; open the project normally to read retained material. Editing/layout/export conversion is pending.");
   opened.export_destination = info.absoluteFilePath() + ".pdf";
   opened.document = apollo::editor::screenplay_document(project.screenplay.elements, font);
   opened.saver = std::make_unique<Autosaver>(opened.document.get(), std::move(session));
@@ -476,9 +476,10 @@ int autosave_typing(const char* path, const QString& log_path, int keys, int int
 }
 }
 
-// Opens a Fountain file, unsaved, or a project folder with autosave in the
-// editor. DIR --create [FILE.fountain] creates a project, optionally from an
-// imported Fountain file, and exits. --autosave-typing types into a project
+// Ordinary Fountain input previews lossless intake; projects open through safe
+// access as a writer or a review-only reader. --retain-fountain captures a
+// review-only project. The explicit spike DIR --create [FILE.fountain] uses
+// the limited parser and exits. --autosave-typing types into an editable project
 // for the crash checks. --check only lays the document out and
 // reports whether every block matched the engine's line breaks. --measure
 // times synthetic typing at a page boundary; see docs/spike-progress.md for
@@ -491,19 +492,26 @@ int main(int argc, char** argv) {
   const std::string mode = argc >= 3 ? argv[2] : "";
   const bool check = mode == "--check", measuring = mode == "--measure", comparing = mode == "--agreement",
              snapshot = mode == "--snapshot", export_measuring = mode == "--measure-export", creating = mode == "--create",
-             typing = mode == "--autosave-typing";
-  if ((check || comparing || typing || creating) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
+             typing = mode == "--autosave-typing", retaining = mode == "--retain-fountain";
+  if ((check || comparing || typing || creating || retaining) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   QGuiApplication application(argc, argv);
-  const bool usage = check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
+  const bool usage = retaining ? argc != 4 : check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
       : typing ? argc < 4 || argc > 7
       : (comparing || snapshot || export_measuring) ? argc != 4 && argc != 5 : argc != 1 && argc != 2;
   if (usage) {
     std::cerr << "usage: apollo_editor [FILE.fountain|PROJECT] [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n"
                  "       apollo_editor PROJECT --create [FILE.fountain]\n"
+                 "       apollo_editor PROJECT --retain-fountain FILE\n"
                  "       apollo_editor PROJECT --autosave-typing LOG [KEYS [INTERVAL_MS [PHASE:N]]]\n";
     return 2;
   }
   try {
+    if (retaining) {
+      const auto intake = apollo::source::read_fountain_intake(QString::fromLocal8Bit(argv[3]));
+      const auto project = apollo::source::create_project(QString::fromLocal8Bit(argv[1]), {0, {{apollo::ElementType::action, ""}}}, intake.assets);
+      std::cout << "retained for read-only review at " << project.directory.toStdString() << '\n';
+      return 0;
+    }
     if (creating) {
       std::vector<apollo::Element> elements{{apollo::ElementType::action, ""}};
       if (argc == 4) elements = apollo::import_fountain(read_fountain(argv[3]));
@@ -527,11 +535,11 @@ int main(int argc, char** argv) {
     const QFileInfo input_info(input);
     const bool fountain = !input.isEmpty() && input_info.isFile() &&
                          input_info.suffix().compare("fountain", Qt::CaseInsensitive) == 0;
-    if (!check && !fountain) {
+    if (!check) {
       QQuickView view;
       apollo::editor::ProjectAccessFlow flow(view, apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR)),
                                             QStringLiteral(APOLLO_FONT_DIR), exporter());
-      flow.start(input);
+      flow.start(fountain ? QString() : input, fountain ? input : QString());
       view.setTitle(QStringLiteral("Apollo"));
       view.setMinimumSize(QSize(560, 400));
       view.resize(1280, 1000);

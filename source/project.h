@@ -17,11 +17,12 @@ inline constexpr int project_version = 1;
 // and its screenplay source file (docs/source-format.md).
 struct Project {
   QString directory, id, screenplay_file;
+  bool import_review = false;
   QString screenplay_path() const { return directory + QLatin1Char('/') + screenplay_file; }
 };
 // Immutable import dependencies, kept in memory so a copy can be complete
 // even after the original destination becomes unavailable. Their import
-// schema/reader is a later slice; copying preserves these bytes verbatim.
+// reader is separately versioned; copying preserves these bytes verbatim.
 struct ProjectAssets {
   std::optional<QByteArray> imported_material, original_fountain;
   bool operator==(const ProjectAssets&) const = default;

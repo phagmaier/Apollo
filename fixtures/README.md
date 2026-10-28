@@ -138,7 +138,11 @@ that measured rule is part of the profile, not an additional deviation.
 
 ## Fountain syntax samples — `fountain-syntax/`
 
-These are the official Fountain parser test files from [nyousefi/Fountain](https://github.com/nyousefi/Fountain) (MIT; see `fountain-syntax/LICENSE`). Each one covers one construct: boneyard, notes, dual dialogue, forced elements, sections, synopses, scene numbers, page breaks, transitions, centered text, and indenting. Use them for import coverage and for the unsupported-construct report. They have no expected layouts.
+These are the official Fountain parser test files from [nyousefi/Fountain](https://github.com/nyousefi/Fountain) (MIT; see `fountain-syntax/LICENSE`). Each one covers one construct: boneyard, notes, dual dialogue, forced elements, sections, synopses, scene numbers, page breaks, transitions, centered text, and indenting. Use them for import coverage and for the unsupported-construct report. They have no expected layouts. Task 2.6a exercises all 16 files for byte-exact
+intake/reopen; this is not parser or layout acceptance. The
+[compatibility table](../docs/fountain-compatibility.md) records each file and
+the remaining semantic contract. Original independent examples and hand-worked
+conversion expectations live in [import/README.md](import/README.md).
 
 The same repository includes *Big Fish* (John August), a real full-length screenplay. Keep it in `reference/big-fish.fountain` as a local realistic import and performance input; it is gitignored. It renders to 124 pages with the oracle.
 

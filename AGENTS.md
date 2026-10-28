@@ -82,8 +82,13 @@ frozen every visual detail.
   preview, not the product scene navigator. Undo is Ctrl+Z; redo is Ctrl+Shift+Z.
 - Project folders and autosave follow [source-format.md](docs/source-format.md).
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
-  and `apollo_editor DIR` opens it with autosave; a Fountain path still opens
-  unsaved. `autosave_crash_tests` kills continuous typing at each save phase;
+  and `apollo_editor DIR` opens editable projects with autosave. Ordinary
+  Fountain paths now open a lossless review-only import preview (task 2.6a);
+  `DIR --retain-fountain FILE` publishes that review-only intake. See
+  [fountain-compatibility.md](docs/fountain-compatibility.md): full editable
+  conversion and round-trip compatibility remain pending. The explicit spike
+  `--create [FILE]`/instrumentation paths retain their limited parser.
+  `autosave_crash_tests` kills continuous typing at each save phase;
   the format document has the workload measurement command.
 - `reference/` contains local copyrighted or personal material and is ignored by
   Git. Generated workloads are also ignored; see the fixture guide for how to

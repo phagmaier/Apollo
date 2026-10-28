@@ -12,4 +12,6 @@ QString default_project_location();
 // and chooses name, name (2), ... without replacing any existing entry. At most
 // 1000 candidates are considered. Throws SourceError on invalid input or I/O.
 Project create_blank_project(const QString& parent, const QString& name);
+// Same naming/publication contract, including typed review-only intakes.
+Project create_named_project(const QString& parent, const QString& name, Screenplay screenplay, const ProjectAssets& assets);
 }

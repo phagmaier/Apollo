@@ -1,0 +1,43 @@
+Draft date: 2026-10-28
+Unrecognized field: Keep this metadata
+
+ext. platform - dawn #12A#
+
+!WATCH THE DOORS
+They close.
+    An indented notice.
+
+@McKay (quietly)
+First line.
+Second line.
+  
+After a deliberate empty line.
+
+JUNE ^
+At the same time.
+
+A literal \*star\*, **bold**, _underline_ and café.
+
+[[A note with <b>literal tags</b>.]]
+
+/*
+INT. OMITTED ROOM - NIGHT
+This passage stays out of screenplay exports.
+*/
+
+# Sequence one
+= A synopsis, not a printed act label.
+
+> End of Act One <
+
+=====
+
+...An ellipsis, not a forced heading.
+
+CUT TO:  
+
+He dialed *69 and then *23.
+
+[[Unclosed note
+
+Visible writing after the malformed note.

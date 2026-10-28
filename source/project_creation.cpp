@@ -33,6 +33,10 @@ QString default_project_location() {
 }
 
 Project create_blank_project(const QString& parent, const QString& input_name) {
+  return create_named_project(parent, input_name, {0, {{ElementType::action, ""}}}, {});
+}
+
+Project create_named_project(const QString& parent, const QString& input_name, Screenplay screenplay, const ProjectAssets& assets) {
   const auto name = project_name(input_name);
   if (!parent.isValidUtf16() || parent.contains(QChar(0)) || !QDir::isAbsolutePath(parent) || QDir::cleanPath(parent) != parent)
     invalid(QStringLiteral("project parent must be a clean absolute folder path"));
@@ -55,7 +59,7 @@ Project create_blank_project(const QString& parent, const QString& input_name) {
     // create_project owns staging, validation, and no-replace publication.
     // Do not turn an arbitrary I/O error into a collision retry: a competing
     // publish after this check fails safely, leaving that destination intact.
-    return create_project(destination, {0, {{ElementType::action, ""}}});
+    return create_project(destination, std::move(screenplay), assets);
   }
   io_error(QStringLiteral("cannot create project %1: all %2 folder names already exist in %3")
                .arg(name).arg(maximum_candidates).arg(canonical_parent));
