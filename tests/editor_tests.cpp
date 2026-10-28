@@ -756,6 +756,54 @@ private slots:
     QVERIFY(same_elements(document_elements(*document_), after));
   }
 
+  void clipboard_preserves_deliberate_breaks_data() {
+    QTest::addColumn<int>("row");
+    QTest::newRow("whole element") << 0;
+    QTest::newRow("partial Unicode selection after a break") << 1;
+  }
+  void clipboard_preserves_deliberate_breaks() {
+    QFETCH(int, row);
+    const Element input = row == 0
+        ? Element{ElementType::dialogue, "one\ntwo", false, {{4, 7, Style::bold}}}
+        : Element{ElementType::dialogue, "pré\n𝄞 café\ntail", false, {{5, 15, Style::italic}, {10, 15, Style::bold}}};
+    const Element expected = row == 0 ? input
+        : Element{ElementType::dialogue, "𝄞 café\n", false, {{0, 10, Style::italic}, {5, 10, Style::bold}}};
+    const int start = row == 0 ? 0 : 4, end = row == 0 ? 7 : 12;
+    const auto source = screenplay_document({input}, font_);
+    const auto original = document_elements(*source);
+    EditorCommands commands(source.get());
+    commands.copy(start, end);
+    QCOMPARE(QGuiApplication::clipboard()->text(), QString::fromStdString(expected.text));
+
+    // Apollo paste keeps an internal break, its type, and its emphasis in
+    // one block; it must not fall back to external paragraph paste.
+    const auto target = screenplay_document({{ElementType::action, ""}}, font_);
+    EditorCommands paste(target.get());
+    paste.paste(0, 0, 0);
+    QCOMPARE(target->blockCount(), 1);
+    QVERIFY(same_element(document_elements(*target).front(), expected));
+    commands.cut(start, end);
+    QCOMPARE(document_elements(*source).front().text, row == 0 ? std::string() : std::string("pré\ntail"));
+    source->undo();
+    QVERIFY(document_elements(*source) == original);
+  }
+
+  // Splitting a destination for a different pasted type uses the same
+  // source-byte offsets as copy/cut, including before an internal break.
+  void paste_between_halves_with_deliberate_breaks() {
+    const auto source = screenplay_document({{ElementType::cue, "MARA"}}, font_);
+    EditorCommands copy(source.get());
+    copy.copy(0, 4);
+    const auto target = screenplay_document({{ElementType::action, "a\nbc"}}, font_);
+    const auto original = document_elements(*target);
+    EditorCommands paste(target.get());
+    paste.paste(3, 3, 3);
+    QVERIFY(same_elements(document_elements(*target), {{ElementType::action, "a\nb"},
+                         {ElementType::cue, "MARA"}, {ElementType::action, "c"}}));
+    target->undo();
+    QVERIFY(document_elements(*target) == original);
+  }
+
   // Clipboard data is external. Invalid Apollo metadata must fall back to
   // the clipboard's plain text instead of creating invalid elements/spans.
   void paste_invalid_apollo_metadata_data() {
@@ -764,7 +812,7 @@ private slots:
     QTest::newRow("span beyond text") << QByteArray(R"([{"type":2,"text":"Bad","dual":false,"styles":[[0,99,1]]}])");
     QTest::newRow("negative span") << QByteArray(R"([{"type":2,"text":"Bad","dual":false,"styles":[[-1,2,1]]}])");
     QTest::newRow("split utf8") << QByteArray(QStringLiteral(R"([{"type":2,"text":"é","dual":false,"styles":[[0,1,1]]}])").toUtf8());
-    QTest::newRow("paragraph in element") << QByteArray(R"([{"type":2,"text":"Bad\ncue","dual":false,"styles":[]}])");
+    QTest::newRow("carriage return in element") << QByteArray(R"([{"type":2,"text":"Bad\rcue","dual":false,"styles":[]}])");
   }
   void paste_invalid_apollo_metadata() {
     QFETCH(QByteArray, payload);

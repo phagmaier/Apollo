@@ -1,7 +1,9 @@
+#include "editor/autosave.h"
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
 #include "editor/pdf_export_job.h"
 #include "fountain/import.h"
+#include "source/project.h"
 
 #include <QClipboard>
 #include <QDir>
@@ -18,6 +20,7 @@
 #include <QTextStream>
 #include <QTimer>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -27,18 +30,46 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <csignal>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace {
+using apollo::editor::Autosaver;
 using apollo::editor::ScreenplayLayout;
 
 QString exporter() { return QCoreApplication::applicationDirPath() + QStringLiteral("/pdf_export"); }
 
-std::unique_ptr<QTextDocument> open_document(const char* path) {
+std::string read_fountain(const char* path) {
   std::ifstream input(path);
   if (!input) throw std::runtime_error("cannot open input");
   std::ostringstream source; source << input.rdbuf();
-  return apollo::editor::screenplay_document(apollo::import_fountain(source.str()),
-                                             apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+  return source.str();
+}
+
+// A Fountain file opens unsaved, as in the spike. A project folder opens
+// with autosave; the saver is declared after the document so it is
+// destroyed first.
+struct Opened {
+  std::unique_ptr<QTextDocument> document;
+  std::unique_ptr<Autosaver> saver;
+  QString export_destination;
+};
+
+Opened open_document(const char* path) {
+  const auto font = apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR));
+  const QFileInfo info(QString::fromLocal8Bit(path));
+  Opened opened;
+  opened.export_destination = info.absolutePath() + "/" + info.completeBaseName() + ".pdf";
+  if (!info.isDir()) {
+    opened.document = apollo::editor::screenplay_document(apollo::import_fountain(read_fountain(path)), font);
+    return opened;
+  }
+  auto project = apollo::source::open_project(info.absoluteFilePath());
+  opened.export_destination = info.absoluteFilePath() + ".pdf";
+  opened.document = apollo::editor::screenplay_document(project.screenplay.elements, font);
+  opened.saver = std::make_unique<Autosaver>(opened.document.get(), project.project, project.screenplay.revision);
+  return opened;
 }
 
 // Process events until the window swaps a frame, or give up after a second.
@@ -98,13 +129,14 @@ int page_boundary_position(const QTextDocument& document) {
 int measure(const char* path, int keys, const QString& export_directory = {}) {
   if (keys <= 0) throw std::runtime_error("KEYS must be positive");
   QElapsedTimer clock; clock.start();
-  auto document = open_document(path);
+  auto opened = open_document(path);
+  auto& document = opened.document;
   apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(path));
   const bool exporting = !export_directory.isEmpty();
   if (exporting && !QDir().mkpath(export_directory)) throw std::runtime_error("cannot create export directory");
   const auto destination = QDir(export_directory).filePath(QStringLiteral("while-typing.pdf"));
   QQuickView view;
-  auto* editor = apollo::editor::show_editor(view, *document, exporting ? &job : nullptr, destination);
+  auto* editor = apollo::editor::show_editor(view, *document, exporting ? &job : nullptr, destination, opened.saver.get());
   view.resize(880, 1000);
   view.show();
   if (!wait_for_frame(view)) throw std::runtime_error("the window never rendered");
@@ -303,11 +335,12 @@ int scripted_edits(QQuickWindow& window, QQuickItem& editor, QTextDocument& docu
 
 // Writes the editor's line dump and exports the PDF of the same document.
 int agreement(const char* path, const QString& directory, int edits, bool snapshot = false, bool include_title = true) {
-  auto document = open_document(path);
+  auto opened = open_document(path);
+  auto& document = opened.document;
   apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(path));
   QQuickView view;
   const auto destination = QDir(directory).filePath(QStringLiteral("editor.pdf"));
-  auto* editor = apollo::editor::show_editor(view, *document, &job, destination);
+  auto* editor = apollo::editor::show_editor(view, *document, &job, destination, opened.saver.get());
   view.resize(880, 1000);
   view.show();
   if (!wait_for_frame(view)) throw std::runtime_error("the window never rendered");
@@ -349,9 +382,95 @@ int agreement(const char* path, const QString& directory, int edits, bool snapsh
             << moved << " later elements changed page\n";
   return 0;
 }
+
+// Appends whole lines with one write each, so a line is complete in the
+// file even if the process is killed straight after.
+class EventLog {
+public:
+  explicit EventLog(const QString& path) : fd_(::open(QFile::encodeName(path).constData(), O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644)) {
+    if (fd_ < 0) throw std::runtime_error("cannot open the event log");
+  }
+  ~EventLog() { ::close(fd_); }
+  void line(const QString& text) const {
+    const auto bytes = (text + QLatin1Char('\n')).toUtf8();
+    if (::write(fd_, bytes.constData(), static_cast<std::size_t>(bytes.size())) != bytes.size()) std::perror("event log");
+  }
+private:
+  int fd_;
+};
+
+const char* phase_name(Autosaver::Phase phase) {
+  switch (phase) {
+    case Autosaver::Phase::capturing: return "capturing";
+    case Autosaver::Phase::captured: return "captured";
+    case Autosaver::Phase::writing: return "writing";
+    case Autosaver::Phase::written: return "written";
+    case Autosaver::Phase::committed: return "committed";
+    case Autosaver::Phase::acknowledged: return "acknowledged";
+  }
+  return "unknown";
 }
 
-// Opens a Fountain file in the editor. --check only lays the document out and
+// Types into a project at a steady rate with autosave, logging every key
+// and save phase with its monotonic time for tests/autosave_crash_tests.py.
+// KILL_AT (PHASE:N) kills the process at the Nth occurrence of that phase.
+int autosave_typing(const char* path, const QString& log_path, int keys, int interval_ms, const QString& kill_at) {
+  if (keys <= 0 || interval_ms <= 0) throw std::runtime_error("KEYS and INTERVAL must be positive");
+  // The hook uses these, so they outlive the saver.
+  const EventLog log(log_path);
+  const auto kill_phase = kill_at.section(QLatin1Char(':'), 0, 0);
+  const int kill_count = kill_at.isEmpty() ? 0 : kill_at.section(QLatin1Char(':'), 1).toInt();
+  if (!kill_at.isEmpty() && kill_count <= 0) throw std::runtime_error("--kill-at needs PHASE:N");
+  std::atomic<int> seen{0};
+  auto opened = open_document(path);
+  if (!opened.saver) throw std::runtime_error("--autosave-typing needs a project folder");
+  opened.saver->set_hook([&](Autosaver::Phase phase, std::uint64_t revision) {
+    const auto name = QString::fromLatin1(phase_name(phase));
+    log.line(QStringLiteral("phase\t%1\t%2\t%3").arg(name).arg(revision).arg(monotonic_ns()));
+    if (name == kill_phase && ++seen == kill_count) {
+      log.line(QStringLiteral("kill\t%1\t%2\t%3").arg(name).arg(revision).arg(monotonic_ns()));
+      std::raise(SIGKILL);
+    }
+  });
+  QQuickView view;
+  auto* editor = apollo::editor::show_editor(view, *opened.document, nullptr, {}, opened.saver.get());
+  view.resize(880, 1000);
+  view.show();
+  if (!wait_for_frame(view)) throw std::runtime_error("the window never rendered");
+  int position;
+  try {
+    position = page_boundary_position(*opened.document);
+  } catch (const std::runtime_error&) {
+    position = opened.document->lastBlock().position() + opened.document->lastBlock().length() - 1;
+  }
+  const auto block = opened.document->findBlock(position);
+  const QString typed = QStringLiteral("the lamp turns and ");
+  // Offsets count code points, as in the source format.
+  log.line(QStringLiteral("target\t%1\t%2\t%3\t%4").arg(block.blockFormat().stringProperty(apollo::editor::element_id_property))
+               .arg(block.text().left(position - block.position()).toUcs4().size()).arg(typed).arg(interval_ms));
+  editor->setProperty("cursorPosition", position);
+  editor->forceActiveFocus();
+  for (int i = 0; i < keys; ++i) {
+    const QString text = typed.mid(i % typed.size(), 1);
+    send_key(view, text == QStringLiteral(" ") ? Qt::Key_Space : static_cast<Qt::Key>(Qt::Key_A + (text[0].unicode() - 'a')),
+             Qt::NoModifier, text);
+    if (editor->property("cursorPosition").toInt() != position + i + 1) throw std::runtime_error("typing caret did not advance");
+    log.line(QStringLiteral("key\t%1\t%2\t%3").arg(i + 1).arg(monotonic_ns()).arg(opened.saver->revision()));
+    idle(interval_ms);
+  }
+  opened.saver->flush();
+  QElapsedTimer deadline; deadline.start();
+  while (opened.saver->state() == QStringLiteral("saving") && deadline.elapsed() < 10000) idle(5);
+  log.line(QStringLiteral("done\t%1\t%2\t%3").arg(opened.saver->state()).arg(opened.saver->saved_revision()).arg(monotonic_ns()));
+  if (opened.saver->state() != QStringLiteral("saved")) throw std::runtime_error(opened.saver->status().toStdString());
+  return 0;
+}
+}
+
+// Opens a Fountain file, unsaved, or a project folder with autosave in the
+// editor. DIR --create [FILE.fountain] creates a project, optionally from an
+// imported Fountain file, and exits. --autosave-typing types into a project
+// for the crash checks. --check only lays the document out and
 // reports whether every block matched the engine's line breaks. --measure
 // times synthetic typing at a page boundary; see docs/spike-progress.md for
 // what that does and does not establish. --agreement writes the editor's
@@ -362,16 +481,30 @@ int main(int argc, char** argv) {
   // Read options before QGuiApplication removes Qt's own options from argv.
   const std::string mode = argc >= 3 ? argv[2] : "";
   const bool check = mode == "--check", measuring = mode == "--measure", comparing = mode == "--agreement",
-             snapshot = mode == "--snapshot", export_measuring = mode == "--measure-export";
-  if ((check || comparing) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
+             snapshot = mode == "--snapshot", export_measuring = mode == "--measure-export", creating = mode == "--create",
+             typing = mode == "--autosave-typing";
+  if ((check || comparing || typing || creating) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   QGuiApplication application(argc, argv);
-  const bool usage = check ? argc != 3 : measuring ? argc != 3 && argc != 4
+  const bool usage = check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
+      : typing ? argc < 4 || argc > 7
       : (comparing || snapshot || export_measuring) ? argc != 4 && argc != 5 : argc != 2;
   if (usage) {
-    std::cerr << "usage: apollo_editor FILE.fountain [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n";
+    std::cerr << "usage: apollo_editor FILE.fountain|PROJECT [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n"
+                 "       apollo_editor PROJECT --create [FILE.fountain]\n"
+                 "       apollo_editor PROJECT --autosave-typing LOG [KEYS [INTERVAL_MS [PHASE:N]]]\n";
     return 2;
   }
   try {
+    if (creating) {
+      std::vector<apollo::Element> elements{{apollo::ElementType::action, ""}};
+      if (argc == 4) elements = apollo::import_fountain(read_fountain(argv[3]));
+      const auto project = apollo::source::create_project(QString::fromLocal8Bit(argv[1]), {1, elements});
+      std::cout << "created " << project.directory.toStdString() << '\n';
+      return 0;
+    }
+    if (typing)
+      return autosave_typing(argv[1], QString::fromLocal8Bit(argv[3]), argc >= 5 ? std::stoi(argv[4]) : 100,
+                             argc >= 6 ? std::stoi(argv[5]) : 30, argc == 7 ? QString::fromLocal8Bit(argv[6]) : QString());
     if (measuring) return measure(argv[1], argc == 4 ? std::stoi(argv[3]) : 200);
     if (export_measuring) return measure(argv[1], argc == 5 ? std::stoi(argv[4]) : 200, QString::fromLocal8Bit(argv[3]));
     if (snapshot) {
@@ -379,7 +512,8 @@ int main(int argc, char** argv) {
       return agreement(argv[1], QString::fromLocal8Bit(argv[3]), 0, true, argc != 5);
     }
     if (comparing) return agreement(argv[1], QString::fromLocal8Bit(argv[3]), argc == 5 ? std::stoi(argv[4]) : 0);
-    auto document = open_document(argv[1]);
+    auto opened = open_document(argv[1]);
+    auto& document = opened.document;
     const auto* layout = static_cast<ScreenplayLayout*>(document->documentLayout());
     if (check) {
       std::cout << document->blockCount() << " blocks, " << layout->pageCount() << " pages\n";
@@ -388,7 +522,8 @@ int main(int argc, char** argv) {
     }
     apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(argv[1]));
     QQuickView view;
-    apollo::editor::show_editor(view, *document, &job, QFileInfo(QString::fromLocal8Bit(argv[1])).absolutePath() + "/" + QFileInfo(QString::fromLocal8Bit(argv[1])).completeBaseName() + ".pdf");
+    apollo::editor::show_editor(view, *document, &job, opened.export_destination, opened.saver.get());
+    if (opened.saver) opened.saver->guard_close(view);
     view.setTitle(QStringLiteral("Apollo editor"));
     view.setMinimumSize(QSize(560, 400));
     view.resize(1280, 1000);

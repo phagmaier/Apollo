@@ -1,5 +1,6 @@
 #include "editor/editor_commands.h"
 #include "editor/screenplay_layout.h"
+#include "source/screenplay_format.h"
 
 #include <QClipboard>
 #include <QGuiApplication>
@@ -21,7 +22,7 @@ constexpr std::array cycle{ElementType::heading, ElementType::action, ElementTyp
                            ElementType::parenthetical, ElementType::dialogue, ElementType::transition};
 
 std::size_t utf8_offset(const QString& text, int utf16) {
-  return static_cast<std::size_t>(text.left(utf16).toUtf8().size());
+  return element_text(text.left(utf16)).size();
 }
 
 QTextCursor selection(QTextDocument* document, int position, int start, int end) {
@@ -30,6 +31,8 @@ QTextCursor selection(QTextDocument* document, int position, int start, int end)
   else cursor.setPosition(position);
   return cursor;
 }
+
+QString new_id() { return QString::fromStdString(source::new_element_id()); }
 
 void set_type(QTextCursor& cursor, ElementType type) {
   QTextBlockFormat format;
@@ -86,7 +89,9 @@ std::optional<std::vector<Element>> deserialize(const QByteArray& data) {
     if (type < 0 || type > static_cast<int>(ElementType::draft_date) || !object["text"].isString() ||
         !object["dual"].isBool() || !object["styles"].isArray()) return std::nullopt;
     const auto text = object["text"].toString();
-    if (text.contains(QRegularExpression(QStringLiteral("[\\r\\n\\t\\x{2028}\\x{2029}]")))) return std::nullopt;
+    // Apollo's source '\n' is an internal break, not an element boundary.
+    if (!text.isValidUtf16() || text.contains(QRegularExpression(QStringLiteral("[\\r\\t\\x{2028}\\x{2029}\\x{fdd0}\\x{fdd1}]"))))
+      return std::nullopt;
     Element element{static_cast<ElementType>(type), text.toStdString(), object["dual"].toBool()};
     auto boundary = [&](std::size_t at) {
       return at == element.text.size() || (static_cast<unsigned char>(element.text[at]) & 0xc0) != 0x80;
@@ -157,12 +162,22 @@ int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
     const bool dialogue = type == ElementType::cue || (type == ElementType::parenthetical && in_speech(block));
     QTextBlockFormat next;
     next.setProperty(element_type_property, static_cast<int>(dialogue ? ElementType::dialogue : ElementType::action));
+    next.setProperty(element_id_property, new_id());
     cursor.insertBlock(next, QTextCharFormat());
   } else {
-    // Splitting keeps the element type; the dual flag stays with the first part.
+    // Splitting keeps the element type; the dual flag stays with the first
+    // part. The id stays with the text unless the text splits in two.
     auto format = block.blockFormat();
     format.clearProperty(dual_right_property);
+    const bool at_start = cursor.atBlockStart();
+    if (!at_start) format.setProperty(element_id_property, new_id());
     cursor.insertBlock(format);
+    if (at_start) {
+      QTextCursor before(cursor.block().previous());
+      QTextBlockFormat id;
+      id.setProperty(element_id_property, new_id());
+      before.mergeBlockFormat(id);
+    }
   }
   cursor.endEditBlock();
   return cursor.position();

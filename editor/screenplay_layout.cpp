@@ -1,9 +1,11 @@
 #include "editor/screenplay_layout.h"
+#include "source/screenplay_format.h"
 
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFontDatabase>
 #include <QPainter>
+#include <QScopedValueRollback>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -11,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <tuple>
 
@@ -136,8 +139,8 @@ void insert_runs(QTextCursor& cursor, const Element& element) {
       if (span.style == Style::bold) format.setFontWeight(QFont::Bold);
       if (span.style == Style::underline) format.setFontUnderline(true);
     }
-    cursor.insertText(QString::fromUtf8(element.text.data() + bounds[run - 1],
-                                        static_cast<qsizetype>(bounds[run] - bounds[run - 1])), format);
+    auto text = QString::fromUtf8(element.text.data() + bounds[run - 1], static_cast<qsizetype>(bounds[run] - bounds[run - 1]));
+    cursor.insertText(text.replace(QLatin1Char('\n'), QChar::LineSeparator), format);
   }
 }
 
@@ -146,6 +149,8 @@ void insert_elements(QTextCursor& cursor, const std::vector<Element>& elements) 
     QTextBlockFormat block;
     block.setProperty(element_type_property, static_cast<int>(elements[i].type));
     if (elements[i].dual_right) block.setProperty(dual_right_property, true);
+    block.setProperty(element_id_property,
+                      QString::fromStdString(elements[i].id.empty() ? source::new_element_id() : elements[i].id));
     if (i) cursor.insertBlock(block, QTextCharFormat());
     else cursor.setBlockFormat(block);
     insert_runs(cursor, elements[i]);
@@ -159,6 +164,7 @@ std::pair<Element, Element> split_element(const Element& element, std::size_t by
     if (span.start < byte) head.styles.push_back({span.start, std::min(span.end, byte), span.style});
     if (span.end > byte) tail.styles.push_back({span.start > byte ? span.start - byte : 0, span.end - byte, span.style});
   }
+  (head.text.empty() && !tail.text.empty() ? tail : head).id = element.id;
   return {head, tail};
 }
 
@@ -167,10 +173,20 @@ std::unique_ptr<QTextDocument> screenplay_document(const std::vector<Element>& e
   document->setDefaultFont(font);
   QTextCursor cursor(document.get());
   insert_elements(cursor, elements);
+  repair_identities(*document);
   document->clearUndoRedoStacks();
   document->setModified(false);
   // Installing the layout last runs the engine once on the loaded text.
   document->setDocumentLayout(new ScreenplayLayout(document.get()));
+  // Repair Qt-created blocks synchronously when their undo command is
+  // added, before another edit can occur. Joining that command preserves
+  // the same identity on redo. Saves and undo/redo never mutate identities.
+  QObject::connect(document.get(), &QTextDocument::undoCommandAdded, document.get(),
+                   [document = document.get(), repairing = false]() mutable {
+    if (repairing) return;
+    QScopedValueRollback guard(repairing, true);
+    repair_identities(*document);
+  });
   return document;
 }
 
@@ -180,12 +196,18 @@ ElementType element_type(const QTextBlock& block) {
                                                    : ElementType::action;
 }
 
+std::string element_text(QString text) {
+  return text.replace(QChar::LineSeparator, QLatin1Char('\n')).toUtf8().toStdString();
+}
+
 Element block_element(const QTextBlock& block) {
-  Element element{element_type(block), block.text().toUtf8().toStdString(), block.blockFormat().boolProperty(dual_right_property)};
+  const auto properties = block.blockFormat();
+  Element element{element_type(block), element_text(block.text()), properties.boolProperty(dual_right_property), {},
+                  properties.stringProperty(element_id_property).toStdString()};
   std::size_t byte = 0;
   for (auto fragment = block.begin(); !fragment.atEnd(); ++fragment) {
     const auto& part = fragment.fragment();
-    const auto size = static_cast<std::size_t>(part.text().toUtf8().size());
+    const auto size = element_text(part.text()).size();
     const auto format = part.charFormat();
     if (format.fontItalic()) element.styles.push_back({byte, byte + size, Style::italic});
     if (format.fontWeight() >= QFont::Bold) element.styles.push_back({byte, byte + size, Style::bold});
@@ -193,6 +215,24 @@ Element block_element(const QTextBlock& block) {
     byte += size;
   }
   return element;
+}
+
+int repair_identities(QTextDocument& document) {
+  std::set<QString> seen;
+  int repaired = 0;
+  QTextCursor cursor(&document);
+  for (auto block = document.begin(); block != document.end(); block = block.next()) {
+    const auto id = block.blockFormat().stringProperty(element_id_property);
+    if (!id.isEmpty() && seen.insert(id).second) continue;
+    if (!repaired++) cursor.joinPreviousEditBlock();
+    cursor.setPosition(block.position());
+    QTextBlockFormat format;
+    format.setProperty(element_id_property, QString::fromStdString(source::new_element_id()));
+    cursor.mergeBlockFormat(format);
+    seen.insert(format.stringProperty(element_id_property));
+  }
+  if (repaired) cursor.endEditBlock();
+  return repaired;
 }
 
 std::vector<Element> document_elements(const QTextDocument& document) {

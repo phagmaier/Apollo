@@ -1,0 +1,23 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 42,
+  "titlePage": [
+    {"id": "t1", "field": "title", "text": "The Last Broadcast"},
+    {"id": "t2", "field": "author", "text": "Ana Núñez"},
+    {"id": "t3", "field": "contact", "text": "1 Rue de l'Église\nParis"}
+  ],
+  "elements": [
+    {"id": "e1", "type": "sceneHeading", "text": "INT. LIGHTHOUSE — NIGHT"},
+    {"id": "e2", "type": "action", "text": "Café lights \"flicker\".", "styles": [{"start": 5, "end": 11, "style": "italic"}]},
+    {"id": "e3", "type": "character", "text": "MARC"},
+    {"id": "e4", "type": "dialogue", "text": "Hello."},
+    {"id": "e5", "type": "character", "text": "ANNA", "dual": true},
+    {"id": "e6", "type": "parenthetical", "text": "(quietly)"},
+    {"id": "e7", "type": "dialogue", "text": "Line one\nline 𝄞 two", "styles": [{"start": 0, "end": 4, "style": "bold"}, {"start": 16, "end": 19, "style": "bold"}, {"start": 16, "end": 19, "style": "underline"}]},
+    {"id": "e8", "type": "pageBreak", "text": ""},
+    {"id": "e9", "type": "transition", "text": "CUT TO:"},
+    {"id": "e10", "type": "lyric", "text": ""},
+    {"id": "e11", "type": "centered", "text": "END OF ACT ONE"}
+  ]
+}

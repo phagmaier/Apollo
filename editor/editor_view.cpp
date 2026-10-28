@@ -1,4 +1,5 @@
 #include "editor/editor_view.h"
+#include "editor/autosave.h"
 #include "editor/editor_commands.h"
 #include "editor/screenplay_layout.h"
 #include "editor/pdf_export_job.h"
@@ -9,7 +10,8 @@
 #include <stdexcept>
 
 namespace apollo::editor {
-QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob* export_job, const QString& export_destination) {
+QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob* export_job, const QString& export_destination,
+                        Autosaver* autosaver) {
   auto* layout = qobject_cast<ScreenplayLayout*>(document.documentLayout());
   if (!layout) throw std::runtime_error("document does not use ScreenplayLayout");
   auto* commands = new EditorCommands(&document, &view);
@@ -23,6 +25,7 @@ QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob*
   view.setInitialProperties({{"screenplayLayout", QVariant::fromValue<QObject*>(layout)},
                              {"commands", QVariant::fromValue<QObject*>(commands)},
                              {"exportJob", QVariant::fromValue<QObject*>(export_job)},
+                             {"autosaver", QVariant::fromValue<QObject*>(autosaver)},
                              {"exportDestination", export_destination},
                              {"documentTitle", title}, {"outlineScenes", scenes}});
   view.setResizeMode(QQuickView::SizeRootObjectToView);

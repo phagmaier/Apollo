@@ -15,6 +15,8 @@ namespace apollo::editor {
 // Each QTextBlock is one screenplay element. Its type is a block property.
 inline constexpr int element_type_property = QTextFormat::UserProperty + 1;
 inline constexpr int dual_right_property = QTextFormat::UserProperty + 2;
+// The element's persistent id (source/screenplay_format.h), a QString.
+inline constexpr int element_id_property = QTextFormat::UserProperty + 4;
 // Document coordinates are 96 dpi pixels. At 12 pt = 16 px the Courier Prime
 // advance (9.59375 px) is exact in QTextLayout's 1/64 px fixed point; at 12 px
 // it rounds to 7.1875 and drifts 0.48 pt across a 61-column line.
@@ -29,16 +31,29 @@ QFont courier_prime(const QString& font_directory);
 // One block per element, with emphasis as character formats, laid out by a
 // ScreenplayLayout. The layout is installed before the document is returned
 // because an editor connects to the layout when it receives the document.
+// A deliberate line break ('\n' in element text) is a QChar::LineSeparator in
+// the block. Elements without an id get a new one.
 std::unique_ptr<QTextDocument> screenplay_document(const std::vector<Element>& elements, const QFont& font);
 std::vector<Element> document_elements(const QTextDocument& document);
 ElementType element_type(const QTextBlock& block);
 Element block_element(const QTextBlock& block);
+// QTextBlock text (or a prefix) as UTF-8 source text: internal U+2028
+// separators become '\n'. Use this mapping for both text and byte offsets.
+std::string element_text(QString text);
 // Splits an element at a UTF-8 byte offset, keeping emphasis on both parts.
+// The first part keeps the id unless it is empty and the second is not; the
+// part without the id has none.
 std::pair<Element, Element> split_element(const Element& element, std::size_t byte);
 // Inserts an element's text with its emphasis at the cursor.
 void insert_runs(QTextCursor& cursor, const Element& element);
-// Writes elements from the cursor's empty block, one block per element.
+// Writes elements from the cursor's empty block, one block per element,
+// giving a new id to each element without one.
 void insert_elements(QTextCursor& cursor, const std::vector<Element>& elements);
+// Gives a new id to each block that has none or repeats an earlier block's,
+// such as a block Qt split without an editor command. Used at initialization
+// and synchronously on undoCommandAdded, joining the originating edit.
+// Never call while saving or replaying undo/redo. Returns the repair count.
+int repair_identities(QTextDocument& document);
 
 // Generated text: (MORE), continuation cues and suffixes, and page numbers.
 // kind uses the fixture element names, such as "more" or "cue".

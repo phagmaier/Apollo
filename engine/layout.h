@@ -16,8 +16,16 @@ enum class ElementType { heading, action, cue, parenthetical, dialogue, page_bre
                          lyric, transition, centered, title, credit, author, source, contact, draft_date };
 enum class Style { italic, bold, underline };
 // Offsets are UTF-8 byte offsets into the associated text, with an exclusive end.
-struct StyleSpan { std::size_t start; std::size_t end; Style style; };
-struct Element { ElementType type; std::string text; bool dual_right = false; std::vector<StyleSpan> styles = {}; };
+struct StyleSpan {
+  std::size_t start; std::size_t end; Style style;
+  bool operator==(const StyleSpan&) const = default;
+};
+// A '\n' in text is a deliberate line break. The id is the element's
+// persistent source identity (source/screenplay_format.h); layout ignores it.
+struct Element {
+  ElementType type; std::string text; bool dual_right = false; std::vector<StyleSpan> styles = {}; std::string id = {};
+  bool operator==(const Element&) const = default;
+};
 inline constexpr std::size_t no_source = static_cast<std::size_t>(-1);
 // source is the input element index. The line's first source_length bytes
 // show that element's text from source_offset (titles, cues, and headings are

@@ -9,6 +9,7 @@ Rectangle {
     required property var screenplayLayout
     required property var commands
     property var exportJob: null
+    property var autosaver: null
     property string exportDestination: ""
     property string documentTitle: "Screenplay"
     property var outlineScenes: []
@@ -70,17 +71,34 @@ Rectangle {
         }
         Rectangle { x: 110; y: 17; width: 1; height: 25; color: "#515761" }
         Text {
-            x: 130; y: 13; width: Math.max(60, exportButton.x - x - 24)
+            x: 130; y: 13; width: Math.max(60, (retryButton.visible ? retryButton.x : exportButton.x) - x - 24)
             text: desk.documentTitle
             elide: Text.ElideRight
             color: "#eff1f3"
             font { family: "Liberation Sans"; pixelSize: 14; weight: Font.DemiBold }
         }
         Text {
+            id: saveStatus
+            objectName: "saveStatus"
             x: 130; y: 34
-            text: "Feasibility spike · edits are not saved"
-            color: "#aeb7c0"
+            width: Math.max(60, (retryButton.visible ? retryButton.x : exportButton.x) - x - 16)
+            elide: Text.ElideRight
+            text: desk.autosaver ? desk.autosaver.status : "Fountain file · edits are not saved"
+            color: desk.autosaver && desk.autosaver.state === "failed" ? "#f19a8f" : "#aeb7c0"
             font { family: "Liberation Sans"; pixelSize: 11 }
+            ToolTip.visible: statusArea.containsMouse && saveStatus.truncated
+            ToolTip.text: saveStatus.text
+            MouseArea { id: statusArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+        }
+        DeskButton {
+            id: retryButton
+            objectName: "retrySave"
+            anchors { right: exportButton.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
+            visible: desk.autosaver !== null && desk.autosaver.state === "failed"
+            text: "Retry save"
+            fill: "#8f3a32"; ink: "#fbecea"
+            Accessible.name: "Retry saving to " + (desk.autosaver ? desk.autosaver.location : "")
+            onClicked: { desk.autosaver.retry(); editorPage.focusEditor() }
         }
         DeskButton {
             id: exportButton

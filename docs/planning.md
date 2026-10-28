@@ -192,6 +192,200 @@ Use the accepted visual foundation, refining controls as their behavior is
 implemented. Notes/stash and the full Git workflow remain later staged work.
 This is the proposed next task, not approval of a new schema or a full build.
 
+## Round 18 — first usable writing milestone boundary (2026-10-28)
+
+The owner requested beginning the plan for the first usable writing build,
+with a planning interview and focused prototypes if useful. This authorizes
+planning; implementation has not been requested in this round. Continue from
+the staged delivery and accepted Qt/Writing desk decisions rather than
+reopening them.
+
+Owner-confirmed:
+
+1. Character/location suggestions, spell checking, find/replace, title-page
+   editing, and the live scene navigator with undoable scene reordering are
+   essentials for this milestone. Retain their previously agreed behavior;
+   do not reduce this build to the spike's editing subset.
+2. Provide a way to look up keyboard shortcuts, such as Undo. The owner
+   suggested this for eventual inclusion without specifying its release or
+   presentation. Agent scheduling choice: include basic shortcut reference
+   access in the first usable build. Customizable bindings were not requested.
+3. Import always leaves the original file untouched and creates a new
+   Apollo-managed project. Apollo saves edits into that project; Fountain/PDF
+   exports are explicit separate outputs.
+4. Accept basic read-only access to converted imported notes and omitted
+   passages for now, with full notes/stash tools later.
+
+Delegated workflow choice: use the recommended simple home screen, a default
+projects folder, and the option to create/open projects elsewhere. The owner
+accepted this as reasonable and left the choice to the agent. No default path
+or authoritative source schema is selected by this answer.
+
+## Round 19 — working format and recovery behavior (settled)
+
+Owner-confirmed:
+
+- Use a portable Apollo project folder with versioned structured text as the
+  authoritative writing source. Fountain is the import/export interchange,
+  rather than the autosaved working file. Exact schema, stable identity,
+  serialization, recovery storage, and compatibility with later Git work need
+  technical design and verification. The owner accepted this format direction;
+  it does not select an exact schema.
+- On saving failure, keep the established Retry/Save a Copy choices. If Save
+  a Copy succeeds, make that copy the active project and continue saving there,
+  with an explicit location/status change. Leave the failing original intact.
+  How this copy relates to a later Git repository is deferred with Git work.
+  The owner emphasized that saving failures must be made visible and suggested
+  an emergency backup save location.
+- After an ordinary application crash, reopen the latest completed valid save
+  as already agreed. If that save is damaged or unreadable, explain the problem
+  and offer an available verified recovery copy without silently rolling back
+  or overwriting the damaged data. Recovery retention/storage and behavior
+  when no valid copy exists still need design.
+
+Initial agent recommendation for the emergency-backup suggestion: attempt an
+automatic recovery snapshot in a separate local
+application-data location when project saving fails. Show whether that attempt
+succeeded, where it saved, and which writing revision it protects; never label
+the original project as saved merely because an emergency copy succeeded.
+An automatic emergency snapshot does not switch the active project. A
+successful explicit Save a Copy does, as agreed above. If both destinations
+fail, retain the in-memory writing and keep the error visible. A second folder
+on the same full or failed drive may also be unavailable, so the mechanism must
+handle this case rather than promise that an emergency destination always works.
+The owner subsequently confirmed an emergency-copy attempt and accurate status
+when closing after a save failure (round 23). Exact location, ongoing scheduling,
+retention, restart discovery, and fault-injection checks belong in the
+persistence design.
+
+## Round 20 — core editing behavior (settled; dialogue clarified in round 21)
+
+Owner-confirmed:
+
+- Enter within existing action splits it into two action elements. The owner
+  accepted the proposed dialogue split subject to clarifying whether adjacent
+  dialogue and a newline are valid and should be flagged; round 21 settles it.
+  At the end, use the established next-element
+  defaults. Enter on an empty dialogue element changes it to action, allowing
+  writing to leave a speech without extra blank elements; an empty dialogue
+  parenthetical changes to dialogue. Other empty-element behavior, detailed
+  cue/heading splits, selections, manual breaks, and deliberate line breaks
+  still need to be resolved.
+- Keep Tab/Shift+Tab focused on the six common element types in the spike's
+  cycle (heading, action, character, parenthetical, dialogue, transition).
+  Lyrics, centered text, manual breaks, and act-label representation need
+  accessible controls/shortcuts without lengthening that common cycle.
+  Existing suggestion-menu Tab acceptance retains priority when a menu is open.
+- Pasting ordinary external text keeps the current element type; paragraphs
+  pasted into dialogue remain dialogue. Apollo-to-Apollo paste preserves
+  screenplay types and emphasis. Fountain interpretation is an explicit import
+  operation rather than a silent guess during ordinary paste. Exact paragraph,
+  line-break, and partial-element insertion rules still need design.
+
+## Round 21 — dialogue continuation and diagnostics (settled)
+
+The owner asked whether splitting dialogue creates two dialogue elements with
+an inappropriate blank gap and whether Apollo should flag that situation.
+
+Verified syntax evidence: [Fountain's official syntax](https://fountain.io/syntax/)
+allows manual line breaks within one character's continuous dialogue. It also
+supports intentional blank lines within dialogue via a whitespace-only source
+line; the guide calls blank spacing unconventional. A truly empty source line
+ends the dialogue, so simply serializing adjacent dialogue chunks with a blank
+separator would change the interpretation. This is Fountain compatibility
+evidence, not a universal ban on screenplay spacing.
+
+Owner-confirmed refinement: Enter in the middle of dialogue
+continues the same speech on the next line, without an extra blank row or
+repeated cue. Treat the line break as intentional and do not flag it as invalid.
+Whether the internal model stores one dialogue element or adjacent chunks is
+an implementation choice; both editor/PDF output and Fountain interchange must
+preserve the same speech and deliberate break. Distinguish this from dialogue
+without an associated character cue, which should receive a structural warning
+with an undoable suggested correction. Intentional blank spacing remains
+possible and is not silently removed. Its creation controls and any advisory
+for that unusual spacing remain to be settled.
+
+Current implementation evidence from code inspection: the spike layout groups
+consecutive dialogue/parenthetical elements after a cue into one speech without
+an inter-element blank row (`engine/layout.cpp`). The minimal Fountain importer
+joins consecutive dialogue source lines with spaces (`fountain/import.cpp`), so
+it does not establish preservation of deliberate line breaks. This is a known
+gap to address in the first usable build, not a newly fixed or tested behavior.
+Acceptance fixtures should distinguish automatic wrapping, a deliberate line
+break, intentional blank spacing, and a parenthetical within the same speech,
+covering import/edit/save/reopen/Fountain/PDF behavior and undo where applicable.
+
+## Round 22 — suggestions, scene boundaries, and import review (settled)
+
+Owner-confirmed:
+
+- Suggestions open automatically while entering the relevant cue/heading part,
+  with the first match highlighted. Tab explicitly accepts it. Enter keeps its
+  normal writing behavior without accepting the highlighted suggestion. Escape
+  dismisses the menu without changing text. Previously agreed arrow selection,
+  free entry of new names, and component-only heading suggestions remain.
+  Detailed ranking and reopening behavior belong in the implementation plan.
+- Completion menus are specific to character cues (names/extensions) and scene
+  headings (components). They must not appear in action, dialogue, or
+  parentheticals. The owner mentioned transitions and other applicable blocks
+  tentatively; treat additional completion contexts as optional future refinements,
+  not mandatory automatic popups throughout the editor. On-demand spell-check
+  replacements remain a separate agreed feature.
+- A movable scene starts at its heading and includes every screenplay element
+  up to, but not including, the next heading. Material before the first heading
+  stays at the beginning. Reordering is a single undoable action and does not
+  move title-page fields or project-wide imported notes/stash. Anchor/metadata
+  behavior needs the source-format design; this rule does not introduce anchored
+  notes as a required feature.
+- Import retains an untouched source copy inside the new project for reference.
+  Recognized sections, synopses, and title-page metadata that Apollo cannot yet
+  edit are preserved as read-only imported information and excluded from the
+  screenplay/PDF, with a summary explaining their treatment. Screenplay content
+  that cannot be interpreted or rendered faithfully is preserved and explicitly
+  marked for review; do not silently discard, substitute, or declare a clean
+  export while issues affecting that output remain unresolved. The detailed
+  compatibility table must specify Fountain re-export treatment separately from
+  PDF treatment; preserving raw source alone is not an editable round trip.
+
+## Milestone plan consolidation (2026-10-28)
+
+The [first writing build plan](writing-build-plan.md) consolidates rounds 18–23,
+the retained spike evidence, proposed source/persistence design, implementation
+slices, and acceptance gates. The agreed feature boundary is settled. Detailed
+engineering defaults are proposals for implementation and validation, not claims
+that a schema, recovery protocol, or production workflow has already passed.
+
+The three final product choices—authoring dual dialogue, personal-dictionary
+scope across projects, and closing after a saving failure—are settled in round
+23 below. This closes the requirements interview for this bounded milestone.
+Source/Qt line-break mapping and saving responsiveness need focused technical
+checks during the early implementation slices. No new appearance prototype is
+needed before those checks. Planning does not itself authorize app implementation.
+
+## Round 23 — final milestone choices and planning handoff (settled)
+
+The owner accepted all three recommendations:
+
+1. Put the cursor in the second speech and use a Dual Dialogue control or
+   shortcut to pair it with the immediately preceding speech. Turning it off
+   restores sequential dialogue without changing the words.
+2. The personal dictionary applies across all the owner's scripts on this
+   computer; character-name completion remains current-script only. Store words
+   locally, with GitHub sync scope deferred to later design.
+3. When closing after a project save failure, show whether the emergency-copy
+   attempt protected current writing and offer Retry, Save a Copy, or Keep Open.
+   If writing remains unprotected, closing requires an explicit discard choice.
+
+No owner question remains pending from this milestone interview. The [milestone
+plan](writing-build-plan.md) is the implementation handoff, with engineering
+proposals visibly distinct from these requirements. Detailed source/schema,
+keyboard/compatibility tables, persistence scheduling, and integration checks
+remain assigned to its early slices; they have not already been validated.
+Raise newly discovered consequential product choices rather than silently
+changing confirmed behavior. The next implementation task, when requested,
+is the source adapter and save/reopen/crash-recovery foundation (slice 1).
+
 ## Subsequent decision branches
 
 Visual exploration: [editor prototype](../prototype/editor.html) presents three
@@ -230,4 +424,7 @@ Consulted 2026-10-27:
 - [Git design note](git-design.md): standard Git supports the requested history/branch workflow; source representation and screenplay-aware merge behavior need separate design and validation.
 - [Stack evaluation](stack.md): cited comparison, native-versus-development effort reassessment, pagination limitations, performance targets, and required feasibility work.
 
-Further export work must complete and verify the selected submission profile. Stack choice remains open and requires technical validation; no source schema or merge algorithm has been selected.
+Further export work must extend verification of the selected submission profile
+beyond the spike's exercised inputs. Qt/C++/QML is retained following the
+accepted spike (round 17); no production source schema or merge algorithm has
+been selected.

@@ -85,6 +85,16 @@ comparison below; agreement with the engine alone does not prove correctness.
   - it puts one blank line after `FADE IN:` before a heading.
 - Use it to catch wrapping mistakes and to estimate page counts. It is not a page-break authority.
 
+## Source format — `source/`
+
+`v1-example.screenplay.json` is a hand-written screenplay file in Apollo's
+saved format ([source-format.md](../docs/source-format.md)), covering every
+element type, title fields, deliberate line breaks, dual dialogue, and styles
+over non-ASCII and non-BMP text. Its style offsets count code points; the
+matching in-memory UTF-8 byte offsets are worked out by hand in
+`tests/source_tests.cpp`. `source_tests` requires Apollo's output for that
+screenplay to equal this file byte for byte. Edit both together.
+
 ## Academy reference — `../reference/academy/` (local only, gitignored)
 
 This holds Final Draft's real output for the 11 body pages of the Academy guide. The guide's text belongs to the Academy, so it stays outside version control.

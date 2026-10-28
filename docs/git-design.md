@@ -16,7 +16,11 @@ Accepted recommendation: use standard Git for committed history, draft branches,
 
 Design implications, pending validation:
 
-- Evaluate a stable, text-based source representation whose serialization does not rewrite unrelated content after small edits. A custom internal format remains possible. Fountain as authoritative source versus structured text is still open.
+- The owner has now selected a portable project folder with versioned structured
+  text as authoritative source, and Fountain as import/export (planning round
+  19). The [writing build plan](writing-build-plan.md) proposes the initial
+  layout; the exact schema still needs design and validation. Keep serialization
+  stable so small edits do not rewrite unrelated content.
 - Evaluate comparison by screenplay elements, with word-level changes where useful. Scene moves, concurrent dialogue edits, element-type changes, and cue extensions are representative cases for the design spike.
 - Validate merged content against the document model and show unresolved choices through Apollo. The owner requires a merge preview and approachable conflict resolution using formatted writing. A successful Git merge alone does not demonstrate a correct screenplay merge.
 - Keep authoritative editable source in history; generated PDFs are candidates to regenerate on demand. The actual tracked-file policy is undecided.
