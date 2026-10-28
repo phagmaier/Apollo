@@ -15,14 +15,22 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "engine-only",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build/engine-only",
+      "cacheVariables": { "APOLLO_BUILD_PDF": "OFF" }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
-    { "name": "release", "configurePreset": "release" }
+    { "name": "release", "configurePreset": "release" },
+    { "name": "engine-only", "configurePreset": "engine-only" }
   ],
   "testPresets": [
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "engine-only", "configurePreset": "engine-only", "output": { "outputOnFailure": true } }
   ]
 }

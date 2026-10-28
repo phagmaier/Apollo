@@ -39,15 +39,17 @@ before recommending whether to keep or switch stacks.
 
 - Install the tools in `mise.toml` using `mise install`. Run `mise run check` for
   the release configure/build/test cycle and `mise run check-debug` for the
-  sanitizer build. These currently test only the initial layout slice; passing
-  them does not mean the spike or the fixture acceptance checks are complete.
+  sanitizer build. They check engine lines and point geometry, the fixture
+  PDFs, and engine/PDF agreement on regenerated workloads. Run `mise run
+  check-engine` for the engine without Qt or PDF tooling. Passing these checks
+  does not establish editor agreement, interaction, or performance.
 - The pinned Courier Prime fonts and OFL license are in `assets/courier-prime/`;
   the build checks their hashes. Use the other pins in the spike brief and
   record deviations and upgrades.
 - Existing Python reference tools use `uv run`, for example
   `uv run tools/generate_script.py --help` and `uv run tools/pdf_lines.py --help`.
-  PDF inspection requires Poppler utilities. See the fixture guide for complete
-  commands and prerequisites.
+  PDF checks require Poppler's `pdftotext`, `pdffonts`, `pdfinfo`, `pdftohtml`,
+  and `pdftoppm`. See the fixture guide for complete commands and prerequisites.
 - Verify layout against the hand-derived fixtures and the independent Academy
   reference as described in the brief. Agreement between two outputs produced
   by the same engine alone is not an independent correctness check. Report

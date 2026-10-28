@@ -10,6 +10,34 @@ namespace apollo {
 namespace {
 constexpr int page_slots = 56;
 
+double text_width(std::string_view text) {
+  const auto columns = std::count_if(text.begin(), text.end(), [](unsigned char c) { return (c & 0xc0) != 0x80; });
+  return static_cast<double>(columns) * profile::advance;
+}
+
+void position_line(Line& line) {
+  double x = 108;
+  const auto width = text_width(line.text);
+  if (line.column) {
+    x = line.column == 'L' ? 108 : 331.2;
+    if (line.type == ElementType::cue) x += 72;
+    if (line.type == ElementType::parenthetical) x += line.continuation ? 36 : 28.8;
+  } else {
+    switch (line.type) {
+      case ElementType::cue: case ElementType::more: x = 288; break;
+      case ElementType::parenthetical: x = line.continuation ? 252 : 244.8; break;
+      case ElementType::dialogue: case ElementType::lyric: x = 216; break;
+      case ElementType::transition: x = 511.2 - width; break;
+      case ElementType::centered: x = 324 - width / 2; break;
+      case ElementType::title: case ElementType::credit: case ElementType::author:
+      case ElementType::source: x = 306 - width / 2; break;
+      case ElementType::contact: x = 374.4; break;
+      default: break;
+    }
+  }
+  line.geometry = {x, 81 + (line.slot - 1) * profile::line_pitch, width};
+}
+
 // B9: punctuation may be followed by closing quotes or brackets.
 bool sentence_end(std::string_view before_space) {
   while (!before_space.empty()) {
@@ -123,7 +151,7 @@ void discard_prefix(Element& element, std::size_t count) {
 }
 }
 
-std::vector<Line> layout(const std::vector<Element>& elements) {
+DocumentLayout layout_document(const std::vector<Element>& elements) {
   std::vector<Line> result;
   int page = 1, slot = 0;
   std::string last_speaker;
@@ -347,7 +375,7 @@ std::vector<Line> layout(const std::vector<Element>& elements) {
         throw std::runtime_error("transition cannot fit with preceding element");
       auto retry = elements;
       retry.insert(retry.begin() + static_cast<std::ptrdiff_t>(start), {ElementType::page_break, ""});
-      return layout(retry);
+      return layout_document(retry);
     }
     const int gap = slot == 0 || in_speech ? 0 : 1;
     if (slot + gap + static_cast<int>(lines.size()) > page_slots)
@@ -355,6 +383,24 @@ std::vector<Line> layout(const std::vector<Element>& elements) {
     slot += gap;
     emit_styled(element, lines);
   }
-  return result;
+  DocumentLayout document{std::move(result), {}};
+  for (auto& line : document.lines) position_line(line);
+  if (std::any_of(document.lines.begin(), document.lines.end(), [](const Line& line) { return line.page == 0; }))
+    document.pages.push_back({0, std::nullopt});
+  // Preserve empty pages, including consecutive and trailing manual breaks.
+  for (int number = 1; number <= page; ++number) {
+    Page placed{number, std::nullopt};
+    if (number > 1) {
+      const auto text = std::to_string(number) + ".";
+      const auto width = text_width(text);
+      placed.number = PositionedText{text, {522 - width, 45, width}};
+    }
+    document.pages.push_back(std::move(placed));
+  }
+  return document;
+}
+
+std::vector<Line> layout(const std::vector<Element>& elements) {
+  return layout_document(elements).lines;
 }
 }

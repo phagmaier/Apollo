@@ -28,6 +28,41 @@ How Apollo should pass:
 
 The spike also compares the editor's own line dump with the same expectations.
 
+### Current PDF checks
+
+`mise run check` and `mise run check-debug` now export all eight fixtures and
+inspect their actual PDFs with Poppler. The checks compare text, page, slot, and
+profile columns; require Letter size and embedded Courier Prime with Unicode
+mapping; inspect bold/italic text and a rasterized underline; and cover title
+exclusion, mixed faces/Unicode, blank manual-break pages, and export failures.
+Both generated workloads are recreated in the build directory and their PDF
+lines compared with the engine. These are engine/PDF checks; no editor exists
+yet. The `.expected` files remain unchanged.
+
+Artifacts are in `build/release/pdf-tests/` (or `build/debug/pdf-tests/`). To
+export or inspect one directly:
+
+```sh
+QT_QPA_PLATFORM=offscreen build/release/pdf_export fixtures/layout/01-element-geometry.fountain build/release/example.pdf
+uv run tools/pdf_lines.py build/release/example.pdf --first-line-ymax 85.1 --column-gap 10.8 --number-band 60
+```
+
+Add `--no-title-page` to `pdf_export` to omit title fields without changing body
+numbering. Apollo's first-slot `ymax` is **85.1 pt**, from the profile's 81 pt
+baseline and the pinned font's 700/2048 em descent at 12 pt. Do not reuse the
+Academy PDF's 70.8 pt calibration for Apollo. `--column-gap 10.8` preserves dual
+columns and side-by-side title fields; default row grouping remains unchanged
+for the Academy measurement tool.
+
+For local Academy engine/PDF agreement as well as the ordinary PDF suite, run:
+
+```sh
+QT_QPA_PLATFORM=offscreen uv run tests/pdf_tests.py --exporter build/release/pdf_export --probe build/release/layout_probe --output build/release/pdf-tests --academy
+```
+
+This last agreement check supplements the independent page-anchored reference
+comparison below; agreement with the engine alone does not prove correctness.
+
 ### What the afterwriting cross-check does and does not confirm
 
 [afterwriting](https://github.com/ifrost/afterwriting-labs) (MIT) is an independent Fountain-to-PDF formatter. `tools/afterwriting-oracle.sh` installs version 1.17.3 into `~/.cache/apollo/afterwriting` with install scripts denied, and patches its US Letter profile to the Academy widths: 56 lines, dialogue 35, parenthetical 17. Checked on 2026-10-27:

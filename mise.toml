@@ -9,3 +9,7 @@ run = ["cmake --preset release", "cmake --build --preset release", "ctest --pres
 [tasks.check-debug]
 description = "Configure, build, and test with address and undefined behavior sanitizers"
 run = ["cmake --preset debug", "cmake --build --preset debug", "ctest --preset debug"]
+
+[tasks.check-engine]
+description = "Build and test the engine without Qt or PDF tooling"
+run = ["cmake --preset engine-only", "cmake --build --preset engine-only", "ctest --preset engine-only"]

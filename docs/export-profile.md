@@ -1,6 +1,6 @@
 # Apollo — export profile
 
-Status: **numeric profile v1**, 2026-10-27. The values come from measuring the Academy reference. The two visible choices are confirmed by the owner (see "Owner confirmations"). Items marked "Apollo proposal" are delegated detail for review in the visual prototype. The [product spec](spec.md) is authoritative for owner decisions. Nothing has been rendered by Apollo yet.
+Status: **numeric profile v1**, 2026-10-27. The values come from measuring the Academy reference. The two visible choices are confirmed by the owner (see "Owner confirmations"). Items marked "Apollo proposal" are delegated detail for review in the visual prototype. The [product spec](spec.md) is authoritative for owner decisions. The initial Apollo PDF painter now passes the small-fixture checks; editor agreement and performance remain unverified. See [spike progress](spike-progress.md).
 
 ## Confirmed target
 
