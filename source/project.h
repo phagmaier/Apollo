@@ -47,7 +47,7 @@ void replace_file(const QString& path, const QByteArray& bytes, const std::funct
 // One editable session. Acquires a nonblocking, long-lived lock on the
 // canonical folder before reading. Read-only open_project() needs no lock.
 // After construction, use filesystem methods only on the ordered save worker.
-// No operation adopts changed files as its new baseline.
+// Only explicit accept_reload() adopts changed files as its new baseline.
 class ProjectSession {
 public:
   explicit ProjectSession(const QString& directory);
@@ -55,6 +55,10 @@ public:
   const OpenedProject& opened() const { return opened_; }
   void check_destination() const;
   void save(const QByteArray& bytes, const std::function<void(WritePhase)>& hook = {});
+  // Reads a candidate while retaining the lock and the old save baseline.
+  // Accept separately after the GUI confirms current work was preserved.
+  OpenedProject read_reload() const;
+  void accept_reload(const OpenedProject& candidate);
 private:
   struct Identity {
     quint64 device, inode;

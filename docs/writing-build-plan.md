@@ -6,12 +6,14 @@ within the implementation slices. No owner question from this interview remains
 pending. Implementation requires task-specific authorization; the progress
 record below distinguishes completed work from remaining proposals.
 
-**Current status (2026-10-28):** slice 1 is done (see its evidence below);
-tasks **2.1 — project locking and external-change detection** and
-**2.2 — Save a Copy** are done. The copy becomes active after validation/locking,
-shows its location, and preserves writing/imported files and editor state.
-Next: preserved-work Reload and recovery/emergency copies, then project access.
-The other slice 2 flows and slices 3–6 remain pending; no blocker is known.
+**Current status (2026-10-28):** slice 1 and tasks **2.1–2.3** are done.
+Project sessions are guarded; Save a Copy becomes active without resetting the
+editor; Reload preserves current writing first; recovery/emergency packages and
+explicit failure-close choices are implemented and verified as recorded below.
+Next: project access, including damaged-save selection/reconciliation and resume.
+Leak detection and crash loss during copying remain unverified. The other slice 2
+flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
+one-second crash-loss target; see task 2.3's evidence and limits.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -306,10 +308,19 @@ milestone includes all slices; an earlier slice is not the usable writing build.
   there. Failure retains the current project, its paused/error state where
   applicable, and all writing; a published copy that cannot activate is kept
   with its location reported. Evidence and limits follow below.
+- **2.3 — Preserved-work Reload and recovery/emergency copies (done 2026-10-28).**
+  Depends on 2.1–2.2. Complete timestamped packages retain current writing and
+  cached imports, with verified readback and bounded retention that preserves
+  open projects, damaged evidence and the newly acknowledged copy across clock
+  rollback. Reload preserves memory before explicitly adopting valid disk content.
+  Failure/paused captures and close attempt emergency protection independently of
+  the original. Close shows current coverage and explicit Retry/Copy/Keep Open/
+  protected-close or discard choices. Emergency copies never switch destinations
+  or mark the original Saved. Evidence and limits follow below.
 - Remaining slice 2 work is pending: home/create/open/import, imported-material
-  reader, switching/resume, preserved-work Reload, recovery and
-  emergency copies, damaged-save flow, full close choices, and stale temporary
-  cleanup. Focusing an existing process's window belongs to the later open flow.
+  reader, switching/resume, damaged-save selection and recovery reconciliation
+  on open, and stale temporary cleanup. Focusing an existing process's window
+  belongs to the later open flow.
 
 Task 2.1 evidence and review:
 
@@ -335,7 +346,8 @@ The final compare/rename interval still races with noncooperating external
 writers; live simultaneous external editing is unsupported. This task does not
 claim durable recovery of memory-only writing after a destination change.
 Save a Copy is now completed by 2.2 below. Reload, emergency copies and the full
-failure-close choices remain pending; the interim two-close discard remains.
+failure-close choices were pending at that checkpoint; task 2.3 below replaces
+the interim two-close discard.
 
 Task 2.2 evidence and review:
 
@@ -356,10 +368,58 @@ checks now pass. The collision form and active-location screenshots were
 inspected. Logs, exact native setup, limitations and the copy contract are in
 [source-format.md](source-format.md#save-a-copy-slice-2-task-22).
 
-No new crash-loss/latency guarantee during copying, emergency backup, damaged-save
-recovery or full failure-close flow is claimed. Those remain explicit pending
-work. An ordinary autosave crash regression passed in the required suites;
+At the 2.2 checkpoint, crash-loss/latency during copying, emergency backup,
+damaged-save recovery and full failure-close flow remained unverified or pending.
+Task 2.3 below adds the recovery/close behavior; copying measurements remain
+unverified. An ordinary autosave crash regression passed in the required suites;
 the earlier representative crash-loss measurements were not repeated here.
+
+Task 2.3 evidence and review:
+
+| Check | Result |
+| --- | --- |
+| Recovery packages and retention | `recovery_tests` 7/7: complete cached imports with the original moved, hashes/corrupt evidence, real storage failure, open-package retention, clock rollback, and independently specified minute retention |
+| Explicit Reload | Actual Writing desk confirmation controls; preserved memory copy; exact adopted elements/ids; undo reset; continued autosave; malformed source/preservation failure retains memory/undo and external bytes; later document changes cancel adoption and are protected |
+| Failure/close | Accurate current versus older emergency coverage; original failure visible while emergency I/O is blocked; both destinations failing; Keep Open; Retry completes closing; explicit protected/unprotected close; repeated close never discards |
+| Session baseline | `source_tests` 73/73; reading a Reload candidate never authorizes replacement; a stale candidate is refused before adoption |
+| Required suites | Serial release 11/11, ASan/UBSan 11/11 (`detect_leaks=0`), engine-only 2/2; after final status-notification fixes, release/debug autosave suites each pass 48/48 |
+| Independent layout | Hand-derived fixtures in required suites; local Academy comparison passes with its existing documented deviations |
+| Native path | Full Wayland autosave suite 48/48, then final copy/Reload/close controls 7/7; fcitx, software rendering and synthetic input |
+| Isolated representative crashes | 20 kills per workload, including snapshot phases and random timing; all 40 source files and published recovery packages validate independently; maximum loss 473 ms at 200 pages and 712 ms at 500 pages |
+| Recovery reopen | A published package from each workload opens through the real editor's `--check`; writing/evidence bytes remain identical and edit locks release |
+
+Direct review covered requirements, concurrency, lifecycle, implementation and
+test necessity. The initial recovery tests failed before implementation. Review
+fixed premature pruning of open/current packages, delayed original-error display
+during slow emergency I/O, failure-close Retry, batched document replacement,
+and stale status notifications. Final relevant checks pass; no remaining
+in-scope correctness finding was identified. Reload and protected/unprotected
+close screenshots were inspected. The contract, commands, timing details and
+saved logs are in [source-format.md](source-format.md#preserved-work-reload-and-recoveryemergency-copies-slice-2-task-23).
+
+A further pre-commit review reproduced two visible-status regressions before
+fixing them: typing after emergency protection left the QML status stale, and a
+Reload notice hid subsequent PDF export results. Both now have focused QML
+regression checks. Retention also now takes the package edit lock, revalidates
+its integrity and atomically unpublishes it before deletion, closing races with
+opening or editing an older recovery project. The corrupt-evidence test now
+also exercises later retention. The opener/pruner interleavings were reviewed
+in code; the tests exercise open-package retention and preservation of changed
+evidence without forcing every concurrent interleaving.
+Final pre-commit checks pass: release and ASan/UBSan 11/11 each (leak detection
+disabled), engine-only 2/2, release/debug autosave 50/50 each, and native Wayland
+autosave 50/50 using the existing fcitx/software setup. Logs are
+`build/recovery-review-{red,green,release,debug,engine,native}.log`. The earlier
+representative workload measurements were retained, without a new timing claim.
+
+The isolated runs meet the target for the exercised healthy-storage conditions.
+A separate small-script crash run concurrent with sanitizer work lost 1.86 s of
+recent writing while the primary commit stalled about 1.74 s; files remained
+valid. Retain that limit rather than promising a universal bound under I/O
+contention. Leak detection, crash loss during Save a Copy, power loss and loss
+bounds with unavailable storage remain unverified. The damaged-save picker and
+reconciliation on open are pending project-access work; packages are already
+openable directly without silent rollback.
 
 ### Slice 1 result (done 2026-10-28)
 

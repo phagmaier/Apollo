@@ -17,6 +17,8 @@ same process, so it times key handling, not physical input.
 """
 
 import argparse
+import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -29,7 +31,7 @@ import subprocess
 import sys
 import time
 
-PHASES = ["capturing", "captured", "writing", "written", "committed", "acknowledged"]
+PHASES = ["capturing", "captured", "writing", "written", "committed", "acknowledged", "snapshotting", "snapshotted"]
 ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -122,6 +124,20 @@ def evaluate(project, original, log, kill_ns):
     if acknowledged:
         protected = max([k["count"] for k in keys if k["revision"] <= max(acknowledged)], default=0)
         assert count >= protected, ("acknowledged writing is missing", count, protected)
+    # Published recovery packages must independently read as complete copies.
+    # Hidden SIGKILL staging remains evidence, never a published alternative.
+    for package in (project / ".recovery").glob("copy-*"):
+        metadata = json.loads((package / "recovery.json").read_text())
+        assert metadata["format"] == "apollo-recovery" and metadata["version"] == 1
+        assert metadata["originDirectory"] == str(project.resolve())
+        assert metadata["reason"] == "autosave"
+        datetime.datetime.fromisoformat(metadata["capturedAt"])
+        for name, digest in metadata["hashes"].items():
+            assert hashlib.sha256((package / name).read_bytes()).hexdigest() == digest, package
+        assert {"project.json", "screenplay.json"} <= set(metadata["hashes"])
+        recovery = json.loads((package / "screenplay.json").read_text())
+        check_source(recovery, original)
+        assert typed_count(recovery, original, log["target"]) <= len(keys) + 1
     extra = sorted(p.name for p in project.iterdir() if p.name not in ("project.json", "screenplay.json"))
     return dict(typed=len(keys), saved=count, loss_ms=loss_ms, revision=source["revision"], extra=extra)
 

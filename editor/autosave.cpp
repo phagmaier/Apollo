@@ -4,6 +4,7 @@
 #include <QCloseEvent>
 #include <QDir>
 #include <QFileInfo>
+#include <QTextCursor>
 #include <QWindow>
 #include <algorithm>
 
@@ -34,6 +35,9 @@ Autosaver::~Autosaver() {
     auto elements = document_elements(*document_);
     std::lock_guard lock(mutex_);
     pending_ = Snapshot{revision_ - copy_base_.value_or(0), std::move(elements), false};
+  } else if (document_ && reload_busy_) {
+    std::lock_guard lock(mutex_);
+    pending_ = Snapshot{revision_, document_elements(*document_), false, true};
   } else if (document_ && captured_ != revision_) capture(false);
   {
     std::lock_guard lock(mutex_);
@@ -45,15 +49,29 @@ Autosaver::~Autosaver() {
 
 QString Autosaver::state() const {
   if (!error_.isEmpty()) return QStringLiteral("failed");
-  return saved_ == revision_ && !copy_busy_ ? QStringLiteral("saved") : QStringLiteral("saving");
+  return saved_ == revision_ && !copy_busy_ && !reload_busy_ ? QStringLiteral("saved") : QStringLiteral("saving");
 }
 
 QString Autosaver::status() const {
-  if (error_.isEmpty()) return state() == QStringLiteral("saved") ? QStringLiteral("Saved") : QStringLiteral("Saving…");
+  if (error_.isEmpty()) {
+    if (state() != QStringLiteral("saved")) return QStringLiteral("Saving…");
+    return recovery_warning_.isEmpty() ? QStringLiteral("Saved") : QStringLiteral("Saved — recovery snapshot failed: %1").arg(recovery_warning_);
+  }
   auto reason = error_.left(1).toUpper() + error_.mid(1);
   if (!reason.endsWith('.')) reason += '.';
-  return QStringLiteral("Not saved — your latest writing is only in this window. %1%2")
-      .arg(reason, discard_armed_ ? QStringLiteral(" Close again to discard it.") : QString());
+  return QStringLiteral("Not saved to project — %1 %2").arg(reason, recovery_status());
+}
+
+QString Autosaver::recovery_status() const {
+  if (reload_busy_) return QStringLiteral("Preserving writing and reloading…");
+  QString result;
+  if (current_protected()) result = QStringLiteral("Current writing protected by emergency copy at %1 (%2).")
+      .arg(recovery_path_, recovery_time_.toLocalTime().toString(Qt::ISODateWithMs));
+  else if (protected_revision_) result = QStringLiteral("Emergency copy at %1 protects an earlier revision; latest writing is unprotected.").arg(recovery_path_);
+  else result = QStringLiteral("Latest writing has no verified emergency copy.");
+  if (!recovery_error_.isEmpty()) result += QStringLiteral(" Emergency copy failed: %1").arg(recovery_error_);
+  if (!recovery_warning_.isEmpty()) result += QStringLiteral(" Recovery snapshots: %1").arg(recovery_warning_);
+  return result;
 }
 
 void Autosaver::watch_destination() {
@@ -74,16 +92,21 @@ void Autosaver::request_verification() {
 }
 
 void Autosaver::changed() {
-  const auto before = state();
+  if (loading_) return;
+  const auto before = status();
   ++revision_;
   if (!timer_.isActive()) timer_.start();
-  if (state() != before) emit statusChanged();
+  if (status() != before) emit statusChanged();
+  emit recoveryChanged();
 }
 
-void Autosaver::retry() { capture(true); }
+void Autosaver::retry() {
+  if (close_dialog_) close_requested_ = true;
+  capture(true);
+}
 
 bool Autosaver::save_copy(const QString& destination) {
-  if (copy_busy_ || !document_) return false;
+  if (copy_busy_ || reload_busy_ || !document_) return false;
   copy_error_.clear();
   if (destination.isEmpty() || !QFileInfo(destination).isAbsolute()) {
     copy_error_ = QStringLiteral("Choose an absolute path for the new project folder.");
@@ -96,7 +119,6 @@ bool Autosaver::save_copy(const QString& destination) {
   CopyRequest request{path, {revision_, document_elements(*document_), false}};
   copy_busy_ = true;
   close_requested_ = false;
-  discard_armed_ = false;
   copy_status_ = QStringLiteral("Saving a copy to %1…").arg(path);
   {
     std::lock_guard lock(mutex_);
@@ -116,7 +138,7 @@ void Autosaver::flush() { capture(false); }
 
 void Autosaver::capture(bool force) {
   timer_.stop();
-  if (!document_ || copy_busy_ || (!force && (captured_ == revision_ || paused_))) return;
+  if (!document_ || copy_busy_ || reload_busy_ || (!force && captured_ == revision_)) return;
   if (hook_) hook_(Phase::capturing, revision_);
   Snapshot snapshot{revision_, document_elements(*document_), force};
   captured_ = revision_;
@@ -130,21 +152,160 @@ void Autosaver::capture(bool force) {
   wake_.notify_one();
 }
 
+bool Autosaver::reload() {
+  if (copy_busy_ || reload_busy_ || !document_) return false;
+  timer_.stop();
+  reload_busy_ = true;
+  reload_status_ = QStringLiteral("Preserving writing and reloading…");
+  close_requested_ = false;
+  {
+    std::lock_guard lock(mutex_);
+    pending_.reset();
+    reload_request_ = ReloadRequest{{revision_, document_elements(*document_), false}, std::nullopt};
+  }
+  wake_.notify_one();
+  emit recoveryChanged();
+  emit statusChanged();
+  return true;
+}
+
+void Autosaver::protect_current() {
+  if (!document_ || copy_busy_ || reload_busy_) return;
+  timer_.stop();
+  captured_ = revision_;
+  {
+    std::lock_guard lock(mutex_);
+    pending_ = Snapshot{revision_, document_elements(*document_), false, true};
+  }
+  wake_.notify_one();
+}
+
+void Autosaver::recovery_finished(std::uint64_t revision, const std::optional<source::RecoveryCopy>& copy, const QString& error) {
+  if (copy) {
+    protected_revision_ = revision;
+    recovery_path_ = copy->directory;
+    recovery_time_ = copy->captured_at;
+  }
+  recovery_error_ = error;
+  emit recoveryChanged();
+  emit statusChanged();
+}
+
+void Autosaver::reload_finished(std::uint64_t revision, const std::optional<source::OpenedProject>& candidate, const QString& error) {
+  reload_busy_ = false;
+  const bool success = candidate && error.isEmpty() && revision == revision_;
+  if (success) {
+    loading_ = true;
+    document_->setUndoRedoEnabled(false);
+    QTextCursor cursor(document_);
+    cursor.beginEditBlock();
+    cursor.select(QTextCursor::Document);
+    cursor.removeSelectedText();
+    insert_elements(cursor, candidate->screenplay.elements);
+    cursor.endEditBlock();
+    document_->setUndoRedoEnabled(true);
+    document_->setModified(false);
+    loading_ = false;
+    revision_ = saved_ = captured_ = candidate->screenplay.revision;
+    protected_revision_.reset(); // The old copy covers the pre-Reload document.
+    watched_source_ = candidate->project.screenplay_path();
+    error_.clear();
+    paused_ = false;
+    reload_cancelled_ = false;
+    reload_status_ = QStringLiteral("Reloaded project. Previous writing preserved at %1 (%2).")
+        .arg(recovery_path_, recovery_time_.toLocalTime().toString(Qt::ISODateWithMs));
+    copy_error_.clear();
+    copy_status_.clear();
+    emit copyChanged();
+  } else {
+    error_ = error.isEmpty() ? QStringLiteral("Reload cancelled because writing changed. Preserve and Reload again or Save a Copy.") : error;
+    paused_ = true;
+    // No Retry may write memory over a baseline accepted during a cancelled Reload.
+    if (candidate) reload_cancelled_ = true;
+    reload_status_ = QStringLiteral("Reload failed — %1").arg(error_);
+    // A timer may have expired while Reload was busy. Keep later writing
+    // protected even when there is no next keystroke.
+    if (revision_ != revision) protect_current();
+  }
+  watch_destination();
+  emit recoveryChanged();
+  emit statusChanged();
+  emit reloadCompleted(success);
+  if (close_requested_ && closing_) closing_->close();
+}
+
 void Autosaver::write_loop() {
+  std::optional<source::Screenplay> initial = session_->opened().screenplay;
+  auto initial_time = QDateTime::currentDateTimeUtc();
+  auto preserve = [&](const Snapshot& snapshot, const QString& reason) {
+    std::optional<source::RecoveryCopy> copy;
+    QString error;
+    try {
+      if (hook_) hook_(Phase::recovering, snapshot.revision);
+      source::RecoveryStore store(session_->opened().project, session_->opened().assets,
+                                  source::RecoveryStore::emergency_directory(session_->opened().project));
+      copy = store.preserve({snapshot.revision, snapshot.elements}, reason, snapshot.captured_at);
+      if (hook_) hook_(Phase::recovered, snapshot.revision);
+    } catch (const std::exception& failure) { error = QString::fromUtf8(failure.what()); }
+    QMetaObject::invokeMethod(this, [this, revision = snapshot.revision, copy, error] { recovery_finished(revision, copy, error); }, Qt::QueuedConnection);
+    return std::make_pair(copy, error);
+  };
+  auto local_recovery = [&](const source::Screenplay& screenplay, const QDateTime& captured_at) {
+    QString error;
+    try {
+      session_->check_destination();
+      if (hook_) hook_(Phase::snapshotting, screenplay.revision);
+      source::RecoveryStore store(session_->opened().project, session_->opened().assets, session_->opened().project.directory + "/.recovery");
+      store.preserve(screenplay, QStringLiteral("autosave"), captured_at);
+      if (hook_) hook_(Phase::snapshotted, screenplay.revision);
+    } catch (const std::exception& failure) { error = QString::fromUtf8(failure.what()); }
+    QMetaObject::invokeMethod(this, [this, error] { recovery_warning_ = error; emit recoveryChanged(); emit statusChanged(); }, Qt::QueuedConnection);
+  };
   for (;;) {
     std::optional<Snapshot> snapshot;
+    std::optional<ReloadRequest> reload;
     std::optional<CopyRequest> copy;
     {
       std::unique_lock lock(mutex_);
-      wake_.wait(lock, [this] { return pending_ || copy_request_ || verify_requested_ || stopping_; });
-      if (!pending_ && !copy_request_ && stopping_) return;
+      wake_.wait(lock, [this] { return pending_ || copy_request_ || reload_request_ || verify_requested_ || stopping_; });
+      if (!pending_ && !copy_request_ && !reload_request_ && stopping_) return;
       copy = std::move(copy_request_);
       copy_request_.reset();
-      if (!copy) {
+      reload = std::move(reload_request_);
+      reload_request_.reset();
+      if (!copy && !reload) {
         snapshot = std::move(pending_);
         pending_.reset();
       }
       verify_requested_ = false;
+    }
+    if (reload) {
+      QString error;
+      std::optional<source::OpenedProject> candidate;
+      try {
+        if (!reload->candidate) {
+          const auto protection = preserve(reload->snapshot, QStringLiteral("reload"));
+          if (!protection.first) throw std::runtime_error(protection.second.toStdString());
+          if (hook_) hook_(Phase::reloading, reload->snapshot.revision);
+          candidate = session_->read_reload();
+          QMetaObject::invokeMethod(this, [this, request = *reload, candidate]() mutable {
+            if (revision_ != request.snapshot.revision) {
+              reload_finished(request.snapshot.revision, std::nullopt, QStringLiteral("Reload cancelled because writing changed; current writing remains in this window."));
+              return;
+            }
+            request.candidate = candidate;
+            { std::lock_guard lock(mutex_); reload_request_ = std::move(request); }
+            wake_.notify_one();
+          }, Qt::QueuedConnection);
+          continue;
+        }
+        candidate = reload->candidate;
+        session_->accept_reload(*candidate);
+        initial = candidate->screenplay;
+        initial_time = QDateTime::currentDateTimeUtc();
+      } catch (const std::exception& failure) { error = QString::fromUtf8(failure.what()); candidate.reset(); }
+      QMetaObject::invokeMethod(this, [this, revision = reload->snapshot.revision, candidate, error] { reload_finished(revision, candidate, error); }, Qt::QueuedConnection);
+      continue;
     }
     if (copy) {
       QString error, destination;
@@ -163,6 +324,9 @@ void Autosaver::write_loop() {
         destination = replacement->opened().project.directory;
         session_ = std::move(replacement);
         paused_ = false;
+        reload_cancelled_ = false;
+        initial = session_->opened().screenplay;
+        initial_time = QDateTime::currentDateTimeUtc();
         {
           std::lock_guard lock(mutex_);
           if (pending_) pending_->revision -= copy->snapshot.revision;
@@ -177,13 +341,18 @@ void Autosaver::write_loop() {
       }, Qt::QueuedConnection);
       continue;
     }
-    if (paused_ && (!snapshot || !snapshot->retry)) continue;
+    if (snapshot && (snapshot->emergency_only || reload_cancelled_ || (paused_ && !snapshot->retry))) {
+      preserve(*snapshot, QStringLiteral("emergency"));
+      continue;
+    }
+    if (paused_ && !snapshot) continue;
     const auto revision = snapshot ? std::optional(snapshot->revision) : std::nullopt;
     QString error;
     try {
       if (snapshot) {
         if (hook_) hook_(Phase::writing, *revision);
-        const auto bytes = source::serialize_screenplay({*revision, std::move(snapshot->elements)});
+        const auto bytes = source::serialize_screenplay({*revision, snapshot->elements});
+        if (initial) { local_recovery(*initial, initial_time); initial.reset(); }
         session_->save(bytes, [&](source::WritePhase phase) {
           if (hook_ && phase == source::WritePhase::written) hook_(Phase::written, *revision);
           if (hook_ && phase == source::WritePhase::committed) hook_(Phase::committed, *revision);
@@ -198,6 +367,10 @@ void Autosaver::write_loop() {
     }
     if (snapshot || !error.isEmpty())
       QMetaObject::invokeMethod(this, [this, revision, error] { finished(revision, error); }, Qt::QueuedConnection);
+    // Report the failed project destination immediately; slow emergency I/O
+    // must not leave the GUI claiming that the original is still saving.
+    if (snapshot && !error.isEmpty()) preserve(*snapshot, QStringLiteral("emergency"));
+    if (snapshot && error.isEmpty()) local_recovery({snapshot->revision, snapshot->elements}, snapshot->captured_at);
   }
 }
 
@@ -207,7 +380,6 @@ void Autosaver::finished(std::optional<std::uint64_t> revision, const QString& e
     // Writes finish in capture order, so a success covers every earlier failure.
     saved_ = std::max(saved_, *revision);
     error_.clear();
-    discard_armed_ = false;
     if (hook_) hook_(Phase::acknowledged, *revision);
     // A capture timer may have expired while an explicit retry was still
     // paused. Resume protection of writing made during that retry immediately.
@@ -219,7 +391,11 @@ void Autosaver::finished(std::optional<std::uint64_t> revision, const QString& e
   if (status() != before) emit statusChanged();
   if (!copy_busy_ && close_requested_ && closing_) {
     if (state() == QStringLiteral("saved")) closing_->close();
-    else if (state() == QStringLiteral("failed")) close_requested_ = false;
+    else if (state() == QStringLiteral("failed")) {
+      close_dialog_ = true;
+      close_requested_ = false;
+      emit recoveryChanged();
+    }
   }
 }
 
@@ -233,7 +409,12 @@ void Autosaver::copy_finished(std::uint64_t revision, const QString& destination
     revision_ -= revision;
     saved_ = captured_ = 0;
     error_.clear();
-    discard_armed_ = false;
+    protected_revision_.reset();
+    recovery_path_.clear();
+    reload_status_.clear();
+    recovery_error_.clear();
+    recovery_warning_.clear();
+    close_dialog_ = false;
     copy_status_ = QStringLiteral("Copy active — %1").arg(destination);
     const auto paths = watcher_.files() + watcher_.directories();
     if (!paths.isEmpty()) watcher_.removePaths(paths);
@@ -246,6 +427,7 @@ void Autosaver::copy_finished(std::uint64_t revision, const QString& destination
   watch_destination();
   capture(false);
   emit copyChanged();
+  emit recoveryChanged();
   emit statusChanged();
   emit copyCompleted(error.isEmpty());
   if (close_requested_ && closing_ && state() == QStringLiteral("saved")) closing_->close();
@@ -256,18 +438,31 @@ void Autosaver::guard_close(QWindow& window) {
   window.installEventFilter(this);
 }
 
+void Autosaver::keep_open() {
+  close_dialog_ = false;
+  close_requested_ = false;
+  emit recoveryChanged();
+}
+
+void Autosaver::close_with_copy_or_discard() {
+  if (!closing_ || copy_busy_ || reload_busy_) return;
+  allow_close_ = true;
+  closing_->close();
+}
+
 bool Autosaver::eventFilter(QObject* watched, QEvent* event) {
-  if (watched == closing_ && event->type() == QEvent::Close && copy_busy_) {
+  if (watched == closing_ && event->type() == QEvent::Close && (copy_busy_ || reload_busy_)) {
     event->ignore();
     close_requested_ = true;
     return true;
   }
-  if (watched != closing_ || event->type() != QEvent::Close || state() == QStringLiteral("saved") || discard_armed_)
+  if (watched != closing_ || event->type() != QEvent::Close || state() == QStringLiteral("saved") || allow_close_)
     return QObject::eventFilter(watched, event);
   event->ignore();
   if (state() == QStringLiteral("failed")) {
-    discard_armed_ = true;
-    emit statusChanged();
+    close_dialog_ = true;
+    protect_current();
+    emit recoveryChanged();
   } else {
     close_requested_ = true;
     flush();

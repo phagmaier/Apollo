@@ -227,4 +227,39 @@ void ProjectSession::save(const QByteArray& bytes, const std::function<void(Writ
     if (phase == WritePhase::written || phase == WritePhase::committed) check_destination();
   });
 }
+
+OpenedProject ProjectSession::read_reload() const {
+  const auto& project = opened_.project;
+  if (identity(project.directory, true) != directory_identity_ || read_file(lock_->fileName()) != lock_file_)
+    destination_changed(project.directory);
+  const auto manifest = read_file(project.directory + '/' + manifest_name);
+  const auto current = read_manifest(project.directory, manifest.bytes);
+  // A replaced project identity requires the explicit open/copy workflow.
+  if (current.id != project.id) destination_changed(project.directory + '/' + manifest_name);
+  const auto screenplay = read_file(current.screenplay_path());
+  OpenedProject candidate{current, parse_screenplay(screenplay.bytes), read_assets(current)};
+  if (read_file(project.directory + '/' + manifest_name) != manifest || read_file(current.screenplay_path()) != screenplay)
+    destination_changed(project.directory);
+  return candidate;
+}
+
+void ProjectSession::accept_reload(const OpenedProject& candidate) {
+  const auto current = read_reload();
+  if (current.project.id != candidate.project.id || current.project.screenplay_file != candidate.project.screenplay_file ||
+      current.screenplay != candidate.screenplay || current.assets != candidate.assets)
+    destination_changed(candidate.project.directory);
+  const auto manifest = read_file(current.project.directory + '/' + manifest_name);
+  const auto screenplay = read_file(current.project.screenplay_path());
+  const auto manifest_project = read_manifest(current.project.directory, manifest.bytes);
+  if (manifest_project.id != current.project.id || manifest_project.screenplay_file != current.project.screenplay_file ||
+      parse_screenplay(screenplay.bytes) != current.screenplay) destination_changed(current.project.directory);
+  // Strong exception guarantee: invalid candidates leave the old baseline intact.
+  auto previous = opened_;
+  auto old_manifest = manifest_, old_screenplay = screenplay_;
+  opened_ = current;
+  manifest_ = manifest;
+  screenplay_ = screenplay;
+  try { check_destination(); }
+  catch (...) { opened_ = std::move(previous); manifest_ = std::move(old_manifest); screenplay_ = std::move(old_screenplay); throw; }
+}
 }

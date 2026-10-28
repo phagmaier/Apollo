@@ -410,6 +410,11 @@ const char* phase_name(Autosaver::Phase phase) {
     case Autosaver::Phase::acknowledged: return "acknowledged";
     case Autosaver::Phase::copying: return "copying";
     case Autosaver::Phase::copied: return "copied";
+    case Autosaver::Phase::recovering: return "recovering";
+    case Autosaver::Phase::recovered: return "recovered";
+    case Autosaver::Phase::reloading: return "reloading";
+    case Autosaver::Phase::snapshotting: return "snapshotting";
+    case Autosaver::Phase::snapshotted: return "snapshotted";
   }
   return "unknown";
 }

@@ -343,6 +343,27 @@ private slots:
   }
 
   // Each phase of a failed replacement leaves the earlier complete file.
+  void reload_requires_explicit_acceptance_and_rejects_a_stale_candidate() {
+    QTemporaryDir parent;
+    const auto project = create_project(parent.filePath("project"), example());
+    ProjectSession session(project.directory);
+    auto external = example();
+    external.elements.back().text = "External replacement.";
+    const auto bytes = serialize_screenplay(external);
+    replace_file(project.screenplay_path(), bytes);
+    const auto candidate = session.read_reload();
+    QVERIFY(candidate.screenplay == canonical(external));
+    QVERIFY_THROWS_EXCEPTION(SourceError, session.save(serialize_screenplay(example())));
+    // A second replacement must not be silently adopted through this candidate.
+    external.elements.back().text = "Changed again.";
+    replace_file(project.screenplay_path(), serialize_screenplay(external));
+    QVERIFY_THROWS_EXCEPTION(SourceError, session.accept_reload(candidate));
+    QCOMPARE(read_file(project.screenplay_path()), serialize_screenplay(external));
+    session.accept_reload(session.read_reload());
+    session.save(serialize_screenplay(external));
+    session.check_destination();
+  }
+
   void a_failed_replacement_keeps_the_old_file_data() {
     QTest::addColumn<int>("phase");
     QTest::newRow("opened") << static_cast<int>(WritePhase::opened);

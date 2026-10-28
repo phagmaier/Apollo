@@ -1,16 +1,17 @@
 # Apollo source format and saving (version 1)
 
 2026-10-28. Status: implemented in [writing-build-plan](writing-build-plan.md)
-slice 1 and slice 2 tasks 2.1–2.2. This is the working contract for the first usable
+slice 1 and slice 2 tasks 2.1–2.3. This is the working contract for the first usable
 writing build, not yet a long-term compatibility promise: later slices may add files or fields
 under a new format version. The owner chose a portable project folder with
 versioned structured text; the details below are agent engineering choices.
 
 Code: `source/screenplay_format.*` (schema), `source/project.*` (folder and
-file replacement), `editor/screenplay_layout.cpp` (Qt document adapter), and
+file replacement), `source/recovery.*` (recovery packages),
+`editor/screenplay_layout.cpp` (Qt document adapter), and
 `editor/autosave.*` (saving). Tests: `tests/source_tests.cpp`,
-`tests/autosave_tests.cpp`, `tests/autosave_crash_tests.py`, and
-`tests/project_lock_tests.py`.
+`tests/autosave_tests.cpp`, `tests/autosave_crash_tests.py`,
+`tests/project_lock_tests.py`, and `tests/recovery_tests.cpp`.
 
 ## Project folder
 
@@ -18,12 +19,14 @@ file replacement), `editor/screenplay_layout.cpp` (Qt document adapter), and
 | --- | --- |
 | `project.json` | Format name and version, persistent project identity, and the screenplay file name |
 | `screenplay.json` | The screenplay: title-page fields, ordered elements, emphasis, deliberate breaks, dual-speech flags, and revision |
+| `.recovery/` | Complete local recovery packages and their integrity/timestamp metadata; exclude from future Git history |
 | `.apollo.lock` | Runtime edit lock; released on normal exit, recovered by process identity after a crash; exclude from future Git history |
 
-Autosave changes only `screenplay.json`. Import and recovery flows do not yet
-create the plan's `imported-material.json`, `imports/original.fountain`, or
-`.recovery/`. If the two import files are present, opening retains their bytes
-in memory and Save a Copy preserves them verbatim (including empty files).
+Autosave changes the authoritative `screenplay.json` and adds bounded recovery
+packages under `.recovery/`. The import flow does not yet create the plan's
+`imported-material.json` or `imports/original.fountain`. If the two import files
+are present, opening retains their bytes in memory and Save a Copy preserves
+them verbatim (including empty files).
 Unreadable or symlinked dependencies are refused rather than silently omitted;
 the `imports` folder must also be an ordinary directory. Import parsing and
 its read-only reader remain pending. Session state and library recents will
@@ -186,19 +189,16 @@ them yet, and branch or shared-material semantics are not solved here.
    replacement: keep the last valid file and newer in-memory writing rather
    than wrap/reset the revision or claim an unreadable file is saved. Reaching
    this limit is only practical with an artificially high starting revision.
-5. Closing a window with unsaved writing waits for the save, without blocking
-   the GUI. While saving is failing, the first close is refused and the
-   status says to close again to discard; the second close discards. This is
-   an interim form of the agreed close behavior: the emergency copy, Save a
-   Copy in that close dialog, and a discard choice that describes unprotected
-   writing are later slice 2 work. Destroying the saver drains guarded pending writes and
-   captures uncaptured writing unless saving has been paused by a destination
-   change. It never forces a replacement past the destination checks.
+5. Closing with unsaved writing waits asynchronously for saving. A project-save
+   failure attempts an emergency copy and shows its exact coverage and location,
+   with Retry, Save a Copy, Keep Open, and an explicit protected-close or discard
+   choice. Repeated window-close requests never implicitly discard. See task 2.3
+   below. Destruction drains pending writing through the same destination guards;
+   paused writing is preserved to emergency storage rather than force-saved.
 
-Measured results are below. Not yet implemented, all planned for slice 2:
-recovery snapshots and retention, the emergency location, damaged-save
-recovery, preserved-work Reload, resuming the last project and
-cursor, and cleanup of any stale temporary file.
+Measured results are below. Session resumption, damaged-save selection on open,
+and stale temporary cleanup remain later slice 2 work. Recovery packages can
+already be opened directly as ordinary projects.
 
 ### Editable sessions and destination changes (slice 2 task 2.1)
 
@@ -238,8 +238,8 @@ Restoring the same original folder/files allows an explicit Retry to resume,
 including saving edits made while that retry was running. Recreating a missing
 source with a different inode is still a replacement and is refused.
 
-The error offers Retry and Save a Copy. Reload after preserving current work,
-recovery snapshots, and the emergency/close dialog remain upcoming slice 2 work.
+The error offers Retry, Save a Copy and preserved-work Reload. Task 2.3 below
+adds recovery snapshots and the emergency/close dialog.
 There is no automatic reload, merge, force-save, or durable recovery promise for
 writing kept only in memory after a destination change until a copy succeeds.
 
@@ -287,7 +287,7 @@ A close during copying waits for the copy and those edits, and failure keeps
 the window open. Destruction also drains later writing at the appropriate
 destination. No partial staged folder is published; ordinary failures clean up
 the staging folder. SIGKILL can still leave staging material; stale cleanup
-and emergency/recovery storage remain pending.
+remains pending. Task 2.3 below adds emergency/recovery storage.
 
 Later edits wait in memory while the copy worker is busy. Crash-loss/latency
 during a slow copy has not been measured, and this does not extend the earlier
@@ -320,6 +320,139 @@ Saved logs: `build/task-2.2-{release,debug,engine}.log`,
 `build/task-2.2-debug-final.log`, `build/task-2.2-final-focused.log` and
 `build/task-2.2-native-final.log`. Inspected screenshots:
 `build/release/autosave-tests/copy-{active,failed}.png`.
+
+### Preserved-work Reload and recovery/emergency copies (slice 2 task 2.3)
+
+`source/recovery.*` writes immutable complete project packages through staging
+and no-replace publication. Each includes the screenplay, a project manifest,
+cached imported material and original Fountain when present, and `recovery.json`:
+format `apollo-recovery`, version 1, origin UUID/location, UTC capture timestamp,
+reason (`autosave`, `emergency`, `reload`), and SHA-256 hashes of the packaged
+files. A package is acknowledged only after a complete readback and integrity
+check. It has its own project UUID and retains the captured revision and element
+identities. Open its reported folder with `apollo_editor DIR`; no original drive
+is required. Saving an emergency copy never switches the active project or
+marks the original destination Saved.
+
+Healthy saves keep the opened source before its first replacement and a recovery
+package after each completed save under the project's `.recovery/`. Recovery
+I/O stays on the ordered worker. A failed local snapshot does not invalidate a
+successful authoritative save; the status reports the snapshot failure. Retain
+the newly completed package, the newest previous capture, and up to ten older
+UTC minute buckets. Always keep the package being acknowledged even after a
+wall-clock rollback. Pruning runs only after a new package is verified, skips open/locked projects, and leaves
+invalid/unrecognized packages and hidden interrupted staging as evidence. Failed
+cleanup can exceed the nominal bound. Before pruning, acquire the package's edit
+lock and recheck its integrity; an editor may have opened, changed and closed it
+since the scan. Atomically move it to a hidden `.apollo-recovery-pruning-*` name
+before recursive deletion so an opener cannot race removal of the lock file.
+Interrupted pruning can leave hidden material. Future stale-temp cleanup must
+respect these distinctions.
+
+After a failed save, and on later bounded captures while destination checks are
+paused, attempt a complete emergency package under
+`$XDG_DATA_HOME/Apollo/recovery/<key>/` (normally
+`~/.local/share/Apollo/recovery/<key>/`). The key hashes the original project UUID
+and canonical location. Imports come from session memory, independently of a
+missing/moved/changed original. Recovery stores use a nonblocking local lock;
+both destinations may fail. The GUI acknowledges the captured revision, time
+and path; later edits immediately cease to be described as currently protected.
+The visible save-status binding is notified as soon as that coverage changes.
+An older copy's success never covers newer writing. The same retention rule
+applies to emergency storage.
+
+**Reload…** opens a confirmation explaining the replacement and undo reset.
+**Preserve and Reload** first writes and verifies the current window's complete
+emergency package, then reads a valid candidate from disk while holding the
+original edit lock. It revalidates before accepting a new baseline. The project
+UUID and folder/lock must still match the editable session. Changed source and
+manifest references can be adopted explicitly; a different project UUID requires
+an open/copy flow. The editor is temporarily disabled during this asynchronous
+operation. Changes from another document producer cancel adoption and preserve
+the newer memory; Retry cannot overwrite a baseline accepted by a cancelled
+Reload. Missing/malformed/newer-version data or failed preservation retains the
+current document and undo history. Success installs the candidate in the same
+Qt document, clears undo/redo, resumes autosave and reports where prior writing
+was preserved. A later PDF export replaces that footer notice with its own
+progress/result. No external bytes are rewritten by Reload itself.
+
+A failed close shows the project error and whether an emergency package covers
+**current** writing. Retry finishes closing only after the original saves; Save
+a Copy uses task 2.2; Keep Open/Escape keeps writing. A protected close says
+**Close with Emergency Copy**. Otherwise the explicit action says
+**Discard Unprotected Writing and Close**. Repeating the window-close request
+never substitutes for that choice. Closing during copy/Reload waits
+asynchronously for the operation. As before, final saver destruction drains its worker; blocked storage
+can delay process teardown.
+
+The damaged-save picker, recovery reconciliation on project open, last-project/
+cursor resumption, and stale-stage cleanup remain in the project-access work.
+There is no automatic rollback. Recovery packages preserve evidence and can be
+opened directly in the meantime. Leak detection and crash loss during Save a
+Copy remain unverified; healthy-save measurements do not establish the loss
+window during slow copying or unavailable storage.
+
+Task 2.3 verification (2026-10-28): serial release and ASan/UBSan checks pass
+11/11; engine-only passes 2/2. Leak detection was disabled as before. After the
+final status-notification review fixes, release and debug autosave checks each
+pass 48/48; native Wayland passes the full 48/48 and the final focused controls
+7/7 using the same fcitx/software configuration documented for task 2.2. These
+are synthetic native interaction checks, with no new physical-input, OpenGL,
+latency or comfort claim. The final Reload confirmation also passes offscreen
+in both builds, and its screenshot was inspected alongside both close choices.
+
+The extended crash checker now kills before/after recovery snapshots as well as
+the existing save phases and at random times. Python's independent JSON/hash
+checks validate every published package and compare writing with the input log.
+Run the two representative workloads sequentially, without competing test I/O:
+
+```sh
+QT_QPA_PLATFORM=offscreen UV_CACHE_DIR=/tmp/apollo-uv-cache \
+uv run tests/autosave_crash_tests.py --editor build/release/apollo_editor \
+  --source fixtures/generated/feature-200.fountain \
+  --output build/task-2.3-crash-200 --keys 150 --random 12 --phase-occurrence 4
+```
+
+Repeat with `stress-500.fountain` and output `build/task-2.3-crash-500`.
+Release, internal SSD/btrfs, 150 synthetic keys 30 ms apart, 20 kills per size:
+
+| Measure (ms) | 200 pages (3,271 elements) | 500 pages (8,184 elements) |
+| --- | --- | --- |
+| Lost writing p50 / p95 / max | 215 / 412 / 473 | 420 / 708 / 712 |
+| Key to committed save p50 / p95 / max | 257 / 429 / 601 | 404 / 616 / 731 |
+| GUI capture p50 / max | 3.5 / 5.0 | 9.5 / 11.6 |
+| Source commit p50 / p95 / max | 46 / 60 / 77 | 55 / 75 / 242 |
+
+All 40 kills retained complete valid source; published recovery packages also
+passed independent integrity/content checks. One package per size was reopened
+through `apollo_editor DIR --check` without altering writing/evidence bytes.
+Interrupted hidden stages are retained for later stale cleanup.
+
+An earlier required-suite run concurrent with the sanitizer workload exceeded
+the target on the small script: 1,861 ms lost while source commit blocked for
+about 1,737 ms. The serial required suite and isolated workloads pass. This is
+a measured I/O-contention limitation, not evidence of a universal one-second
+bound. No power-loss or unavailable-storage guarantee is added, and copying
+crash loss remains unverified.
+
+Logs: `build/task-2.3-serial-release.log`, `build/task-2.3-final-debug.log`,
+`build/task-2.3-engine.log`, `build/task-2.3-review-{release,debug,native}.log`,
+`build/task-2.3-native.log`, `build/task-2.3-reload-ui.log`,
+`build/task-2.3-debug-reload-ui.log`, `build/task-2.3-academy.log`, and
+`build/task-2.3-reopen-recovery.log`. Crash summaries/events are in
+`build/task-2.3-crash-{200,500}/`; the concurrent failure is saved in
+`build/task-2.3-final-release.log`. Screenshots:
+`build/release/autosave-tests/{reload-confirm,close-protected,close-unprotected}.png`.
+
+Pre-commit review reran the final code: release and ASan/UBSan each pass 11/11,
+engine-only passes 2/2, and release/debug autosave suites each pass 50/50.
+The native Wayland autosave suite also passes 50/50 with the same fcitx/software
+setup above. Both newly added status regressions failed before their fixes.
+Retention coverage also verifies that corrupt/edited evidence survives later
+pruning; the concurrent opener/pruner ordering was checked in code, without a
+test forcing every race. Logs: `build/recovery-review-{red,green,release,debug,engine,native}.log`.
+Leak detection remains disabled; the earlier representative workload timings
+were not repeated, and no new performance or physical-input claim is made.
 
 ### Crash-loss measurements
 

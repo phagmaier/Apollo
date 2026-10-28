@@ -1,5 +1,6 @@
 #include "editor/autosave.h"
 #include "editor/editor_view.h"
+#include "editor/pdf_export_job.h"
 #include "editor/screenplay_layout.h"
 #include "fountain/import.h"
 #include "source/project.h"
@@ -138,6 +139,7 @@ private slots:
     QGuiApplication::setQuitOnLastWindowClosed(false);
     font_ = courier_prime(QStringLiteral(APOLLO_FONT_DIR));
     QVERIFY(directory_.isValid());
+    qputenv("XDG_DATA_HOME", directory_.filePath("app-data").toUtf8());
     QVERIFY(QDir().mkpath(QStringLiteral(APOLLO_ARTIFACT_DIR)));
   }
   void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral(".*"))); }
@@ -887,8 +889,223 @@ private slots:
     QVERIFY(saved_texts(project_path_).contains("Wind rattles the glass. Again.!"));
   }
 
+  void reload_preserves_memory_before_adopting_external_writing() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    auto external = read_file(project_path_ + "/screenplay.json");
+    external.replace("Wind rattles the glass.", "External writing.");
+    source::replace_file(project_path_ + "/screenplay.json", external);
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    place(position_of("glass.") + 6);
+    type(" My unsaved work.");
+    QSignalSpy completed(saver_.get(), &Autosaver::reloadCompleted);
+    auto* reload = view_->rootObject()->findChild<QQuickItem*>("reloadProject");
+    QVERIFY(reload && reload->isVisible());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, reload->mapToScene(reload->boundingRect().center()).toPoint());
+    auto* panel = view_->rootObject()->findChild<QObject*>("reloadPanel");
+    QVERIFY(panel);
+    QTRY_VERIFY(panel->property("opened").toBool());
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/reload-confirm.png"));
+    auto* confirm = view_->rootObject()->findChild<QQuickItem*>("reloadConfirm");
+    QVERIFY(confirm && confirm->isVisible());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, confirm->mapToScene(confirm->boundingRect().center()).toPoint());
+    QTRY_COMPARE(completed.size(), 1);
+    QVERIFY(completed.front().front().toBool());
+    QCOMPARE(saved_texts(project_path_).at(1), QStringLiteral("External writing."));
+    QCOMPARE(document_->toPlainText().contains("External writing."), true);
+    QVERIFY(document_elements(*document_) == source::open_project(project_path_).screenplay.elements);
+    QVERIFY(!document_->isUndoAvailable());
+    QCOMPARE(saver_->state(), QStringLiteral("saved"));
+    const auto origin = source::open_project(project_path_).project;
+    source::RecoveryStore recovery(origin, {}, source::RecoveryStore::emergency_directory(origin));
+    const auto copies = recovery.verified();
+    QVERIFY(!copies.empty());
+    QVERIFY(saved_texts(copies.front().directory).contains("Wind rattles the glass. My unsaved work."));
+    place(position_of("External writing.") + 17);
+    type(" After reload.");
+    QTRY_VERIFY(saved());
+    QVERIFY(saved_texts(project_path_).contains("External writing. After reload."));
+  }
+
+  void invalid_reload_keeps_memory_and_external_evidence() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    QVERIFY(write_file(project_path_ + "/screenplay.json", "damaged source"));
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    place(position_of("glass.") + 6);
+    type(" Retained.");
+    const auto expected = document_elements(*document_);
+    QSignalSpy completed(saver_.get(), &Autosaver::reloadCompleted);
+    QVERIFY(saver_->reload());
+    QTRY_COMPARE(completed.size(), 1);
+    QVERIFY(!completed.front().front().toBool());
+    QVERIFY(document_elements(*document_) == expected);
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), QByteArray("damaged source"));
+    QVERIFY(saver_->current_protected());
+    QCOMPARE(saver_->state(), QStringLiteral("failed"));
+  }
+
+  void later_writing_immediately_revokes_visible_emergency_coverage() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    QVERIFY(write_file(project_path_ + "/screenplay.json", "damaged source"));
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    place(position_of("glass.") + 6);
+    type(" Protected.");
+    saver_->flush();
+    QTRY_VERIFY(saver_->current_protected());
+    auto* status = view_->rootObject()->findChild<QObject*>("saveStatus");
+    QVERIFY(status);
+    QVERIFY(status->property("text").toString().contains("Current writing protected"));
+    type("x");
+    QVERIFY(!saver_->current_protected());
+    // Check the actual QML binding before another capture can acknowledge it.
+    QVERIFY(status->property("text").toString().contains("latest writing is unprotected"));
+  }
+
+  void pdf_export_result_remains_visible_after_reload() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    QSignalSpy reloaded(saver_.get(), &Autosaver::reloadCompleted);
+    QVERIFY(saver_->reload());
+    QTRY_COMPARE(reloaded.size(), 1);
+    QVERIFY(reloaded.front().front().toBool());
+    PdfExportJob job(document_.get(), QStringLiteral(APOLLO_FONT_DIR), QStringLiteral("/nonexistent/pdf-export"));
+    view_->rootObject()->setProperty("exportJob", QVariant::fromValue<QObject*>(&job));
+    auto* footer = view_->rootObject()->findChild<QObject*>("operationStatus");
+    QVERIFY(footer);
+    QVERIFY(footer->property("text").toString().contains("Previous writing preserved"));
+    QSignalSpy exported(&job, &PdfExportJob::completed);
+    QVERIFY(job.request(directory_.filePath("after-reload.pdf")));
+    QTRY_COMPARE(exported.size(), 1);
+    QVERIFY(!exported.front().front().toBool());
+    QVERIFY(job.status().contains("failed"));
+    QCOMPARE(footer->property("text").toString(), job.status());
+    view_->rootObject()->setProperty("exportJob", QVariant::fromValue<QObject*>(nullptr));
+  }
+
+  void reload_and_close_when_both_destinations_fail() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    auto external = read_file(project_path_ + "/screenplay.json");
+    external.replace("Wind rattles the glass.", "External writing.");
+    source::replace_file(project_path_ + "/screenplay.json", external);
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    // Deterministic emergency-storage failure without filling a filesystem.
+    saver_->set_hook([](Phase phase, std::uint64_t) {
+      if (phase == Phase::recovering) throw std::runtime_error("emergency storage unavailable");
+    });
+    place(position_of("glass.") + 6);
+    type(" Not protected.");
+    const auto expected = document_elements(*document_);
+    QSignalSpy completed(saver_.get(), &Autosaver::reloadCompleted);
+    QVERIFY(saver_->reload());
+    QTRY_COMPARE(completed.size(), 1);
+    QVERIFY(!completed.front().front().toBool());
+    QVERIFY(document_elements(*document_) == expected);
+    QVERIFY(document_->isUndoAvailable());
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), external);
+    QVERIFY(!saver_->current_protected());
+    view_->close();
+    QVERIFY(view_->isVisible());
+    QTRY_VERIFY(saver_->recovery_status().contains("emergency storage unavailable"));
+    auto* close = view_->rootObject()->findChild<QQuickItem*>("closeExplicit");
+    QVERIFY(close);
+    QTRY_VERIFY(close->isVisible());
+    QCOMPARE(close->property("text").toString(), QStringLiteral("Discard Unprotected Writing and Close"));
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/close-unprotected.png"));
+    saver_->keep_open();
+    QVERIFY(view_->isVisible());
+    QVERIFY(!saver_->close_dialog());
+    view_->close();
+    QTRY_VERIFY(saver_->close_dialog());
+    saver_->close_with_copy_or_discard();
+    QVERIFY(!view_->isVisible());
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), external);
+  }
+
+  void writing_during_reload_cancels_adoption_and_is_protected() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    auto external = read_file(project_path_ + "/screenplay.json");
+    external.replace("Wind rattles the glass.", "External writing.");
+    source::replace_file(project_path_ + "/screenplay.json", external);
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    std::promise<void> entered, resume;
+    const auto ready = entered.get_future(), proceed = resume.get_future();
+    saver_->set_hook([&](Phase phase, std::uint64_t) {
+      if (phase == Phase::reloading) { entered.set_value(); proceed.wait(); }
+    });
+    auto unblock = qScopeGuard([&] { resume.set_value(); });
+    QSignalSpy completed(saver_.get(), &Autosaver::reloadCompleted);
+    QVERIFY(saver_->reload());
+    QTRY_VERIFY(ready.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    QVERIFY(!editor_->isEnabled());
+    // Direct document mutation tests a producer other than keyboard input.
+    QTextCursor cursor(document_.get());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(" Later writing.");
+    QTest::qWait(Autosaver::capture_interval_ms + 30);
+    resume.set_value();
+    unblock.dismiss();
+    QTRY_COMPARE(completed.size(), 1);
+    QVERIFY(!completed.front().front().toBool());
+    QVERIFY(document_->toPlainText().contains("Later writing."));
+    QTRY_VERIFY(saver_->current_protected());
+    saver_->retry();
+    QTest::qWait(100);
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), external);
+  }
+
+  void retry_from_failure_close_finishes_closing() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    QVERIFY(QFile::setPermissions(project_path_, QFile::ReadOwner | QFile::ExeOwner));
+    auto restore = qScopeGuard([&] { QFile::setPermissions(project_path_, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner); });
+    place(position_of("glass.") + 6);
+    type(" Finish.");
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    view_->close();
+    QTRY_VERIFY(saver_->close_dialog());
+    QVERIFY(QFile::setPermissions(project_path_, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+    saver_->retry();
+    QTRY_VERIFY(!view_->isVisible());
+    QVERIFY(saved());
+    QCOMPARE(saved_texts(project_path_).at(1), QStringLiteral("Wind rattles the glass. Finish."));
+  }
+
+  void failed_save_is_visible_while_emergency_io_is_slow() {
+    QVERIFY(create(scene));
+    QVERIFY(open_project());
+    const auto before = read_file(project_path_ + "/screenplay.json");
+    std::promise<void> entered, resume;
+    const auto ready = entered.get_future(), proceed = resume.get_future();
+    std::atomic<bool> first{true};
+    saver_->set_hook([&](Phase phase, std::uint64_t) {
+      if (phase == Phase::written) throw std::runtime_error("project storage failed");
+      if (phase == Phase::recovering && first.exchange(false)) { entered.set_value(); proceed.wait(); }
+    });
+    auto unblock = qScopeGuard([&] { resume.set_value(); });
+    place(position_of("glass.") + 6);
+    type(" Keep this.");
+    saver_->flush();
+    QTRY_VERIFY(ready.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
+    QVERIFY(saver_->status().contains("project storage failed", Qt::CaseInsensitive));
+    QVERIFY(!saver_->current_protected());
+    view_->close();
+    QTRY_VERIFY(saver_->close_dialog());
+    QVERIFY(view_->isVisible());
+    saver_->keep_open();
+    resume.set_value();
+    unblock.dismiss();
+    QTRY_VERIFY(saver_->current_protected());
+    QCOMPARE(saver_->state(), QStringLiteral("failed"));
+    QCOMPARE(read_file(project_path_ + "/screenplay.json"), before);
+  }
+
   // Closing waits for the save; while saving fails, the first close is
-  // refused with a warning and a second discards.
+  // refused until the owner chooses a protected close or explicit discard.
   void close_waits_for_saving() {
     QVERIFY(create(scene));
     QVERIFY(open_project());
@@ -902,13 +1119,25 @@ private slots:
 
     QVERIFY(open_project());
     QVERIFY(QFile::setPermissions(project_path_, QFile::ReadOwner | QFile::ExeOwner));
+    auto restore = qScopeGuard([&] { QFile::setPermissions(project_path_, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner); });
     place(position_of("glass.") + 6);
     type("!");
     QTRY_COMPARE(saver_->state(), QStringLiteral("failed"));
     view_->close();
     QVERIFY(view_->isVisible());
-    QVERIFY(saver_->status().contains("Close again to discard"));
+    QTRY_VERIFY(saver_->close_dialog());
+    QTRY_VERIFY(saver_->current_protected());
+    QVERIFY(saver_->status().contains("Current writing protected"));
     view_->close();
+    QVERIFY(view_->isVisible()); // Repeated close never implicitly discards.
+    auto* close = view_->rootObject()->findChild<QQuickItem*>("closeExplicit");
+    QVERIFY(close);
+    QTRY_VERIFY(close->isVisible());
+    auto* panel = view_->rootObject()->findChild<QObject*>("failurePanel");
+    QVERIFY(panel);
+    QTRY_VERIFY(panel->property("opened").toBool());
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/close-protected.png"));
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, close->mapToScene(close->boundingRect().center()).toPoint());
     QVERIFY(!view_->isVisible());
     QVERIFY(QFile::setPermissions(project_path_, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
   }

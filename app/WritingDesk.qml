@@ -15,6 +15,7 @@ Rectangle {
     property var outlineScenes: []
     property bool outlineVisible: false
     property bool includeTitle: true
+    property bool showReloadStatus: false
     color: "#d4d9df"
 
     function toggleOutline() {
@@ -29,7 +30,7 @@ Rectangle {
     }
     Shortcut { sequence: "Ctrl+E"; onActivated: desk.exportPdf() }
     Shortcut { sequence: "Ctrl+\\"; onActivated: desk.toggleOutline() }
-    Shortcut { sequence: "Ctrl+Shift+S"; enabled: desk.autosaver !== null; onActivated: copyPanel.open() }
+    Shortcut { sequence: "Ctrl+Shift+S"; enabled: desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
     Connections {
         target: desk.autosaver
         function onLocationChanged() {
@@ -41,6 +42,19 @@ Rectangle {
             if (!success)
                 copyPanel.open()
         }
+        function onRecoveryChanged() {
+            if (desk.autosaver.reloadBusy)
+                desk.showReloadStatus = true
+            if (desk.autosaver.closeDialog && !failurePanel.opened)
+                failurePanel.open()
+            else if (!desk.autosaver.closeDialog && failurePanel.opened)
+                failurePanel.close()
+        }
+        function onReloadCompleted(success) { desk.showReloadStatus = true }
+    }
+    Connections {
+        target: desk.exportJob
+        function onChanged() { desk.showReloadStatus = false }
     }
 
     component DeskButton: Button {
@@ -118,7 +132,7 @@ Rectangle {
         DeskButton {
             id: retryButton
             objectName: "retrySave"
-            anchors { right: copyButton.left; rightMargin: 8; top: parent.top; topMargin: 10 }
+            anchors { right: reloadButton.left; rightMargin: 8; top: parent.top; topMargin: 10 }
             visible: desk.autosaver !== null && desk.autosaver.state === "failed"
             text: "Retry save"
             fill: "#8f3a32"; ink: "#fbecea"
@@ -126,11 +140,21 @@ Rectangle {
             onClicked: { desk.autosaver.retry(); editorPage.focusEditor() }
         }
         DeskButton {
+            id: reloadButton
+            objectName: "reloadProject"
+            anchors { right: copyButton.left; rightMargin: 8; top: parent.top; topMargin: 10 }
+            visible: retryButton.visible
+            enabled: desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy
+            text: "Reload…"; ink: "#eff1f3"
+            onClicked: reloadPanel.open()
+        }
+        DeskButton {
             id: copyButton
             objectName: "saveCopy"
             anchors { right: exportButton.left; rightMargin: 8; top: parent.top; topMargin: 10 }
             visible: desk.autosaver !== null
             text: desk.autosaver && desk.autosaver.copyBusy ? "Copying…" : "Save a Copy…"
+            enabled: desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy
             ink: "#eff1f3"
             Accessible.name: "Save a Copy (Ctrl+Shift+S)"
             onClicked: copyPanel.open()
@@ -261,6 +285,7 @@ Rectangle {
         }
         ScreenplayEditor {
             id: editorPage
+            enabled: !desk.autosaver || !desk.autosaver.reloadBusy
             anchors { left: parent.left; right: parent.right; top: workbar.bottom; bottom: parent.bottom }
             screenplayLayout: desk.screenplayLayout
             commands: desk.commands
@@ -273,10 +298,74 @@ Rectangle {
         color: "#d4d9df"
         Text {
             anchors { left: parent.left; right: parent.right; margins: 20; verticalCenter: parent.verticalCenter }
-            text: desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.exportJob ? desk.exportJob.status : "")
+            objectName: "operationStatus"
+            text: desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.exportJob ? desk.exportJob.status : "")
             elide: Text.ElideMiddle
+            ToolTip.visible: footerArea.containsMouse
+            ToolTip.text: text
+            MouseArea { id: footerArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
             color: desk.screenplayLayout.error ? "#9d3030" : "#4d5965"
             font { family: "Liberation Sans"; pixelSize: 11 }
+        }
+    }
+    Popup {
+        id: reloadPanel
+        objectName: "reloadPanel"
+        parent: desk
+        x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
+        width: Math.min(560, desk.width - 16)
+        height: reloadContents.implicitHeight + 40
+        padding: 20; modal: true; focus: true
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
+        onClosed: editorPage.focusEditor()
+        Column {
+            id: reloadContents; width: parent.width; spacing: 14
+            Label { text: "Preserve Writing and Reload"; font.pixelSize: 16 }
+            Label {
+                width: parent.width; wrapMode: Text.Wrap
+                text: "First save a verified emergency copy of the writing in this window, then read the project from disk. Reload replaces this window’s writing and clears undo history. If preservation or reading fails, keep the current writing."
+            }
+            Flow {
+                width: parent.width; spacing: 12
+                DeskButton { text: "Keep Writing"; ink: "#303843"; onClicked: reloadPanel.close() }
+                DeskButton {
+                    objectName: "reloadConfirm"
+                    text: "Preserve and Reload"; fill: "#3c434d"; ink: "#eff1f3"
+                    onClicked: { if (desk.autosaver.reload()) reloadPanel.close() }
+                }
+            }
+        }
+    }
+    Popup {
+        id: failurePanel
+        objectName: "failurePanel"
+        parent: desk
+        x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
+        width: Math.min(700, desk.width - 16)
+        height: failureContents.implicitHeight + 40
+        padding: 20; modal: true; focus: true
+        onClosed: { if (desk.autosaver) desk.autosaver.keep_open(); editorPage.focusEditor() }
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
+        Column {
+            id: failureContents; width: parent.width; spacing: 14
+            Label { text: "Project Not Saved"; font.pixelSize: 16 }
+            Label {
+                objectName: "closeProtection"
+                width: parent.width; wrapMode: Text.WrapAnywhere
+                text: desk.autosaver ? desk.autosaver.status : ""
+            }
+            Flow {
+                width: parent.width; spacing: 12
+                DeskButton { text: "Keep Open"; ink: "#303843"; onClicked: desk.autosaver.keep_open() }
+                DeskButton { text: "Retry"; ink: "#303843"; onClicked: desk.autosaver.retry() }
+                DeskButton { text: "Save a Copy…"; ink: "#303843"; onClicked: { failurePanel.close(); copyPanel.open() } }
+                DeskButton {
+                    objectName: "closeExplicit"
+                    text: desk.autosaver && desk.autosaver.currentProtected ? "Close with Emergency Copy" : "Discard Unprotected Writing and Close"
+                    fill: "#8f3a32"; ink: "#fbecea"
+                    onClicked: desk.autosaver.close_with_copy_or_discard()
+                }
+            }
         }
     }
     Popup {
@@ -335,7 +424,7 @@ Rectangle {
                     id: copyConfirm
                     objectName: "copyConfirm"
                     text: "Save and Use Copy"; fill: "#3c434d"; ink: "#eff1f3"
-                    enabled: desk.autosaver !== null && !desk.autosaver.copyBusy && copyDestination.text.trim().length > 0
+                    enabled: desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy && copyDestination.text.trim().length > 0
                     onClicked: {
                         if (enabled && desk.autosaver.save_copy(copyDestination.text))
                             copyPanel.close()
