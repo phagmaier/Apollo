@@ -2,6 +2,7 @@
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
 #include "editor/pdf_export_job.h"
+#include "editor/project_access_flow.h"
 #include "fountain/import.h"
 #include "source/project.h"
 
@@ -61,7 +62,7 @@ Opened open_document(const char* path) {
   const QFileInfo info(QString::fromLocal8Bit(path));
   Opened opened;
   opened.export_destination = info.absolutePath() + "/" + info.completeBaseName() + ".pdf";
-  if (!info.isDir()) {
+  if (!info.isDir() && info.isFile() && info.suffix().compare("fountain", Qt::CaseInsensitive) == 0) {
     opened.document = apollo::editor::screenplay_document(apollo::import_fountain(read_fountain(path)), font);
     return opened;
   }
@@ -495,9 +496,9 @@ int main(int argc, char** argv) {
   QGuiApplication application(argc, argv);
   const bool usage = check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
       : typing ? argc < 4 || argc > 7
-      : (comparing || snapshot || export_measuring) ? argc != 4 && argc != 5 : argc != 2;
+      : (comparing || snapshot || export_measuring) ? argc != 4 && argc != 5 : argc != 1 && argc != 2;
   if (usage) {
-    std::cerr << "usage: apollo_editor FILE.fountain|PROJECT [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n"
+    std::cerr << "usage: apollo_editor [FILE.fountain|PROJECT] [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n"
                  "       apollo_editor PROJECT --create [FILE.fountain]\n"
                  "       apollo_editor PROJECT --autosave-typing LOG [KEYS [INTERVAL_MS [PHASE:N]]]\n";
     return 2;
@@ -520,6 +521,23 @@ int main(int argc, char** argv) {
       return agreement(argv[1], QString::fromLocal8Bit(argv[3]), 0, true, argc != 5);
     }
     if (comparing) return agreement(argv[1], QString::fromLocal8Bit(argv[3]), argc == 5 ? std::stoi(argv[4]) : 0);
+    // Instrumentation modes retain their explicit input and never update the
+    // owner's recents/cursor. Ordinary projects use the safe access flow.
+    const QString input = argc == 2 ? QString::fromLocal8Bit(argv[1]) : QString();
+    const QFileInfo input_info(input);
+    const bool fountain = !input.isEmpty() && input_info.isFile() &&
+                         input_info.suffix().compare("fountain", Qt::CaseInsensitive) == 0;
+    if (!check && !fountain) {
+      QQuickView view;
+      apollo::editor::ProjectAccessFlow flow(view, apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR)),
+                                            QStringLiteral(APOLLO_FONT_DIR), exporter());
+      flow.start(input);
+      view.setTitle(QStringLiteral("Apollo"));
+      view.setMinimumSize(QSize(560, 400));
+      view.resize(1280, 1000);
+      view.show();
+      return application.exec();
+    }
     auto opened = open_document(argv[1]);
     auto& document = opened.document;
     const auto* layout = static_cast<ScreenplayLayout*>(document->documentLayout());

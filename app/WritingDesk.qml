@@ -16,6 +16,7 @@ Rectangle {
     property bool outlineVisible: false
     property bool includeTitle: true
     property bool showReloadStatus: false
+    property string sessionNotice: ""
     color: "#d4d9df"
 
     function toggleOutline() {
@@ -85,7 +86,7 @@ Rectangle {
 
     Rectangle {
         id: header
-        height: desk.autosaver ? 76 : 58
+        height: (desk.autosaver ? 76 : 58) + (desk.sessionNotice.length > 0 ? 22 : 0)
         anchors { left: parent.left; right: parent.right; top: parent.top }
         color: "#323842"
         Text {
@@ -128,6 +129,17 @@ Rectangle {
             ToolTip.visible: locationArea.containsMouse
             ToolTip.text: text
             MouseArea { id: locationArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+        }
+        Text {
+            objectName: "sessionNotice"
+            x: 130; y: 76; width: parent.width - x - 24
+            visible: desk.sessionNotice.length > 0
+            text: desk.sessionNotice; textFormat: Text.PlainText
+            elide: Text.ElideRight; color: "#f19a8f"
+            font { family: "Liberation Sans"; pixelSize: 11 }
+            ToolTip.visible: sessionArea.containsMouse
+            ToolTip.text: text
+            MouseArea { id: sessionArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
         }
         DeskButton {
             id: retryButton

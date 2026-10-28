@@ -50,21 +50,39 @@ QString RecoveryStore::emergency_directory(const Project& origin) {
   return data + "/Apollo/recovery/" + key;
 }
 
-std::optional<RecoveryCopy> RecoveryStore::verified_copy(const QString& path) const {
+std::optional<RecoveryPackage> RecoveryStore::inspect_copy(const QString& path) {
   try {
+    const QFileInfo folder(path);
+    if (!folder.isDir() || folder.isSymLink()) return std::nullopt;
+    const auto metadata_bytes = read(path + "/recovery.json");
     QJsonParseError error;
-    const auto doc = QJsonDocument::fromJson(read(path + "/recovery.json"), &error);
+    const auto doc = QJsonDocument::fromJson(metadata_bytes, &error);
     const auto metadata = doc.object();
     if (error.error != QJsonParseError::NoError || !doc.isObject() || metadata.size() != 7 ||
         metadata.value("format") != "apollo-recovery" || metadata.value("version") != 1 ||
-        metadata.value("originId") != origin_.id || metadata.value("originDirectory") != origin_.directory ||
-        !metadata.value("hashes").isObject() || metadata.value("hashes").toObject() != hashes(path)) return std::nullopt;
+        !metadata.value("hashes").isObject()) return std::nullopt;
+    const auto origin_id = metadata.value("originId").toString();
+    const auto origin_directory = metadata.value("originDirectory").toString();
+    if (QUuid::fromString(origin_id).isNull() || QUuid::fromString(origin_id).toString(QUuid::WithoutBraces) != origin_id ||
+        !QDir::isAbsolutePath(origin_directory) || QDir::cleanPath(origin_directory) != origin_directory) return std::nullopt;
     const auto captured = QDateTime::fromString(metadata.value("capturedAt").toString(), Qt::ISODateWithMs);
     const auto reason = metadata.value("reason").toString();
     if (!captured.isValid() || (reason != "autosave" && reason != "emergency" && reason != "reload")) return std::nullopt;
-    const auto project = open_project(path);
-    return RecoveryCopy{path, reason, captured, project.screenplay.revision};
+    const auto expected_hashes = metadata.value("hashes").toObject();
+    if (!expected_hashes.contains("project.json") || !expected_hashes.contains("screenplay.json") ||
+        expected_hashes != hashes(path)) return std::nullopt;
+    auto project = open_project(path);
+    if (project.project.screenplay_file != QLatin1String("screenplay.json") ||
+        metadata_bytes != read(path + "/recovery.json") || expected_hashes != hashes(path)) return std::nullopt;
+    const auto revision = project.screenplay.revision;
+    return RecoveryPackage{{path, reason, captured.toUTC(), revision}, origin_id, origin_directory, std::move(project)};
   } catch (const SourceError&) { return std::nullopt; /* Preserve unreadable/corrupt evidence. */ }
+}
+
+std::optional<RecoveryCopy> RecoveryStore::verified_copy(const QString& path) const {
+  const auto package = inspect_copy(path);
+  if (!package || package->origin_id != origin_.id || package->origin_directory != origin_.directory) return std::nullopt;
+  return package->copy;
 }
 
 std::vector<RecoveryCopy> RecoveryStore::verified() const {

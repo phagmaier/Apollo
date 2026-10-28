@@ -6,11 +6,13 @@ within the implementation slices. No owner question from this interview remains
 pending. Implementation requires task-specific authorization; the progress
 record below distinguishes completed work from remaining proposals.
 
-**Current status (2026-10-28):** slice 1 and tasks **2.1–2.3** are done.
+**Current status (2026-10-28):** slice 1 and tasks **2.1–2.4** are done.
 Project sessions are guarded; Save a Copy becomes active without resetting the
 editor; Reload preserves current writing first; recovery/emergency packages and
 explicit failure-close choices are implemented and verified as recorded below.
-Next: project access, including damaged-save selection/reconciliation and resume.
+**2.4 — Safe project access and resume is done.** Explicit recovery selection/
+reconciliation and app-local last-project/cursor resume pass failure/app-flow,
+release, sanitizer and native checks. Next slice 2 work: home/create/import.
 Leak detection and crash loss during copying remain unverified. The other slice 2
 flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
@@ -317,10 +319,15 @@ milestone includes all slices; an earlier slice is not the usable writing build.
   the original. Close shows current coverage and explicit Retry/Copy/Keep Open/
   protected-close or discard choices. Emergency copies never switch destinations
   or mark the original Saved. Evidence and limits follow below.
-- Remaining slice 2 work is pending: home/create/open/import, imported-material
-  reader, switching/resume, damaged-save selection and recovery reconciliation
-  on open, and stale temporary cleanup. Focusing an existing process's window
-  belongs to the later open flow.
+- **2.4 — Safe project access and resume (done 2026-10-28).** Depends on
+  2.1–2.3. Healthy current writing opens without rollback; damaged/missing storage
+  has explicit verified, timestamped recovery selection. Newer/same-revision
+  conflicts require a choice; recovery forks preserve original/package evidence.
+  App-local last-project/cursor state updates only after successful activation.
+  Failure/app-flow, required release/sanitizer/engine and native checks pass.
+- Remaining slice 2 work is pending: home/create/import, imported-material
+  reader, broader switching/library flows, stale temporary cleanup, and focusing
+  another process's existing window.
 
 Task 2.1 evidence and review:
 
@@ -417,9 +424,40 @@ A separate small-script crash run concurrent with sanitizer work lost 1.86 s of
 recent writing while the primary commit stalled about 1.74 s; files remained
 valid. Retain that limit rather than promising a universal bound under I/O
 contention. Leak detection, crash loss during Save a Copy, power loss and loss
-bounds with unavailable storage remain unverified. The damaged-save picker and
-reconciliation on open are pending project-access work; packages are already
-openable directly without silent rollback.
+bounds with unavailable storage remain unverified. At the 2.3 checkpoint,
+damaged-save selection/reconciliation were pending; task 2.4 below implements
+them without automatic rollback.
+
+### Task 2.4 evidence and review
+
+Safe open/recovery decisions, the real chooser controls, app-local resume and
+executable dispatch have focused failure and app-flow coverage. Final release
+and ASan/UBSan checks each pass 15/15 (`detect_leaks=0`); engine-only passes 2/2;
+the independent Academy comparison passes with its existing deviations.
+Native Wayland preflight passes input/
+compose, export lifecycle, agreement and OpenGL first paint. Final native
+project-access controls pass 11/11. A real executable/wtype/SIGKILL restart
+preserves writing and resumes the independently checked insertion position.
+
+Independent source/integration reviews exposed and fixed stale damaged-original
+decisions, hidden emergency alternatives at a non-directory original path, and
+a dangling alias becoming a locked project while the chooser was open. Focused
+checks failed before those fixes and pass after. Review also strengthened the
+process restart oracle to require a fresh cursor capture rather than accepting
+the preceding process's state. No remaining in-scope finding was identified.
+
+Pre-commit review also reproduced a dangling original alias whose target
+returned as a regular file, not a directory. Recovery now revalidates both link
+and followed-target state. The focused source suite passes 46/46; both target
+return cases retain the original and recovery evidence.
+
+The complete contract, commands, evidence/log paths, native harness limits and
+unmeasured cases are in
+[source-format.md](source-format.md#safe-project-access-and-resume-slice-2-task-24).
+Home/create/import, imported-material reading, full in-window project switching,
+focus-existing-process IPC and stale-stage cleanup remain separate slice 2 work.
+No new representative timing, physical-input latency, power-loss or copying-loss
+claim is added; task 2.3's I/O-contention limitation remains.
 
 ### Slice 1 result (done 2026-10-28)
 

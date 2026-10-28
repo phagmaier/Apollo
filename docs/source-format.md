@@ -1,17 +1,21 @@
 # Apollo source format and saving (version 1)
 
 2026-10-28. Status: implemented in [writing-build-plan](writing-build-plan.md)
-slice 1 and slice 2 tasks 2.1–2.3. This is the working contract for the first usable
+slice 1 and slice 2 tasks 2.1–2.4. This is the working contract for the first usable
 writing build, not yet a long-term compatibility promise: later slices may add files or fields
 under a new format version. The owner chose a portable project folder with
 versioned structured text; the details below are agent engineering choices.
 
 Code: `source/screenplay_format.*` (schema), `source/project.*` (folder and
 file replacement), `source/recovery.*` (recovery packages),
-`editor/screenplay_layout.cpp` (Qt document adapter), and
-`editor/autosave.*` (saving). Tests: `tests/source_tests.cpp`,
-`tests/autosave_tests.cpp`, `tests/autosave_crash_tests.py`,
-`tests/project_lock_tests.py`, and `tests/recovery_tests.cpp`.
+`source/project_access.*` (safe open/recovery decisions),
+`editor/project_access_flow.*` (open/recovery UI orchestration),
+`editor/session_state.*` (app-local resume), `editor/screenplay_layout.cpp`
+(Qt document adapter), and `editor/autosave.*` (saving).
+Tests include `source_tests`, `autosave_tests`, `recovery_tests`,
+`project_access_tests`, `session_state_tests`, `project_access_flow_tests`,
+`autosave_crash_tests.py`, `project_lock_tests.py`, and
+`project_access_process_tests.py`.
 
 ## Project folder
 
@@ -29,8 +33,8 @@ are present, opening retains their bytes in memory and Save a Copy preserves
 them verbatim (including empty files).
 Unreadable or symlinked dependencies are refused rather than silently omitted;
 the `imports` folder must also be an ordinary directory. Import parsing and
-its read-only reader remain pending. Session state and library recents will
-live outside the project folder.
+its read-only reader remain pending. Session state lives outside the project
+folder, as documented in task 2.4 below; a library/recents list remains pending.
 
 `project.json`, exactly these keys:
 
@@ -196,9 +200,9 @@ them yet, and branch or shared-material semantics are not solved here.
    below. Destruction drains pending writing through the same destination guards;
    paused writing is preserved to emergency storage rather than force-saved.
 
-Measured results are below. Session resumption, damaged-save selection on open,
-and stale temporary cleanup remain later slice 2 work. Recovery packages can
-already be opened directly as ordinary projects.
+Measured results are below. Safe open, damaged-save selection and session
+resumption are documented in task 2.4 below. Stale temporary cleanup remains
+later slice 2 work. Recovery packages can also be opened directly as projects.
 
 ### Editable sessions and destination changes (slice 2 task 2.1)
 
@@ -385,12 +389,11 @@ never substitutes for that choice. Closing during copy/Reload waits
 asynchronously for the operation. As before, final saver destruction drains its worker; blocked storage
 can delay process teardown.
 
-The damaged-save picker, recovery reconciliation on project open, last-project/
-cursor resumption, and stale-stage cleanup remain in the project-access work.
-There is no automatic rollback. Recovery packages preserve evidence and can be
-opened directly in the meantime. Leak detection and crash loss during Save a
-Copy remain unverified; healthy-save measurements do not establish the loss
-window during slow copying or unavailable storage.
+Task 2.4 below adds the damaged-save picker, reconciliation on open and
+last-project/cursor resume. Stale-stage cleanup remains pending. There is no
+automatic rollback. Leak detection and crash loss during Save a Copy remain
+unverified; healthy-save measurements do not establish the loss window during
+slow copying or unavailable storage.
 
 Task 2.3 verification (2026-10-28): serial release and ASan/UBSan checks pass
 11/11; engine-only passes 2/2. Leak detection was disabled as before. After the
@@ -453,6 +456,156 @@ pruning; the concurrent opener/pruner ordering was checked in code, without a
 test forcing every race. Logs: `build/recovery-review-{red,green,release,debug,engine,native}.log`.
 Leak detection remains disabled; the earlier representative workload timings
 were not repeated, and no new performance or physical-input claim is made.
+
+### Safe project access and resume (slice 2 task 2.4)
+
+`apollo_editor PROJECT` uses the bounded open/recovery screen. A healthy current
+save opens directly unless a verified newer revision or same-revision conflict
+needs an explicit choice. A missing path is a project-open failure, never an
+empty screenplay or a guessed Fountain import. An existing `.fountain` file
+still opens unsaved through the retained spike path. Instrumentation modes
+(`--check`, `--measure`, `--agreement`, `--snapshot`, `--measure-export`,
+`--autosave-typing`) and `--create` do not change the owner's resume state.
+
+`ProjectAccess` holds the canonical original's edit lock before reading, including
+when loading fails. A competing original lock cannot be bypassed by recovering.
+Inspection validates complete packages under `.recovery/` and app-data emergency
+storage, including metadata, hashes, source versions and cached import files.
+Open/locked, changed, invalid, symlinked or incomplete packages are not offered
+as verified alternatives. Invalid and hidden interrupted material is retained,
+not cleaned up. Moving a valid project does not sever its recovery relationship:
+origin UUID establishes identity even when the recorded origin location is old.
+If the manifest/folder is unavailable, saved session identity or an unambiguous
+verified origin location can identify emergency copies. Ambiguous identities
+are explained rather than guessed. An ordinary file replacing the original
+location is retained and can still have identity-matched emergency alternatives.
+
+For a healthy project, compare revisions before wall-clock capture time.
+Lower-revision packages and equivalent copies do not interrupt ordinary opening;
+they are not deleted by inspection. A higher revision or different writing/import
+bytes at the same revision requires a choice. Show current revision, recovery
+revision, capture timestamp with timezone, reason, package path and recorded
+origin. Timestamps order equal revisions but never establish that a lower
+revision should replace a higher one. If current storage is damaged, offer all
+available verified alternatives, without selecting one automatically. If none
+exists, explain the failure and retain every file; do not install an empty writer.
+
+**Open Current Project Without Recovery** explicitly keeps the authoritative
+project. **Recover Selected Copy as New Project** requires an explicit selection
+and an absolute new-folder destination in an existing parent. It stages and
+validates a complete project with a new UUID, retaining the selected screenplay
+revision, element identities and imported assets. It never edits the damaged
+project or the recovery package in place. Only successful validation/locking
+activates the new location and autosave. A published project that cannot activate
+is retained and its path is reported. Collision, stale selection or I/O failure
+keeps the chooser, original writing and evidence intact.
+
+Original and selected-package state is checked again before and after staging.
+Missing/damaged/unreadable originals are decisions too: restoring or replacing
+their manifest/source/dependencies invalidates an already displayed decision.
+Retention may retire an offered package before selection; revalidation then
+refuses it and asks for a fresh inspection instead of opening stale writing.
+Locks coordinate cooperating processes, not arbitrary external writers. The
+existing noncooperating-writer race boundary still applies; the checks are not
+a filesystem transaction or a power-loss guarantee.
+
+#### Last project and cursor
+
+No-argument `apollo_editor` resumes the last successfully activated project.
+Without saved state it shows the same project-folder chooser, not a project
+library. Failed opens do not replace the last successful entry. Resume checks
+the remembered UUID: a different project at the same folder is not implicitly
+adopted. The chooser allows explicitly opening another/moved folder.
+
+State is atomically replaced at
+`$XDG_DATA_HOME/Apollo/session.json` (normally
+`~/.local/share/Apollo/session.json`), never inside a portable project:
+
+```json
+{
+  "format": "apollo-session",
+  "version": 1,
+  "directory": "/absolute/canonical/project",
+  "projectId": "0d3c7a52-1f0e-4f43-9a3e-2f6f3cb1f7a4",
+  "elementId": "e2",
+  "offset": 7,
+  "position": 12
+}
+```
+
+Cursor coordinates count Qt UTF-16 units. Restore the stable element and offset
+first; clamp shortened text, or use the bounded absolute fallback if the element
+was deleted. Never land inside a surrogate pair. Cursor/document changes trigger
+a bounded 250 ms capture, with file I/O on the access worker, not a typing
+debounce. Normal teardown also records the final cursor. Save a Copy updates the
+remembered destination and UUID only after activation; failure retains the
+original resume identity. Cursor state is separate from source-save acknowledgment:
+after a crash it may be ahead of saved text and is clamped on reopen.
+
+Malformed, newer-version, unreadable or nonregular state is not overwritten.
+The UI reports that resume is unavailable/not saved; explicitly opening a project
+can still succeed and autosave its writing. The bad session file remains evidence.
+Resume is one app-local last-project entry, not a multi-project library or a
+cross-process focus/history service.
+
+#### Verification and retained limits
+
+The four focused suites cover disk decisions, cursor/state boundaries, real
+QML controls and actual executable dispatch. The process test uses isolated
+app data, confirms a fresh stable-element cursor capture after a SIGKILL restart,
+and checks that instrumentation/failed opens leave resume data unchanged.
+Its missing-path process case is a bounded liveness smoke; the QML suite checks
+the actual failed-open surface and subsequent explicit opening.
+
+| Exercised check | Result |
+| --- | --- |
+| Final `mise run check` | 15/15, including independent fixtures, editor/PDF agreement, small-script crashes and process locking |
+| Final `mise run check-debug` | 15/15 with ASan/UBSan; `ASAN_OPTIONS=detect_leaks=0`, leak detection not validated |
+| `mise run check-engine` | 2/2, without Qt/PDF |
+| Academy reference comparison | Passes with the four existing documented deviations |
+| `tools/check-wayland.sh --preflight` | Native input/compose, export lifecycle, editor/PDF agreement and OpenGL first paint pass; runner now includes project-access controls |
+| Final native project-access suite | 11/11, fcitx and software renderer; actual chooser/recovery/resume/copy controls |
+| Native executable smoke | Create, type `SmokeAlpha`, save cursor 6, SIGKILL, no-argument restart; typing `X` gives exactly `SmokeAXlpha` |
+
+Direct and independent code reviews covered requirements, locking, stale
+decisions, worker teardown, state identity and test quality. Review reproduced
+13 failures before correcting damaged-original restoration and non-directory
+original discovery. A separate failing regression caught a dangling alias whose
+target reappeared with an active editor; the final guard refuses that stale
+decision. Publication/activation fault injection verifies retained new projects,
+original writing and package evidence. The process restart oracle was strengthened
+so the preceding process's already-saved cursor cannot falsely satisfy activation.
+No remaining in-scope finding was identified.
+
+Logs: `build/task-2.4-final-{release,debug}.log`, `build/task-2.4-engine.log`,
+`build/task-2.4-academy.log`, `build/task-2.4-final-native.log`,
+`build/task-2.4-review-{red,green}.log`, `build/task-2.4-alias-red.log`, and
+`build/task-2.4-focused-final.log`. Native preflight logs:
+`build/wayland-check-20261028-070029-dfaUCQ/`. Launcher smoke evidence and harness
+limits: `build/task-2.4-launch-smoke/{results.txt,launcher.log,resumed.png}`.
+Inspected chooser screenshots:
+`build/release/project-access-tests/{damaged-save,reconcile}.png`.
+
+Finalization review additionally caught a dangling alias regaining a regular-file
+target while recovery was displayed. The focused check failed before the fix;
+source access now captures/revalidates followed-target state as well as the link,
+and `project_access_tests` passes 46/46. Unintended Python bytecode changes were
+restored/removed without changing implementation files. Repeated native preflight
+logs are in `build/wayland-check-20261028-143711-nyi2Zy/`.
+
+The native smoke used `wtype`, not physical input. Initial harness focus syntax
+was incompatible with the compositor; automatic focus was verified instead.
+Input sent before the writer settled did not edit; the successful smoke waited
+for the writer. Alt+F4 did not close that compositor window, so cleanup used
+SIGKILL; this launcher smoke does not establish normal window-close behavior.
+The existing close/save suites remain the close contract's automated evidence.
+
+Home/library/create/import UI, full in-window switching, focus-existing-process
+IPC and stale-stage cleanup remain separate work. Leak detection, power loss,
+unavailable-storage loss bounds, crash loss during Save a Copy and fresh
+representative startup/typing/recovery-discovery performance remain unverified.
+The earlier workload timings and I/O-contention limit remain unchanged.
+No extended comfort, physical-input latency or new universal crash-loss claim.
 
 ### Crash-loss measurements
 

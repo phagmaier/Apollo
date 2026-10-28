@@ -72,6 +72,7 @@ public:
   QString state() const;
   QString status() const;
   QString location() const { return location_; }
+  QString project_id() const { return project_id_; }
   bool copy_busy() const { return copy_busy_; }
   QString copy_status() const { return copy_status_; }
   QString copy_error() const { return copy_error_; }
@@ -108,7 +109,7 @@ private:
   void capture(bool force);
   void write_loop();
   void finished(std::optional<std::uint64_t> revision, const QString& error);
-  void copy_finished(std::uint64_t revision, const QString& destination, const QString& error);
+  void copy_finished(std::uint64_t revision, const QString& destination, const QString& project_id, const QString& error);
   void request_verification();
   void watch_destination();
   void protect_current();
@@ -118,7 +119,7 @@ private:
   QPointer<QTextDocument> document_;
   std::unique_ptr<source::ProjectSession> session_;
   // GUI-thread location; session_ is replaced only on the writer.
-  QString location_, watched_source_;
+  QString location_, watched_source_, project_id_;
   QTimer timer_;
   QTimer verification_timer_;
   QFileSystemWatcher watcher_;

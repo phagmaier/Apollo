@@ -11,7 +11,7 @@
 namespace apollo::editor {
 Autosaver::Autosaver(QTextDocument* document, std::unique_ptr<source::ProjectSession> session, QObject* parent)
     : QObject(parent), document_(document), session_(std::move(session)), location_(session_->opened().project.directory),
-      watched_source_(session_->opened().project.screenplay_path()), revision_(session_->opened().screenplay.revision),
+      watched_source_(session_->opened().project.screenplay_path()), project_id_(session_->opened().project.id), revision_(session_->opened().screenplay.revision),
       captured_(revision_), saved_(revision_) {
   timer_.setSingleShot(true);
   // Measured from the first unsaved change, not restarted by later ones, so
@@ -308,7 +308,7 @@ void Autosaver::write_loop() {
       continue;
     }
     if (copy) {
-      QString error, destination;
+      QString error, destination, project_id;
       try {
         if (hook_) hook_(Phase::copying, copy->snapshot.revision);
         // A new project has its own revision sequence. Keeping element ids
@@ -322,6 +322,7 @@ void Autosaver::write_loop() {
         if (replacement->opened().screenplay != source::canonical(screenplay) || replacement->opened().assets != session_->opened().assets)
           throw source::SourceError(source::SourceError::Kind::external_change, QStringLiteral("the new project changed before activation"));
         destination = replacement->opened().project.directory;
+        project_id = replacement->opened().project.id;
         session_ = std::move(replacement);
         paused_ = false;
         reload_cancelled_ = false;
@@ -336,8 +337,8 @@ void Autosaver::write_loop() {
         error = QString::fromUtf8(failure.what());
         if (!destination.isEmpty()) error += QStringLiteral(" A complete copy was created at %1 but could not be activated.").arg(destination);
       }
-      QMetaObject::invokeMethod(this, [this, revision = copy->snapshot.revision, destination, error] {
-        copy_finished(revision, destination, error);
+      QMetaObject::invokeMethod(this, [this, revision = copy->snapshot.revision, destination, project_id, error] {
+        copy_finished(revision, destination, project_id, error);
       }, Qt::QueuedConnection);
       continue;
     }
@@ -399,11 +400,12 @@ void Autosaver::finished(std::optional<std::uint64_t> revision, const QString& e
   }
 }
 
-void Autosaver::copy_finished(std::uint64_t revision, const QString& destination, const QString& error) {
+void Autosaver::copy_finished(std::uint64_t revision, const QString& destination, const QString& project_id, const QString& error) {
   copy_busy_ = false;
   copy_error_ = error;
   if (error.isEmpty()) {
     location_ = destination;
+    project_id_ = project_id;
     watched_source_ = destination + "/screenplay.json";
     // Changes made after the snapshot belong to the new project's sequence.
     revision_ -= revision;

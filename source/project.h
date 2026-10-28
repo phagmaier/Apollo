@@ -60,6 +60,13 @@ public:
   OpenedProject read_reload() const;
   void accept_reload(const OpenedProject& candidate);
 private:
+  friend class ProjectAccess;
+  // ProjectAccess retains this locked, unread session even when loading the
+  // original source fails, so recovery cannot bypass a competing editor.
+  struct InspectionOnly {};
+  ProjectSession(const QString& directory, InspectionOnly);
+  void load_current();
+  void check_lock() const;
   struct Identity {
     quint64 device, inode;
     bool operator==(const Identity&) const = default;

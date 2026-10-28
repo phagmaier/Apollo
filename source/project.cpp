@@ -167,10 +167,15 @@ ProjectSession::FileState ProjectSession::read_file(const QString& path) {
   return {before, bytes};
 }
 
-ProjectSession::ProjectSession(const QString& directory) {
+ProjectSession::ProjectSession(const QString& directory) : ProjectSession(directory, InspectionOnly{}) {
+  load_current();
+}
+
+ProjectSession::ProjectSession(const QString& directory, InspectionOnly) {
   const auto canonical = QFileInfo(directory).canonicalFilePath();
   if (canonical.isEmpty() || !QFileInfo(canonical).isDir()) io_error(QStringLiteral("project folder %1 does not exist").arg(directory));
   directory_identity_ = identity(canonical, true);
+  opened_.project.directory = canonical;
   // Anchor lock cleanup to the opened directory, even if it is renamed and
   // another project appears at the old path. Never unlink that project's lock.
   const auto fd = ::open(QFile::encodeName(canonical).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
@@ -191,6 +196,12 @@ ProjectSession::ProjectSession(const QString& directory) {
                       QStringLiteral("project %1 is already open or locked (%2, process %3 on %4)").arg(canonical, app).arg(pid).arg(host));
   }
   lock_file_ = read_file(lock_->fileName());
+  check_lock();
+}
+
+void ProjectSession::load_current() {
+  check_lock();
+  const auto& canonical = opened_.project.directory;
   manifest_ = read_file(canonical + '/' + manifest_name);
   opened_.project = read_manifest(canonical, manifest_.bytes);
   screenplay_ = read_file(opened_.project.screenplay_path());
@@ -203,12 +214,17 @@ ProjectSession::ProjectSession(const QString& directory) {
 
 ProjectSession::~ProjectSession() = default;
 
-void ProjectSession::check_destination() const {
+void ProjectSession::check_lock() const {
   const auto& project = opened_.project;
   if (identity(project.directory, true) != directory_identity_) destination_changed(project.directory);
   try {
     if (read_file(lock_->fileName()) != lock_file_) destination_changed(lock_->fileName());
   } catch (const SourceError&) { destination_changed(project.directory + "/.apollo.lock"); }
+}
+
+void ProjectSession::check_destination() const {
+  check_lock();
+  const auto& project = opened_.project;
   if (read_file(project.directory + '/' + manifest_name) != manifest_) destination_changed(project.directory + '/' + manifest_name);
   if (read_file(project.screenplay_path()) != screenplay_) destination_changed(project.screenplay_path());
 }

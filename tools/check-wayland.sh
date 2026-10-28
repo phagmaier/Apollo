@@ -103,6 +103,7 @@ run_wizard() {
   run_logged native-interaction timeout 90s env APOLLO_TEST_OPENGL=1 APOLLO_TEST_WAYLAND_INPUT=1 \
     "$project_dir/build/release/editor_tests"
   run_logged native-export-lifecycle timeout 90s "$project_dir/build/release/export_job_tests"
+  run_logged native-project-access timeout 90s "$project_dir/build/release/project_access_flow_tests"
   run_logged native-export-snapshots timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/editor_pdf_tests.py \
     --editor "$editor" --output "$APOLLO_RUN_DIR/native-editor-pdf-tests"
   while IFS= read -r line; do
