@@ -4,12 +4,14 @@ The spike is in progress. **Acceptance check 1 (engine fixtures) and check 3
 (PDF quality) pass for the exercised spike inputs**, as of 2026-10-27. Checks
 2, 4–7 in [spike-brief.md](spike-brief.md#passfail-checks) remain incomplete.
 
-**Done: PDF export (brief step 3).** The engine carries shared point geometry
-and page decorations. The minimal PDF painter passes independent fixture and
-font/geometry checks, plus engine/PDF agreement on both generated workloads and
-the local Academy transcription. **Next ready: the bounded QML `TextEdit` probe
-(brief step 4).** No Qt editor, editor/PDF agreement, or interactive export
-performance result exists yet.
+**Done: PDF export (brief step 3)** and **the bounded QML `TextEdit` probe
+(brief step 4, 2026-10-27).** The probe shows that stock `TextEdit`, given a
+`QTextDocument` with Apollo's custom layout through public APIs, renders,
+hit-tests, moves the caret, selects, copies, and reflows across a real page gap
+in offscreen tests (see [the probe section](#qml-textedit-probe-brief-step-4)).
+**Next ready: the editor (brief step 5), starting from stock `TextEdit`, then
+checks 2 and 4.** No editor/PDF line-dump agreement, native-Wayland
+interaction, input-method, or performance result exists yet.
 
 All eight hand-derived layout fixtures and their PDFs match the unchanged
 expected page, slot, element columns, text, and exercised style annotations.
@@ -179,13 +181,148 @@ requires the local transcription. See the fixture guide for individual export
 and PDF line-dump commands. Test duration is not an export-performance or
 responsiveness measurement.
 
+## QML TextEdit probe (brief step 4)
+
+**Question.** Can stock QML `TextEdit` show a `QTextDocument` laid out by an
+Apollo `QAbstractTextDocumentLayout` at the engine's breaks and point geometry,
+and keep caret, hit-testing, selection, and typing correct across a real page
+gap, using only public Qt 6.12.0 APIs? **Timebox:** four hours, set at
+2026-10-28T01:18Z; the probe and its record finished in under one hour.
+
+**Result: yes, for the exercised offscreen cases.** No Qt private headers,
+copied Qt source, or subclassing of Qt private classes is used. Qt 6.12.0's
+public `qquicktextedit.cpp` and `qquicktextcontrol.cpp` were read to choose
+hypotheses; the tests, not that reading, are the evidence.
+
+How it works (`editor/`):
+
+- One `QTextBlock` per element, with the element type and dual flag as block
+  properties and emphasis as character formats. `document_elements` turns the
+  live document back into engine elements; a round-trip test covers all eight
+  fixtures, including per-byte emphasis.
+- `ScreenplayLayout` runs `layout_document` on the whole document after every
+  change. It creates each block's `QTextLine`s with `setNumColumns` at the
+  engine's breaks (wrap-anywhere, so a split inside a long word also matches)
+  and `setPosition` at the engine's x and baseline, offset by the page. A block
+  split across pages is one block whose lines straddle the page gap.
+- The engine now reports each line's **source mapping**: input element index,
+  UTF-8 byte offset, and the length of document text in the line. Generated
+  lines (`(MORE)`, a cue repeated after a split) have no source, and an
+  automatic ` (CONT’D)` is a generated suffix. Hand-counted offsets for speech
+  splits, interrupted and dual cues, dual parentheticals, and the transition
+  retry are tested, as is that every non-space source byte is mapped exactly
+  once in all eight fixtures. Mutating the split base, the retry index shift,
+  or the dual part index each failed these tests.
+- Generated text and page numbers are `decorations` drawn by QML `Text` items
+  over the page cards (`editor/TextEditProbe.qml`); they are never document
+  text. `TextEdit` cannot draw page cards or generated text itself.
+- `QQuickTextDocument::setTextDocument` (public since 6.7) hands the document
+  to `TextEdit`. The layout must be installed first: `TextEdit`'s text control
+  connects to the document's layout at that moment.
+
+Findings that shape the editor:
+
+1. **Document units are 96 dpi pixels (4/3 px per pt).** `QTextLayout` keeps
+   advances and positions in 1/64 px. At 12 px per 12 pt line, the Courier
+   Prime advance 7.1953125 became 7.1875 (0.48 pt short across 61 columns) and
+   x = 403.2 became 403.188. At 16 px the advance 9.59375 is exact in all four
+   faces; line x positions are rounded to the 1/64 px grid (at most 0.006 pt off).
+2. **`TextEdit` rebuilds every text node on each text change.** Its
+   `q_textChanged` marks the whole document dirty, so blocks moved by
+   repagination are redrawn correctly; the suspected stale-node defect did not
+   occur and no workaround is used. This costs work in proportion to the
+   rendered document per keystroke; above 10,000 characters `TextEdit` limits
+   rendering to the viewport. Combined with whole-document relayout, this is
+   the main performance risk for check 5 and is unmeasured.
+3. **Input-method preedit** lives in the block's `QTextLayout` text, not the
+   document. The layout offsets the engine's columns at the preedit position.
+   Without that, a composing character broke the mapping; the regression test
+   failed first. Preedit text is not rewrapped until it is committed.
+4. **In-progress documents.** The engine rejects some states the editor will
+   pass through, such as a new cue with no dialogue yet. The layout then falls
+   back to an unpaginated stack so editing continues, and pagination returns
+   once the speech is complete. The engine also gives empty elements no slot,
+   and the probe does not place title-page elements; it puts their caret line
+   two slots after the previous line, which can overlap the next element
+   (title fields overlap page 1's first lines). Step 5 needs engine rules for empty and
+   incomplete elements rather than these stand-ins.
+
+Evidence (`tests/textedit_probe_tests.cpp`, Qt Test, `offscreen`, software
+scene graph, failing on any warning):
+
+- Every line and generated label of fixtures 01–06 and 08 appears at its
+  hand-derived page and slot, profile column, and page-number position within
+  0.01 pt; `(MORE)` and `CONT’D` are absent from document text. Fixture 07's
+  title page is not edited by the probe. Glyph positions inside each line of
+  fixture 01, including italic, bold, and underlined runs, step by the
+  profile advance.
+- `positionToRectangle` and `positionAt` map positions on both sides of the
+  fixture 06 action split; presses in the page gap or blank slots go to the
+  nearest line. Right, Left, Down, Up, Home, and End cross the gap in document
+  order.
+- Typing `Lightning. ` at the start of page 2 keeps the caret immediately after
+  each typed character, ends with the hand-derived split after `Lightning.`,
+  and one undo restores the original text and page.
+- Shift+Down twice selects across the gap; `selectedText` and the clipboard
+  match the expected text, and a rendered grab shows highlight on both pages
+  and none in the gap.
+- Lengthening an early action moves the split to after `chair.` with `Theo` at
+  page 2 slot 1. Grabs before and after show ink only inside the current line
+  and label rectangles and ink in every non-empty one.
+- A preedit `´` then a committed `é` at the gap keeps the mapping and caret.
+- A cue without dialogue keeps every block editable and recovers its pages.
+
+Release and sanitizer builds pass all four test programs (`layout_tests`,
+`geometry_tests`, `pdf_tests`, `textedit_probe_tests`); the engine-only build
+passes its two tests without Qt. Both Academy comparisons and both PDF
+`--academy` runs still pass. `build/release/textedit_probe FILE --check` laid
+out the regenerated 175- and 444-scene workloads (202 and 506 body pages) and
+the local Academy transcription with every block's lines at the engine's
+breaks, in release and sanitizer builds. That is a structural mapping check,
+not a timing result. Grabs are saved in `build/*/textedit-probe/`.
+
+**Not established by the probe:** editor/PDF line-dump agreement and the 50
+scripted edits (check 2); Enter/Tab element rules, paste kinds, undo grouping
+of typing, type changes, and scene moves; caret and selection through dual
+dialogue (document order is block order, untested); mouse drag selection;
+native Wayland, fcitx5 dead keys or compose; responsiveness, open time, and
+memory (check 5); the QML look (check 7). `ScreenplayLayout::draw`, the
+`QPainter` path, is unused by `TextEdit` and untested. `TextEdit`'s own Enter
+copies the current block's type; Apollo's element rules must intercept keys.
+Shift+Enter inserts U+2028, which `QTextLayout` always breaks at but the engine
+wraps as an ordinary character, so the layout reports a break mismatch.
+Decorations are drawn unstyled, so a bold or underlined cue repeated after a
+split is plain in the editor but styled in the PDF. A typed straight-apostrophe
+`(CONT'D)` that the engine replaces with the generated form is still document
+text and is drawn under the generated suffix; the import rule for literal
+CONT'D belongs to the Fountain mapping work.
+
+**Recommendation.** Build the step-5 editor on stock `TextEdit` with
+`ScreenplayLayout`, intercepting Enter, Tab, and paste in QML/C++ commands over
+`QTextCursor`, rather than writing a custom editor item first. Measure
+keystroke latency at a page boundary on the 200-page workload early in step 5,
+because of findings 2 and 4. Fall back to a custom `QQuickItem` that paints
+the same `QTextLayout` lines if that measurement, input methods under native
+Wayland, or dual-dialogue caret order fail and cannot be fixed through public
+`TextEdit` and `QTextDocument` APIs. No stack switch is indicated by the probe.
+
+Reproduction:
+
+```sh
+mise run check
+mise run check-debug
+mise run check-engine
+build/release/textedit_probe build/release/pdf-tests/workload-175.fountain --check
+build/release/textedit_probe fixtures/layout/02-dialogue-split.fountain  # interactive window
+```
+
 ## Remaining work and next step
 
-The next concrete step is the short, fixed-time QML `TextEdit` probe with a
-custom `QAbstractTextDocumentLayout`, recording whether public APIs support the
-engine's real page geometry and editing behavior before building the editor
-item. Then check editor/PDF agreement through scripted edits and the specified
-interaction cases. The engine remains independent of QtGui.
+The next concrete step is the editor (brief step 5) on stock `TextEdit` and
+`ScreenplayLayout`: engine rules for empty and incomplete elements, Apollo's
+Enter/Tab/paste/undo behavior, an editor line dump for editor/PDF agreement
+through scripted edits, and the interaction cases, with an early latency
+measurement. The engine remains independent of QtGui.
 
 Title-page overflow/long fields, unsupported or malformed Fountain, emphasis
 beyond the exercised cases, multi-element lyric grouping, broader heading and

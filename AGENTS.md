@@ -41,8 +41,10 @@ before recommending whether to keep or switch stacks.
   the release configure/build/test cycle and `mise run check-debug` for the
   sanitizer build. They check engine lines and point geometry, the fixture
   PDFs, and engine/PDF agreement on regenerated workloads. Run `mise run
-  check-engine` for the engine without Qt or PDF tooling. Passing these checks
-  does not establish editor agreement, interaction, or performance.
+  check-engine` for the engine without Qt or PDF tooling. The Qt checks also run
+  the offscreen QML `TextEdit` probe; `build/release/textedit_probe FILE` opens
+  it for manual use. Passing these checks does not establish editor/PDF
+  agreement, native-Wayland interaction, or performance.
 - The pinned Courier Prime fonts and OFL license are in `assets/courier-prime/`;
   the build checks their hashes. Use the other pins in the spike brief and
   record deviations and upgrades.

@@ -2,6 +2,8 @@
 #include "engine/layout.h"
 #include "fountain/import.h"
 
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -230,6 +232,64 @@ int main() {
         exact_fit.back().page != 1 || exact_fit.back().slot != 56) {
       std::cerr << "heading and one unsplittable line should fit exactly\n"; ++failures;
     }
+  }
+  // Editor source mapping. Expected element indexes and UTF-8 byte offsets
+  // are counted by hand from the fixture text; none means generated text.
+  // Expectations are listed in line order and matched in that order.
+  struct Mapped { std::string text; std::size_t source, offset, length; };
+  constexpr auto none = apollo::no_source;
+  auto check_mapping = [&](const char* name, const std::vector<apollo::Line>& lines, const std::vector<Mapped>& expected) {
+    auto from = lines.begin();
+    for (const auto& want : expected) {
+      const auto found = std::find_if(from, lines.end(), [&](const auto& line) { return line.text == want.text; });
+      if (found != lines.end()) from = found + 1;
+      if (found == lines.end() || found->source != want.source ||
+          (want.source != none && (found->source_offset != want.offset || found->source_length != want.length))) {
+        std::cerr << name << " source mapping failed for " << want.text << '\n'; ++failures;
+      }
+    }
+  };
+  auto fixture = [](const std::string& name) {
+    std::ifstream input(std::string(APOLLO_FIXTURE_DIR) + "/" + name + ".fountain");
+    std::ostringstream source; source << input.rdbuf();
+    return apollo::import_fountain(source.str());
+  };
+  check_mapping("dialogue split", apollo::layout(fixture("02-dialogue-split")), {
+      {"MARA (V.O.)", 26, 0, 11}, {"We should have left before the tide", 27, 0, 35}, {"turned.", 27, 36, 7},
+      {"(MORE)", none, 0, 0}, {"MARA (V.O.) (CONT’D)", none, 0, 0},
+      {"Now the road is under water and the", 27, 44, 35}, {"radio is dead. Nobody is coming", 27, 80, 31},
+      {"tonight.", 27, 112, 8}, {"Theo does not answer.", 28, 0, 21}});
+  check_mapping("continued and dual cues", apollo::layout(fixture("08-dual-dialogue-and-contd")), {
+      {"MARA", 1, 0, 4}, {"MARA (CONT’D)", 4, 0, 4}, {"THEO", 6, 0, 4}, {"MARA", 8, 0, 4},
+      {"I am holding it. You are the", 9, 0, 28}, {"and stop arguing with me.", 7, 28, 25},
+      {"one who keeps shaking.", 9, 29, 22}, {"JUNE", 30, 0, 4}, {"ODELL", 32, 0, 5}});
+  check_mapping("dual speech parts", apollo::layout(apollo::import_fountain(
+      "MARA\n(looking all around the room)\nWait\n\nTHEO ^\n(looking all around the room)\nWait\n")), {
+      {"MARA", 0, 0, 4}, {"THEO", 3, 0, 4}, {"(looking all", 1, 0, 12}, {"(looking all", 4, 0, 12},
+      {"around the room)", 1, 13, 16}, {"around the room)", 4, 13, 16}, {"Wait", 2, 0, 4}, {"Wait", 5, 0, 4}});
+  check_mapping("transition retry", moved_transition, {
+      {std::string(61, 'x'), 26, 0, 61}, {std::string(61, 'x'), 26, 61, 61}, {std::string(8, 'x'), 26, 122, 8},
+      {"CUT TO:", 27, 0, 7}});
+  // Every non-space source byte appears exactly once, and mapped text matches.
+  for (const std::string name : {"01-element-geometry", "02-dialogue-split", "03-heading-keep-with-next", "04-dialogue-push", "05-parenthetical-at-break", "06-action-split", "07-title-page-and-manual-break", "08-dual-dialogue-and-contd"}) {
+    const auto elements = fixture(name);
+    std::vector<std::string> covered;
+    for (const auto& element : elements) covered.emplace_back(element.text.size(), '\0');
+    for (const auto& line : apollo::layout(elements)) {
+      if (line.source == none) continue;
+      const auto& text = elements.at(line.source).text;
+      auto shown = text.substr(line.source_offset, line.source_length);
+      if (line.type == ElementType::title) for (auto& c : shown) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      if (line.source_offset + line.source_length > text.size() || line.text.compare(0, line.source_length, shown) != 0) {
+        std::cerr << name << " maps wrong source text for " << line.text << '\n'; ++failures; continue;
+      }
+      for (auto i = line.source_offset; i < line.source_offset + line.source_length; ++i) ++covered[line.source][i];
+    }
+    for (std::size_t e = 0; e < elements.size(); ++e)
+      for (std::size_t i = 0; i < elements[e].text.size(); ++i)
+        if (covered[e][i] > 1 || (covered[e][i] == 0 && elements[e].text[i] != ' ')) {
+          std::cerr << name << " source byte " << e << ':' << i << " is not mapped once\n"; ++failures; break;
+        }
   }
   return failures ? 1 : 0;
 }

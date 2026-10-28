@@ -159,6 +159,7 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
   int authors = 0, contacts = 0;
   for (const auto& e : elements) if (e.type == ElementType::contact) ++contacts;
   for (const auto& e : elements) {
+    const auto source = static_cast<std::size_t>(&e - elements.data());
     int title_slot = 0;
     switch (e.type) {
       case ElementType::title: title_slot = 4; break;
@@ -174,26 +175,39 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
       if (e.type == ElementType::title) for (auto& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
       result.push_back({0, title_slot, e.type, text});
       transfer_styles(e, result.back(), 0);
+      result.back().source = source; result.back().source_length = e.text.size();
     }
   }
   auto next_page = [&] { ++page; slot = 0; };
   auto emit = [&](ElementType type, const std::vector<std::string>& lines) {
     for (const auto& line : lines) result.push_back({page, ++slot, type, line});
   };
-  auto emit_styled = [&](const Element& element, const std::vector<std::string>& lines, std::size_t offset = 0) {
+  // Map the line's leading text to elements[source]; stop at a generated suffix.
+  auto set_source = [&](Line& line, std::size_t source, std::size_t offset) {
+    const auto& text = elements[source].text;
+    std::size_t length = 0;
+    while (length < line.text.size() && offset + length < text.size() && line.text[length] == text[offset + length]) ++length;
+    while (length && length < line.text.size() && (static_cast<unsigned char>(line.text[length]) & 0xc0) == 0x80) --length;
+    line.source = source; line.source_offset = offset; line.source_length = length;
+  };
+  // base counts source bytes already removed from a split speech part.
+  auto emit_styled = [&](const Element& element, const std::vector<std::string>& lines, std::size_t source,
+                         std::size_t offset = 0, std::size_t base = 0) {
     bool continuation = false;
     for (const auto& text : lines) {
       const auto pos = element.text.find(text, offset);
       if (pos == std::string::npos) throw std::runtime_error("layout text does not map to its source");
       result.push_back({page, ++slot, element.type, text, 0, continuation});
       transfer_styles(element, result.back(), pos);
+      set_source(result.back(), source, base + pos);
       offset = pos + text.size();
       continuation = true;
     }
   };
-  auto emit_cue = [&](const Element& element, const std::string& text) {
+  auto emit_cue = [&](const Element& element, const std::string& text, std::size_t source) {
     result.push_back({page, ++slot, ElementType::cue, text});
     transfer_styles(element, result.back(), 0);
+    if (source != no_source) set_source(result.back(), source, 0);
   };
   for (std::size_t index = 0; index < elements.size(); ++index) {
     const auto& element = elements[index];
@@ -208,9 +222,12 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
     auto lines = wrap(element.text, width);
     if (element.type == ElementType::cue) {
       std::vector<Element> parts;
+      std::vector<std::size_t> part_sources, part_bases;
       std::size_t end = index + 1;
-      while (end < elements.size() && (elements[end].type == ElementType::dialogue || elements[end].type == ElementType::parenthetical))
+      while (end < elements.size() && (elements[end].type == ElementType::dialogue || elements[end].type == ElementType::parenthetical)) {
+        part_sources.push_back(end); part_bases.push_back(0);
         parts.push_back(elements[end++]);
+      }
       if (parts.empty()) throw std::runtime_error("cue without speech is not supported");
       if (element.dual_right) throw std::runtime_error("dual dialogue has no left speech");
       auto speaker = [](const std::string& cue) { return cue.substr(0, cue.find(" (")); };
@@ -227,10 +244,13 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
         while (after < elements.size() && (elements[after].type == ElementType::dialogue || elements[after].type == ElementType::parenthetical))
           right_parts.push_back(elements[after++]);
         if (right_parts.empty()) throw std::runtime_error("dual dialogue has no right speech");
-        auto column = [](const Element& cue_element, const std::string& cue, const std::vector<Element>& speech) {
+        // Speech parts directly follow their cue in the input.
+        auto column = [&](std::size_t cue_source, const std::string& cue, const std::vector<Element>& speech) {
           std::vector<Line> out{{0, 0, ElementType::cue, cue}};
-          transfer_styles(cue_element, out.back(), 0);
-          for (const auto& part : speech) {
+          transfer_styles(elements[cue_source], out.back(), 0);
+          set_source(out.back(), cue_source, 0);
+          for (std::size_t k = 0; k < speech.size(); ++k) {
+            const auto& part = speech[k];
             std::size_t offset = 0;
             bool continuation = false;
             for (const auto& text : speech_lines(part, 28)) {
@@ -238,13 +258,14 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
               if (pos == std::string::npos) throw std::runtime_error("dual dialogue does not map to its source");
               out.push_back({0, 0, part.type, text, 0, continuation});
               transfer_styles(part, out.back(), pos);
+              set_source(out.back(), cue_source + 1 + k, pos);
               offset = pos + text.size(); continuation = true;
             }
           }
           return out;
         };
-        const auto left_lines = column(element, cue_text, parts);
-        const auto right_lines = column(right, right.text, right_parts);
+        const auto left_lines = column(index, cue_text, parts);
+        const auto right_lines = column(end, right.text, right_parts);
         const auto height = std::max(left_lines.size(), right_lines.size());
         if (height > page_slots) throw std::runtime_error("dual dialogue exceeds one page");
         int gap = slot ? 1 : 0;
@@ -267,21 +288,27 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
         const int available = page_slots - slot - gap;
         if (needed <= available) {
           slot += gap;
-          emit_cue(element, continued ? continuation_cue(element.text) : cue_text);
-          for (const auto& part : parts) emit_styled(part, speech_lines(part));
+          emit_cue(element, continued ? continuation_cue(element.text) : cue_text, continued ? no_source : index);
+          for (std::size_t i = 0; i < parts.size(); ++i)
+            emit_styled(parts[i], speech_lines(parts[i]), part_sources[i], 0, part_bases[i]);
           break;
         }
         SpeechBreak split{};
         if (split_speech(parts, available - 1, split)) {
           slot += gap;
-          emit_cue(element, continued ? continuation_cue(element.text) : cue_text);
-          for (std::size_t i = 0; i < split.part; ++i) emit_styled(parts[i], speech_lines(parts[i]));
+          emit_cue(element, continued ? continuation_cue(element.text) : cue_text, continued ? no_source : index);
+          for (std::size_t i = 0; i < split.part; ++i)
+            emit_styled(parts[i], speech_lines(parts[i]), part_sources[i], 0, part_bases[i]);
           auto& part = parts[split.part];
-          emit_styled(part, wrap(std::string_view(part.text).substr(0, split.offset), 35));
+          emit_styled(part, wrap(std::string_view(part.text).substr(0, split.offset), 35),
+                      part_sources[split.part], 0, part_bases[split.part]);
           emit(ElementType::more, {"(MORE)"});
           const bool whole = split.offset == part.text.size();
-          if (!whole) discard_prefix(part, split.offset + 1);
-          parts.erase(parts.begin(), parts.begin() + static_cast<std::ptrdiff_t>(split.part + (whole ? 1 : 0)));
+          if (!whole) { discard_prefix(part, split.offset + 1); part_bases[split.part] += split.offset + 1; }
+          const auto consumed = static_cast<std::ptrdiff_t>(split.part + (whole ? 1 : 0));
+          parts.erase(parts.begin(), parts.begin() + consumed);
+          part_sources.erase(part_sources.begin(), part_sources.begin() + consumed);
+          part_bases.erase(part_bases.begin(), part_bases.begin() + consumed);
           next_page(); continued = true;
         } else {
           if (slot == 0) throw std::runtime_error("speech cannot be split according to profile");
@@ -319,7 +346,7 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
       if (start + static_cast<int>(lines.size()) >= page_slots)
         throw std::runtime_error("heading does not fit with following content");
       slot = start;
-      emit_styled(element, lines);
+      emit_styled(element, lines, index);
       continue;
     }
 
@@ -332,11 +359,11 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
         const int available = page_slots - slot - gap;
         lines = wrap(remaining, 61);
         if (static_cast<int>(lines.size()) <= available) {
-          slot += gap; emit_styled(element, lines, static_cast<std::size_t>(remaining.data() - element.text.data())); break;
+          slot += gap; emit_styled(element, lines, index, static_cast<std::size_t>(remaining.data() - element.text.data())); break;
         }
         const auto split = action_split(remaining, available);
         if (split != std::string_view::npos) {
-          slot += gap; emit_styled(element, wrap(remaining.substr(0, split), 61), static_cast<std::size_t>(remaining.data() - element.text.data()));
+          slot += gap; emit_styled(element, wrap(remaining.substr(0, split), 61), index, static_cast<std::size_t>(remaining.data() - element.text.data()));
           remaining.remove_prefix(split + 1);
           continuation = true;
           next_page();
@@ -357,7 +384,7 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
       if (lines.size() > page_slots) throw std::runtime_error("unsplittable element exceeds one page");
       if (slot + gap + static_cast<int>(lines.size()) > page_slots) { next_page(); gap = 0; }
       slot += gap;
-      emit_styled(element, lines);
+      emit_styled(element, lines, index);
       if (!last_speaker.empty()) interrupted = true;
       continue;
     }
@@ -375,13 +402,16 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
         throw std::runtime_error("transition cannot fit with preceding element");
       auto retry = elements;
       retry.insert(retry.begin() + static_cast<std::ptrdiff_t>(start), {ElementType::page_break, ""});
-      return layout_document(retry);
+      // The inserted break shifts later input indexes by one.
+      auto retried = layout_document(retry);
+      for (auto& line : retried.lines) if (line.source != no_source && line.source > start) --line.source;
+      return retried;
     }
     const int gap = slot == 0 || in_speech ? 0 : 1;
     if (slot + gap + static_cast<int>(lines.size()) > page_slots)
       throw std::runtime_error("speech pagination is not implemented");
     slot += gap;
-    emit_styled(element, lines);
+    emit_styled(element, lines, index);
   }
   DocumentLayout document{std::move(result), {}};
   for (auto& line : document.lines) position_line(line);

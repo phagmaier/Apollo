@@ -18,8 +18,14 @@ enum class Style { italic, bold, underline };
 // Offsets are UTF-8 byte offsets into the associated text, with an exclusive end.
 struct StyleSpan { std::size_t start; std::size_t end; Style style; };
 struct Element { ElementType type; std::string text; bool dual_right = false; std::vector<StyleSpan> styles = {}; };
+inline constexpr std::size_t no_source = static_cast<std::size_t>(-1);
+// source is the input element index. The line's first source_length bytes
+// show that element's text from source_offset (a title is shown uppercase).
+// Any rest, such as an automatic " (CONT’D)", is generated. Generated lines,
+// such as (MORE) and a cue repeated after a page break, have no source.
 struct Line { int page; int slot; ElementType type; std::string text; char column = 0;
-              bool continuation = false; std::vector<StyleSpan> styles = {}; TextGeometry geometry = {}; };
+              bool continuation = false; std::vector<StyleSpan> styles = {}; TextGeometry geometry = {};
+              std::size_t source = no_source, source_offset = 0, source_length = 0; };
 struct PositionedText { std::string text; TextGeometry geometry; };
 struct Page { int body_number; std::optional<PositionedText> number; };
 struct DocumentLayout { std::vector<Line> lines; std::vector<Page> pages; };
