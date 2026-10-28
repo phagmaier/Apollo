@@ -11,9 +11,11 @@
 #include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QInputMethodEvent>
+#include <QProcess>
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QTextBlock>
+#include <QTextFrame>
 #include <QTextLayout>
 #include <QtTest>
 #include <fstream>
@@ -115,6 +117,17 @@ bool same_element(const Element& a, const Element& b) {
 bool same_elements(const std::vector<Element>& a, const std::vector<Element>& b) {
   return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), same_element);
 }
+
+// Observe actual input-method commits from the desktop, not synthetic Qt
+// events. Used only by the explicitly enabled native virtual-keyboard check.
+struct InputMethodCommits : QObject {
+  QString text;
+  bool eventFilter(QObject*, QEvent* event) override {
+    if (event->type() == QEvent::InputMethod)
+      text += static_cast<QInputMethodEvent*>(event)->commitString();
+    return false;
+  }
+};
 }
 
 class EditorTests : public QObject {
@@ -155,6 +168,19 @@ class EditorTests : public QObject {
     for (const auto character : text) QTest::keyClick(view_.get(), character.toLatin1());
   }
   void press(Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier) { QTest::keyClick(view_.get(), key, modifiers); }
+  QString compositor_keys(const QStringList& keys) {
+    if (!view_->isActive()) return QStringLiteral("test window lost focus before virtual keyboard input");
+    QProcess process;
+    process.start(QStringLiteral("wtype"), keys);
+    if (!process.waitForStarted(1000)) return process.errorString();
+    if (!QTest::qWaitFor([&] { return process.state() == QProcess::NotRunning; }, 5000)) {
+      process.kill(); process.waitForFinished();
+      return QStringLiteral("wtype timed out");
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode())
+      return QStringLiteral("wtype failed: ") + QString::fromUtf8(process.readAllStandardError());
+    return {};
+  }
   QTextBlock block_at(int position) const { return document_->findBlock(position); }
   // The glyphs a block's first line draws equal those of the given text.
   bool draws(const QTextBlock& block, const QString& text) const {
@@ -200,7 +226,11 @@ class EditorTests : public QObject {
 
 private slots:
   void initTestCase() {
-    QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+    // The regular suite is deterministic offscreen. The same interaction
+    // checks can also exercise the real Wayland/OpenGL rendering path.
+    const bool native = qEnvironmentVariableIntValue("APOLLO_TEST_OPENGL") == 1;
+    if (native) QVERIFY2(QGuiApplication::platformName() == QStringLiteral("wayland"), "Native checks require Wayland");
+    QQuickWindow::setGraphicsApi(native ? QSGRendererInterface::OpenGL : QSGRendererInterface::Software);
     font_ = courier_prime(QStringLiteral(APOLLO_FONT_DIR));
     QVERIFY(QDir().mkpath(QStringLiteral(APOLLO_ARTIFACT_DIR)));
   }
@@ -218,6 +248,31 @@ private slots:
       const auto loaded = document_elements(*document);
       QVERIFY2(same_elements(loaded, elements), name);
     }
+  }
+
+  // TextEdit traverses the root frame during render-thread synchronization.
+  // It must exist with the document's ownership before that first paint,
+  // including after clear() discards the previous document objects.
+  void document_prepares_render_objects_data() {
+    QTest::addColumn<bool>("clear_first");
+    QTest::newRow("loaded") << false;
+    QTest::newRow("cleared and refilled") << true;
+  }
+  void document_prepares_render_objects() {
+    QFETCH(bool, clear_first);
+    const auto document = screenplay_document({{ElementType::action, "A lamp turns."}}, font_);
+    if (clear_first) {
+      document->clear();
+      QTextCursor cursor(document.get());
+      insert_elements(cursor, {{ElementType::action, "The room is empty."}});
+    }
+    // findChild does not lazily create a frame, unlike rootFrame().
+    const auto* frame = document->findChild<QTextFrame*>(QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(frame);
+    QCOMPARE(frame->parent(), document.get());
+    QCOMPARE(frame->thread(), document->thread());
+    QCOMPARE(frame->firstPosition(), 0);
+    QCOMPARE(frame->lastPosition(), document->characterCount() - 1);
   }
 
   // Each fixture line appears at its hand-derived page, slot, and profile
@@ -361,10 +416,14 @@ private slots:
     editor_->setProperty("cursorVisible", false);
     const auto image = view_->grabWindow();
     image.save(QStringLiteral(APOLLO_ARTIFACT_DIR "/selection-across-gap.png"));
+    const auto scroll = view_->rootObject()->findChild<QQuickItem*>("flick")->property("contentY").toDouble();
     // Highlight rows from just above each baseline, below the previous line.
+    // A native compositor may limit the requested two-page window's height;
+    // account for the resulting scroll when inspecting the captured pixels.
     auto highlighted = [&](double top, double bottom) {
       int count = 0;
-      for (int y = static_cast<int>(top * px_per_point); y < static_cast<int>(bottom * px_per_point); ++y)
+      for (int y = std::max(0, static_cast<int>(top * px_per_point - scroll));
+           y < std::min(image.height(), static_cast<int>(bottom * px_per_point - scroll)); ++y)
         for (int x = 144; x < 144 + 200; ++x) count += image.pixelColor(x, y) == QColor("#8fb4e8");
       return count;
     };
@@ -432,6 +491,33 @@ private slots:
     commit.setCommitString(QStringLiteral("é"));
     QCoreApplication::sendEvent(editor_, &commit);
     QVERIFY(document_->toPlainText().contains(QStringLiteral("sputters. éSomewhere")));
+    QCOMPARE(cursor(), somewhere + 1);
+    QVERIFY(layout()->error().isEmpty());
+    QVERIFY(near(caret_baseline(cursor()), baseline(2, 1)));
+    QVERIFY(near(caret_rect(cursor()).x(), 108 + profile::advance));
+  }
+
+  void wayland_input_method_at_page_gap_data() {
+    QTest::addColumn<QStringList>("keys");
+    QTest::newRow("compose") << QStringList{"-k", "Multi_key", "-k", "apostrophe", "-k", "e"};
+    QTest::newRow("dead key") << QStringList{"-k", "dead_acute", "-k", "e"};
+  }
+  void wayland_input_method_at_page_gap() {
+    if (qEnvironmentVariableIntValue("APOLLO_TEST_WAYLAND_INPUT") != 1)
+      QSKIP("Enable APOLLO_TEST_WAYLAND_INPUT=1 in a native session with wtype and fcitx5");
+    QCOMPARE(QGuiApplication::platformName(), QStringLiteral("wayland"));
+    QCOMPARE(qEnvironmentVariable("QT_IM_MODULE"), QStringLiteral("fcitx"));
+    QFETCH(QStringList, keys);
+    QVERIFY(open(QStringLiteral("06-action-split")));
+    const auto original = document_->toPlainText();
+    const int somewhere = position_of(QStringLiteral("Somewhere"));
+    editor_->setProperty("cursorPosition", somewhere);
+    InputMethodCommits commits;
+    editor_->installEventFilter(&commits);
+    const auto error = compositor_keys(keys);
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QTRY_COMPARE(document_->toPlainText(), original.left(somewhere) + QStringLiteral("é") + original.mid(somewhere));
+    QCOMPARE(commits.text, QStringLiteral("é"));
     QCOMPARE(cursor(), somewhere + 1);
     QVERIFY(layout()->error().isEmpty());
     QVERIFY(near(caret_baseline(cursor()), baseline(2, 1)));
@@ -698,6 +784,30 @@ private slots:
     editor_->setProperty("cursorPosition", 0);
     press(Qt::Key_Up, Qt::AltModifier | Qt::ShiftModifier);
     QVERIFY(same_elements(document_elements(*document_), moved));
+  }
+
+  // Exercise the actual compositor/input route for the shortcut the owner
+  // reported as doing nothing, with the caret in a known second scene.
+  void wayland_scene_shortcut_and_undo() {
+    if (qEnvironmentVariableIntValue("APOLLO_TEST_WAYLAND_INPUT") != 1)
+      QSKIP("Enable APOLLO_TEST_WAYLAND_INPUT=1 in a native session with wtype");
+    QCOMPARE(QGuiApplication::platformName(), QStringLiteral("wayland"));
+    QVERIFY(open(QStringLiteral("01-element-geometry")));
+    const auto original = document_elements(*document_);
+    const auto second = std::find_if(original.begin() + 1, original.end(), [](const Element& e) { return e.type == ElementType::heading; });
+    std::vector<Element> moved(second, original.end());
+    moved.insert(moved.end(), original.begin(), second);
+    editor_->setProperty("cursorPosition", position_of(QStringLiteral("EXT. LIGHTHOUSE GALLERY")) + 4);
+    auto error = compositor_keys({"-M", "alt", "-M", "shift", "-k", "Up", "-m", "shift", "-m", "alt"});
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QTRY_VERIFY(same_elements(document_elements(*document_), moved));
+    QCOMPARE(cursor(), 4);
+    error = compositor_keys({"-M", "ctrl", "-k", "z", "-m", "ctrl"});
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QTRY_VERIFY(same_elements(document_elements(*document_), original));
+    error = compositor_keys({"-M", "ctrl", "-M", "shift", "-k", "z", "-m", "shift", "-m", "ctrl"});
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QTRY_VERIFY(same_elements(document_elements(*document_), moved));
   }
 
   // Through fixture 08's dual block (slots 11-13), Down and Right follow

@@ -18,7 +18,8 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from pdf_tests import ADVANCE, ROOT, check_pdf, command, expected_x
+from pdf_tests import (ADVANCE, ROOT, check_pdf, check_styles, check_underline,
+                       command, expected_x, fixture_pages)
 
 
 def editor_pages(dump):
@@ -59,6 +60,17 @@ def main():
     for source in sorted((ROOT / "fixtures/layout").glob("*.fountain")):
         pages, rows, _ = agree(args.editor, source, args.output / source.stem)
         print(f"PASS editor/PDF agreement: {source.stem}, {pages} pages, {rows} lines")
+        snapshot = args.output / f"snapshot-{source.stem}"
+        command(args.editor, source, "--snapshot", snapshot)
+        expected = fixture_pages(source.with_suffix(".expected"))
+        check_pdf(snapshot / "editor.pdf", expected)
+        check_styles(snapshot / "editor.pdf", expected)
+        print(f"PASS immutable editor export against independent fixture: {source.stem}")
+    check_underline(args.output / "snapshot-01-element-geometry/editor.pdf", args.output)
+    title = ROOT / "fixtures/layout/07-title-page-and-manual-break.fountain"
+    no_title = args.output / "snapshot-without-title"
+    command(args.editor, title, "--snapshot", no_title, "--no-title-page")
+    check_pdf(no_title / "editor.pdf", fixture_pages(title.with_suffix(".expected"))[1:])
     sources = []
     for scenes in (175, 444):
         source = args.output / f"workload-{scenes}.fountain"

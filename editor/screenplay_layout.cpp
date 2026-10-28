@@ -277,6 +277,10 @@ void ScreenplayLayout::documentChanged(int, int, int) {
 }
 
 void ScreenplayLayout::relayout() {
+  // TextEdit traverses rootFrame() during render-thread synchronization.
+  // Qt creates it lazily; prepare it on the document's GUI thread, including
+  // after clear() discards the old root, before rendering can access it.
+  document()->rootFrame();
   const auto elements = document_elements(*document());
   DocumentLayout laid;
   try {

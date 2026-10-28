@@ -42,6 +42,13 @@ Both generated workloads are recreated in the build directory and their PDF
 lines compared with the engine. The editor/PDF checks run separately, in
 `build/*/editor-pdf-tests/`. The `.expected` files remain unchanged.
 
+The editor's asynchronous export also runs all eight independent fixture
+checks after replacing/undoing/redoing the live text following the request.
+Those PDFs must still match the original hand-derived pages, columns, text,
+emphasis, embedded fonts, and title option. Export lifecycle/failure checks are
+in `export_job_tests`; native typing/export measurements are included in
+`tools/check-wayland.sh`. See the progress document for method and limitations.
+
 Artifacts are in `build/release/pdf-tests/` (or `build/debug/pdf-tests/`). To
 export or inspect one directly:
 

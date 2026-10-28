@@ -1,17 +1,20 @@
 #include "editor/editor_view.h"
 #include "editor/editor_commands.h"
 #include "editor/screenplay_layout.h"
+#include "editor/pdf_export_job.h"
 
 #include <QQuickTextDocument>
 #include <stdexcept>
 
 namespace apollo::editor {
-QQuickItem* show_editor(QQuickView& view, QTextDocument& document) {
+QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob* export_job, const QString& export_destination) {
   auto* layout = qobject_cast<ScreenplayLayout*>(document.documentLayout());
   if (!layout) throw std::runtime_error("document does not use ScreenplayLayout");
   auto* commands = new EditorCommands(&document, &view);
   view.setInitialProperties({{"screenplayLayout", QVariant::fromValue<QObject*>(layout)},
-                             {"commands", QVariant::fromValue<QObject*>(commands)}});
+                             {"commands", QVariant::fromValue<QObject*>(commands)},
+                             {"exportJob", QVariant::fromValue<QObject*>(export_job)},
+                             {"exportDestination", export_destination}});
   view.setResizeMode(QQuickView::SizeRootObjectToView);
   view.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_EDITOR_QML)));
   if (view.status() != QQuickView::Ready) {

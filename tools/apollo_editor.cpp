@@ -1,6 +1,6 @@
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
-#include "export/pdf.h"
+#include "editor/pdf_export_job.h"
 #include "fountain/import.h"
 
 #include <QClipboard>
@@ -8,14 +8,17 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QQuickWindow>
 #include <QTextBlock>
+#include <QTextCursor>
 #include <QTextLayout>
 #include <QTextStream>
 #include <QTimer>
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -27,6 +30,8 @@
 
 namespace {
 using apollo::editor::ScreenplayLayout;
+
+QString exporter() { return QCoreApplication::applicationDirPath() + QStringLiteral("/pdf_export"); }
 
 std::unique_ptr<QTextDocument> open_document(const char* path) {
   std::ifstream input(path);
@@ -53,12 +58,16 @@ void idle(int milliseconds) {
   loop.exec();
 }
 
-double pss_mib() {
-  QFile file(QStringLiteral("/proc/self/smaps_rollup"));
+double pss_mib(qint64 pid = 0) {
+  QFile file(pid ? QStringLiteral("/proc/%1/smaps_rollup").arg(pid) : QStringLiteral("/proc/self/smaps_rollup"));
   if (!file.open(QIODevice::ReadOnly)) return -1;
   for (const auto& line : file.readAll().split('\n'))
     if (line.startsWith("Pss:")) return line.simplified().split(' ').at(1).toDouble() / 1024;
   return -1;
+}
+
+qint64 monotonic_ns() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 double percentile(std::vector<double> values, double p) {
@@ -86,11 +95,16 @@ int page_boundary_position(const QTextDocument& document) {
 // Synthetic key presses sent to the window, timed from dispatch to the next
 // frameSwapped. This measures Apollo and Qt Quick, not compositor or device
 // input latency.
-int measure(const char* path, int keys) {
+int measure(const char* path, int keys, const QString& export_directory = {}) {
+  if (keys <= 0) throw std::runtime_error("KEYS must be positive");
   QElapsedTimer clock; clock.start();
   auto document = open_document(path);
+  apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(path));
+  const bool exporting = !export_directory.isEmpty();
+  if (exporting && !QDir().mkpath(export_directory)) throw std::runtime_error("cannot create export directory");
+  const auto destination = QDir(export_directory).filePath(QStringLiteral("while-typing.pdf"));
   QQuickView view;
-  auto* editor = apollo::editor::show_editor(view, *document);
+  auto* editor = apollo::editor::show_editor(view, *document, exporting ? &job : nullptr, destination);
   view.resize(880, 1000);
   view.show();
   if (!wait_for_frame(view)) throw std::runtime_error("the window never rendered");
@@ -101,23 +115,88 @@ int measure(const char* path, int keys) {
   editor->forceActiveFocus();
   idle(200);
   const QString typed = QStringLiteral("the lamp turns and ");
+  const auto original_text = document->toPlainText();
+  QString inserted;
   std::vector<double> frame_ms, handled_ms, relayout_ms;
+  std::vector<double> export_ms, capture_ms, overlap_ms;
+  std::vector<std::pair<qint64, qint64>> worker_intervals, key_frames;
+  bool export_failed = false;
+  QObject::connect(&job, &apollo::editor::PdfExportJob::completed, &view, [&](bool success) {
+    export_failed |= !success;
+    export_ms.push_back(job.total_ms());
+    capture_ms.push_back(job.capture_ms());
+    worker_intervals.emplace_back(job.worker_start_ns(), job.worker_end_ns());
+  });
+  int overlap_keys = 0, overlap_frames = 0;
+  double peak_sampled_pss = pss_mib(), peak_sampled_combined_pss = peak_sampled_pss;
+  int worker_memory_samples = 0;
+  QTimer memory;
+  if (exporting) {
+    QObject::connect(&memory, &QTimer::timeout, &view, [&] {
+      const double editor_pss = pss_mib();
+      const double worker_pss = job.worker_pid() ? pss_mib(job.worker_pid()) : 0;
+      worker_memory_samples += worker_pss > 0;
+      peak_sampled_pss = std::max(peak_sampled_pss, editor_pss);
+      peak_sampled_combined_pss = std::max(peak_sampled_combined_pss, editor_pss + std::max(0.0, worker_pss));
+    });
+    memory.start(20);
+  }
   int missed = 0;
   for (int i = 0; i < keys; ++i) {
+    if (QGuiApplication::platformName() == QStringLiteral("wayland") && !view.isActive())
+      throw std::runtime_error("timing window lost focus; rerun and keep it focused until it closes");
+    if (export_failed) throw std::runtime_error(job.status().toStdString());
     const QString text = typed.mid(i % typed.size(), 1);
     const auto key = text == QStringLiteral(" ") ? Qt::Key_Space : static_cast<Qt::Key>(Qt::Key_A + (text[0].unicode() - 'a'));
     QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier, text), release(QEvent::KeyRelease, key, Qt::NoModifier, text);
     const auto before = layout->relayout_nanoseconds();
     clock.restart();
+    // Start the same path as the visible Export PDF control. Include snapshot
+    // capture/dispatch in this key's latency, rather than hiding that GUI work
+    // between samples. Repeated genuine exports keep the short jobs overlapping.
+    if (exporting && !job.busy() && !job.request(destination)) throw std::runtime_error(job.status().toStdString());
+    const auto key_ns = monotonic_ns();
     QGuiApplication::sendEvent(&view, &press);
     QGuiApplication::sendEvent(&view, &release);
+    inserted += text;
+    if (editor->property("cursorPosition").toInt() != position + i + 1) throw std::runtime_error("typing caret did not advance");
     handled_ms.push_back(static_cast<double>(clock.nsecsElapsed()) / 1e6);
     relayout_ms.push_back(static_cast<double>(layout->relayout_nanoseconds() - before) / 1e6);
-    if (wait_for_frame(view)) frame_ms.push_back(static_cast<double>(clock.nsecsElapsed()) / 1e6);
+    if (wait_for_frame(view)) {
+      const double elapsed = static_cast<double>(clock.nsecsElapsed()) / 1e6;
+      frame_ms.push_back(elapsed);
+      key_frames.emplace_back(key_ns, monotonic_ns());
+    }
     else ++missed;
     idle(60);
   }
   if (frame_ms.empty()) throw std::runtime_error("no key produced a frame");
+  if (document->toPlainText() != original_text.left(position) + inserted + original_text.mid(position))
+    throw std::runtime_error("measurement keys did not produce the expected document");
+  QElapsedTimer drain; drain.start();
+  while (job.busy() && drain.elapsed() < 15000) idle(5);
+  if (job.busy() || export_failed) throw std::runtime_error("export did not finish successfully: " + job.status().toStdString());
+  if (exporting) {
+    QFile events(QDir(export_directory).filePath(QStringLiteral("events.tsv")));
+    if (!events.open(QIODevice::WriteOnly | QIODevice::Truncate)) throw std::runtime_error("cannot save timing events");
+    QTextStream saved(&events);
+    saved << "# Linux steady_clock nanoseconds; key latency includes capture/dispatch before key timestamp\n";
+    for (std::size_t i = 0; i < worker_intervals.size(); ++i)
+      saved << "worker\t" << worker_intervals[i].first << '\t' << worker_intervals[i].second << '\t' << export_ms[i] << '\t' << capture_ms[i] << '\n';
+    for (std::size_t i = 0; i < key_frames.size(); ++i)
+      saved << "key-frame\t" << key_frames[i].first << '\t' << key_frames[i].second << '\t' << frame_ms[i] << '\n';
+    for (std::size_t i = 0; i < key_frames.size(); ++i) {
+      const auto [key, frame] = key_frames[i];
+      auto in_worker = [&](qint64 instant) {
+        return std::any_of(worker_intervals.begin(), worker_intervals.end(), [&](const auto& interval) {
+          return interval.first <= instant && instant <= interval.second;
+        });
+      };
+      if (in_worker(key)) { ++overlap_keys; overlap_ms.push_back(frame_ms[i]); }
+      overlap_frames += in_worker(frame);
+    }
+    if (overlap_ms.empty()) throw std::runtime_error("no key overlapped actual worker execution");
+  }
   const auto stalls = std::count_if(frame_ms.begin(), frame_ms.end(), [](double ms) { return ms > 100; });
   const auto api = view.rendererInterface()->graphicsApi();
   std::printf("platform %s, renderer %s, %d blocks, %d pages, caret at %d\n", qPrintable(QGuiApplication::platformName()),
@@ -130,6 +209,16 @@ int measure(const char* path, int keys) {
   std::printf("key handling (synchronous): p50 %.1f ms, p95 %.1f ms; of which relayout p50 %.1f ms, p95 %.1f ms\n",
               percentile(handled_ms, 0.5), percentile(handled_ms, 0.95), percentile(relayout_ms, 0.5), percentile(relayout_ms, 0.95));
   std::printf("PSS after typing: %.1f MiB\n", pss_mib());
+  if (exporting) {
+    std::printf("real exports: %zu; request through completion p50 %.1f ms, p95 %.1f ms, max %.1f ms\n",
+                export_ms.size(), percentile(export_ms, 0.5), percentile(export_ms, 0.95), *std::max_element(export_ms.begin(), export_ms.end()));
+    std::printf("snapshot capture and dispatch: p50 %.1f ms, p95 %.1f ms, max %.1f ms\n",
+                percentile(capture_ms, 0.5), percentile(capture_ms, 0.95), *std::max_element(capture_ms.begin(), capture_ms.end()));
+    std::printf("in-flight overlap: %d keys, %d frames; overlapping key to frame p95 %.1f ms\n", overlap_keys, overlap_frames, percentile(overlap_ms, 0.95));
+    if (worker_memory_samples == 0) throw std::runtime_error("no worker PSS samples were available");
+    std::printf("sampled PSS maxima (20 ms timer, %d helper samples): editor %.1f MiB, editor plus helper %.1f MiB\n",
+                worker_memory_samples, peak_sampled_pss, peak_sampled_combined_pss);
+  }
   return 0;
 }
 
@@ -213,10 +302,12 @@ int scripted_edits(QQuickWindow& window, QQuickItem& editor, QTextDocument& docu
 }
 
 // Writes the editor's line dump and exports the PDF of the same document.
-int agreement(const char* path, const QString& directory, int edits) {
+int agreement(const char* path, const QString& directory, int edits, bool snapshot = false, bool include_title = true) {
   auto document = open_document(path);
+  apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(path));
   QQuickView view;
-  auto* editor = apollo::editor::show_editor(view, *document);
+  const auto destination = QDir(directory).filePath(QStringLiteral("editor.pdf"));
+  auto* editor = apollo::editor::show_editor(view, *document, &job, destination);
   view.resize(880, 1000);
   view.show();
   if (!wait_for_frame(view)) throw std::runtime_error("the window never rendered");
@@ -232,9 +323,29 @@ int agreement(const char* path, const QString& directory, int edits) {
   for (const auto& line : apollo::editor::shown_lines(*document))
     out << line.page << '\t' << line.slot << '\t' << line.kind << '\t' << QString::number(line.x, 'f', 4) << '\t' << line.text << '\n';
   out.flush();
-  apollo::export_pdf(apollo::layout_document(apollo::editor::document_elements(*document)),
-                     QDir(directory).filePath(QStringLiteral("editor.pdf")), QStringLiteral(APOLLO_FONT_DIR));
-  std::cout << document->blockCount() << " elements, " << layout->pageCount() << " pages, " << edits << " edits, "
+  const auto original = document->toPlainText();
+  const int original_pages = layout->pageCount();
+  bool success = false;
+  QObject::connect(&job, &apollo::editor::PdfExportJob::completed, &view, [&](bool ok) { success = ok; });
+  if (!job.request(destination, include_title)) throw std::runtime_error(job.status().toStdString());
+  if (snapshot) {
+    // Real editor typing, caret movement, undo and redo after the request.
+    // The resulting live text cannot be exported (unsupported glyph) and
+    // repaginates the multi-page fixtures. The accepted snapshot must survive.
+    send_key(view, Qt::Key_A, Qt::ControlModifier);
+    send_key(view, Qt::Key_unknown, Qt::NoModifier, QString::fromUtf8("Changed after request 🚀."));
+    send_key(view, Qt::Key_Left);
+    send_key(view, Qt::Key_Z, Qt::ControlModifier);
+    if (document->toPlainText() != original) throw std::runtime_error("undo during export did not restore the document");
+    send_key(view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    if (document->toPlainText() == original) throw std::runtime_error("redo during export did not change the document");
+    if (original_pages > 1 && layout->pageCount() >= original_pages) throw std::runtime_error("snapshot edit did not repaginate");
+  }
+  QElapsedTimer deadline; deadline.start();
+  while (job.busy() && deadline.elapsed() < 15000) idle(5);
+  if (job.busy() || !success) throw std::runtime_error(job.status().toStdString());
+  std::cout << "snapshot capture/dispatch " << job.capture_ms() << " ms, total " << job.total_ms() << " ms\n";
+  std::cout << document->blockCount() << " elements, " << original_pages << " pages, " << edits << " edits, "
             << moved << " later elements changed page\n";
   return 0;
 }
@@ -244,20 +355,29 @@ int agreement(const char* path, const QString& directory, int edits) {
 // reports whether every block matched the engine's line breaks. --measure
 // times synthetic typing at a page boundary; see docs/spike-progress.md for
 // what that does and does not establish. --agreement writes the editor's
-// line dump and the PDF of the same document, after optional scripted edits.
+// line dump and an asynchronous PDF snapshot after optional scripted edits.
+// --snapshot changes/undoes/redoes the live document after requesting export;
+// --measure-export repeats real exports while measuring typing and overlap.
 int main(int argc, char** argv) {
   // Read options before QGuiApplication removes Qt's own options from argv.
   const std::string mode = argc >= 3 ? argv[2] : "";
-  const bool check = mode == "--check", measuring = mode == "--measure", comparing = mode == "--agreement";
+  const bool check = mode == "--check", measuring = mode == "--measure", comparing = mode == "--agreement",
+             snapshot = mode == "--snapshot", export_measuring = mode == "--measure-export";
   if ((check || comparing) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   QGuiApplication application(argc, argv);
-  const bool usage = check ? argc != 3 : measuring ? argc != 3 && argc != 4 : comparing ? argc != 4 && argc != 5 : argc != 2;
+  const bool usage = check ? argc != 3 : measuring ? argc != 3 && argc != 4
+      : (comparing || snapshot || export_measuring) ? argc != 4 && argc != 5 : argc != 2;
   if (usage) {
-    std::cerr << "usage: apollo_editor FILE.fountain [--check | --measure [KEYS] | --agreement OUTDIR [EDITS]]\n";
+    std::cerr << "usage: apollo_editor FILE.fountain [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n";
     return 2;
   }
   try {
     if (measuring) return measure(argv[1], argc == 4 ? std::stoi(argv[3]) : 200);
+    if (export_measuring) return measure(argv[1], argc == 5 ? std::stoi(argv[4]) : 200, QString::fromLocal8Bit(argv[3]));
+    if (snapshot) {
+      if (argc == 5 && std::string(argv[4]) != "--no-title-page") throw std::runtime_error("unknown snapshot option");
+      return agreement(argv[1], QString::fromLocal8Bit(argv[3]), 0, true, argc != 5);
+    }
     if (comparing) return agreement(argv[1], QString::fromLocal8Bit(argv[3]), argc == 5 ? std::stoi(argv[4]) : 0);
     auto document = open_document(argv[1]);
     const auto* layout = static_cast<ScreenplayLayout*>(document->documentLayout());
@@ -266,8 +386,9 @@ int main(int argc, char** argv) {
       if (!layout->error().isEmpty()) throw std::runtime_error(layout->error().toStdString());
       return 0;
     }
+    apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(argv[1]));
     QQuickView view;
-    apollo::editor::show_editor(view, *document);
+    apollo::editor::show_editor(view, *document, &job, QFileInfo(QString::fromLocal8Bit(argv[1])).absolutePath() + "/" + QFileInfo(QString::fromLocal8Bit(argv[1])).completeBaseName() + ".pdf");
     view.setTitle(QStringLiteral("Apollo editor"));
     view.resize(880, 1000);
     view.show();

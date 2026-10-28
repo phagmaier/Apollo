@@ -57,6 +57,15 @@ before recommending whether to keep or switch stacks.
   reference as described in the brief. Agreement between two outputs produced
   by the same engine alone is not an independent correctness check. Report
   missing references, manual checks, and unmeasured performance honestly.
+- Before a manual handoff, test the commands and the relevant native execution
+  path yourself when possible. Put longer command sequences in one executable
+  `.sh` runner with clear manual checkpoints where needed, environment checks,
+  failure handling, and saved output; the owner prefers running one script. Use
+  `tools/check-wayland.sh` for native interaction, compositor/fcitx5 input,
+  rendering, typing, and PDF-export-while-typing checks (`--preflight` omits
+  full typing measurements).
+  Automate the checks available to the agent; leave subjective comfort and
+  appearance acceptance to the owner and state what was actually verified.
 - `reference/` contains local copyrighted or personal material and is ignored by
   Git. Generated workloads are also ignored; see the fixture guide for how to
   create them. Preserve fixture and third-party license information.

@@ -2,24 +2,28 @@
 
 The spike is in progress. **Checks 1 (engine fixtures), 2 (editor/PDF
 agreement), and 3 (PDF quality) pass for the exercised spike inputs**, as of
-2026-10-27. Check 4 (interaction) has its Qt Test scripts but still needs the
-owner's manual session under native Wayland with fcitx5. Checks 5–7
-(responsiveness, code-shape review of the finished integration, look) remain
-open; check 5 has only an early offscreen indicator. See
+2026-10-28. Native Wayland/OpenGL interaction and fcitx5 input checks now pass
+in release and sanitizer builds; the owner reported typing, selection/copy,
+and Enter/Tab good. Native typing/open-time/PSS measurements, the bounded
+asynchronous-export experiment, and its review are recorded below. The QML
+look screen and final keep/switch report remain open. See
 [spike-brief.md](spike-brief.md#passfail-checks).
 
+The first native window attempt exposed a render-thread crash; see the
+[native startup follow-up](#native-startup-follow-up). The subsequent
+[native runner and owner observations](#native-session-runner-and-owner-observations)
+record the fix verification, actual input-method tests, and remaining
+interaction/discoverability limitations.
+
 **Done: PDF export (brief step 3) and the bounded QML `TextEdit` probe (step 4).
-Step 5 is an unfinished checkpoint pending the owner's native session
-(see [the editor section](#editor-brief-step-5)).** The
-editor is stock QML `TextEdit` with Apollo's `ScreenplayLayout` and C++
+The bounded step-5 editor/export work now includes native follow-up and
+asynchronous export; the approved look and final report are still pending.**
+The editor is stock QML `TextEdit` with Apollo's `ScreenplayLayout` and C++
 commands for the brief's Enter, Tab, paste, undo, and scene-move rules.
-Offscreen Qt tests cover those rules, caret and selection across page gaps and
-through dual dialogue, and rendering; editor and PDF line dumps agree on every
-fixture, both workloads, and the Academy transcription, before and after 50
-scripted edits. **Next ready: the owner's manual session (instructions in the
-editor section), then native measurements (check 5) and the look screen
-(check 7).** No native-Wayland interaction, input-method, or performance
-result is claimed from offscreen runs.
+The editor and PDF line dumps agree on all fixtures, both workloads, and the
+Academy transcription, before and after scripted workload edits. Qt remains
+provisional. Offscreen checks alone do not establish native behavior or a
+completed spike.
 
 All eight hand-derived layout fixtures and their PDFs match the unchanged
 expected page, slot, element columns, text, and exercised style annotations.
@@ -552,14 +556,63 @@ Sanitizers ran outside the tracing sandbox with no reported diagnostics;
 the sandboxed checks used writable caches under `/tmp`. No native interaction
 or new performance result is established by this verification.
 
+### Native startup follow-up
+
+After correcting the launch environment, the owner's first actual window
+attempt crashed on its first paint (2026-10-27, PID 307823). The core records
+SIGSEGV in `QTextFrame::begin` from `QQuickTextEdit::updatePaintNode` on
+`QSGRenderThread`; the GUI thread was waiting for scene-graph synchronization.
+The preceding warning reported creation of a child for a `QTextDocument` on
+the wrong thread. This is a separate failure from the missing display socket.
+
+A small fixture reproduces the warning with native Wayland, the threaded
+OpenGL render loop, and `QT_FATAL_WARNINGS=1`. The debugger locates the first
+root-frame creation in `QTextDocumentPrivate::rootFrame`, called by
+`TextEdit`'s paint path. Apollo's custom layout had never requested that lazily
+created object on the GUI thread. The software renderer runs that paint path
+on the GUI thread, so the offscreen checks did not expose the defect; the
+earlier native `--check` did not paint a window at all.
+
+`ScreenplayLayout::relayout` now prepares the root frame with the public
+`QTextDocument::rootFrame` API before rendering can access it. This also
+prepares a new root after `clear()` discards the old one. No render-loop
+override, Qt fork, or private header is needed. A regression inspects the
+frame's existing ownership before the first paint, both on load and after
+clear/refill; both cases failed before the fix.
+
+The original 175-scene workload now completes its first native paint and
+agreement export with warnings treated as fatal. Qt's diagnostics confirm a
+threaded render loop, OpenGL, and the Intel UHD 630. Manual keyboard, mouse,
+and fcitx5 behavior and the native timing runs remain pending.
+
+After the fix, release and ASan/UBSan suites each pass all five CTest tests
+(`editor_tests`: 48 cases). The native threaded editor/PDF suite also passes
+all eight fixtures and both workloads, unedited and after 50 scripted edits
+per workload, with warnings treated as fatal. A native threaded first-paint
+fixture check also passes in the sanitizer build without diagnostics.
+
+To repeat the existing editor/PDF suite with actual threaded native rendering
+(several short-lived test windows appear):
+
+```sh
+QT_QPA_PLATFORM=wayland QT_IM_MODULE=fcitx QSG_RENDER_LOOP=threaded QSG_RHI_BACKEND=opengl QT_FATAL_WARNINGS=1 uv run tests/editor_pdf_tests.py --editor build/release/apollo_editor --output build/release/native-editor-pdf-tests
+```
+
+This requires the valid display variables described in the manual session
+below. It verifies rendering startup and scripted layout/export agreement;
+it is not the owner's manual interaction session or a performance measurement.
+
 ### Not established
 
-- **Native interaction (check 4)**: Wayland input, fcitx5 compose or dead keys,
-  mouse drag selection, and the owner's manual session. Synthetic Qt Test keys
-  do not go through the compositor or an input method.
-- **Responsiveness, open time, and memory (check 5)** under native Wayland, and
-  PDF export time while typing. The offscreen figures above are risk
-  indicators only.
+- **Interaction limits (check 4)**: the owner reported typing, selection/copy,
+  and Enter/Tab good. Real virtual-keyboard input verifies the scene shortcut,
+  undo/redo, and fcitx5 compose/dead-key commits. Physical Compose-key use is
+  unverified because no Compose key is mapped. Subjective extended-session
+  comfort and discoverable controls are not established by scripted checks.
+- **Responsiveness limits (check 5)**: native typing, open time, PSS, and
+  integrated PDF export while typing have recorded observations below.
+  Repeatability across extended sessions, cold launch, and guaranteed peak
+  memory remain unverified.
 - **Product decisions** these rules stand in for: what Enter on an empty
   action should do, whether empty elements should appear in exports, whether a
   typed `(CONT'D)` should be normalized or kept as written (and the Fountain
@@ -574,57 +627,295 @@ or new performance result is established by this verification.
   is unused by `TextEdit` and untested; a cue repeated after a split is drawn
   by QML `Text`, which the ink checks cover but glyph-level comparison does not.
 
-### Manual session (owner)
+### Native session runner and owner observations
 
-Run these from a terminal inside your Hyprland session, so the editor is a
-native Wayland window and inherits Omarchy's `QT_IM_MODULE=fcitx`.
-
-```sh
-cd ~/Code/apollo
-mise run check                       # builds build/release and regenerates the workloads
-echo "$QT_IM_MODULE"                 # should print: fcitx
-pgrep -a fcitx5                      # fcitx5 must be running
-QT_QPA_PLATFORM=wayland build/release/apollo_editor build/release/editor-pdf-tests/workload-175.fountain
-```
-
-In the window (a page boundary is wherever a white page card ends):
-
-1. Click at the start of the first line on any page after page 2 and type a
-   sentence. The caret should stay right after each character as text moves
-   between pages; nothing should overlap.
-2. Shift+Down across a page gap, Ctrl+C, then paste into another terminal
-   window to check the copied text. Then drag-select across a gap with the mouse.
-3. Find a dual-dialogue block (side-by-side speeches), click in the left
-   speech, and press Down repeatedly: the caret should go through the left
-   speech, then the right cue and speech. Shift+Down should highlight in that order.
-4. Enter at the end of a cue (new dialogue), Enter at the end of action (new
-   action), Enter in the middle of a line (split), Enter on an empty line (it
-   becomes action); Tab and Shift+Tab on a line to cycle its type; type a cue in
-   lowercase and check it shows uppercase.
-5. Copy a cue and its dialogue and paste them elsewhere (types and emphasis
-   kept); copy plain text from another app and paste it (action paragraphs).
-6. Ctrl+Z after typing (word by word), after Tab, and after Alt+Shift+Up (scene
-   move); Ctrl+Shift+Z to redo.
-7. Compose: press Caps Lock (Omarchy's Compose key), then `'`, then `e`. An `é`
-   should appear once at the caret, with no stray characters or caret jump,
-   including when done at the start of a page. For a dead key, add "English
-   (US, intl., with dead keys)" in `fcitx5-configtool`, switch to it, type `'`
-   then `e`, and switch back afterwards.
-
-Then, still in the Hyprland session, record native timings (the window must
-stay visible and focused while it types for about 20 seconds):
+The owner prefers commands verified by the agent before handoff and one
+executable `.sh` for longer procedures. Native checks now have one entry point,
+which works from any launch directory:
 
 ```sh
-QT_QPA_PLATFORM=wayland build/release/apollo_editor build/release/editor-pdf-tests/workload-175.fountain --measure 200
-QT_QPA_PLATFORM=wayland build/release/apollo_editor build/release/editor-pdf-tests/workload-444.fountain --measure 200
+~/Code/apollo/tools/check-wayland.sh
 ```
 
-Note anything that felt wrong (with the page and what you typed), the compose
-result, and the printed p50/p95/max, open time, and PSS lines.
+It discovers the user's Wayland socket, selects native threaded OpenGL and
+fcitx5, builds and runs the ordinary checks, runs the interaction suite in a
+real Wayland window, checks first paint/export on both workloads, and performs
+both 200-key native typing runs. Test windows open and close automatically;
+leave the keyboard and mouse alone while they run, and keep the timing window
+visible and focused. A timing run stops if its window loses focus. Output is
+saved under a unique `build/wayland-check-*/` directory, with a `results.txt`
+summary and individual logs. A failed command stops the runner. `--preflight`
+omits the full typing measurements.
+
+The runner requires the installed `wtype` virtual-keyboard tool (0.4-2 on this
+host), fcitx5, the existing build/PDF prerequisites, and access to Hyprland. It
+changes its process environment and writes build/test artifacts; it does not
+change desktop or input-method settings. The native suite is enabled with
+`APOLLO_TEST_OPENGL=1`; `APOLLO_TEST_WAYLAND_INPUT=1` additionally sends real
+Wayland virtual-keyboard input for scene move/undo/redo and compose/dead-key
+commits at a page boundary. Those three cases skip in the ordinary offscreen
+suite. The existing dual-dialogue test uses a known imported fixture, so no
+owner-facing creation control is needed to exercise navigation and selection.
+
+Owner observations (2026-10-27): typing across page gaps, selection/copy, and
+Enter/Tab behavior were reported good. Alt+Shift+Up appeared to do nothing;
+the caret's scene was not recorded, so this does not reproduce a command defect.
+The command deliberately does nothing in the first scene. A known second-scene
+move and its undo/redo pass through actual compositor input. No conflicting
+Alt+Shift+Up binding exists in the active Hyprland instance. The owner could
+not discover how to create dual dialogue or what Compose meant. These are
+handoff/discoverability gaps in this minimal spike, not owner test failures.
+The spike has no dual-dialogue creation control; it imports paired speeches.
+The active keyboard options are empty, so no physical Compose key is mapped;
+no system configuration was changed to run the virtual-keyboard checks.
+
+The native run exposed one test-only assumption: the page-gap selection ink
+check used document coordinates directly, although a real compositor limits
+window height and the editor scrolls. Its screenshot showed both correct
+highlights; the test now accounts for the scroll offset and capture bounds.
+
+Verification: the full runner completed successfully, including the ordinary
+release suite (5/5 CTest tests), native interaction/input suite (51/51 Qt Test
+cases), both first-paint exports, and both 200-key timing runs. The complete
+native interaction/input suite also passes under ASan/UBSan (51/51), without
+diagnostics. `bash -n` passes; ShellCheck is not installed. Isolated checks
+with temporary sockets cover missing/stale/ambiguous/inherited display
+selection, absolute socket paths and paths with spaces, command-failure
+propagation with preserved logs, help, and invalid-option handling. Review
+fixed the invalid-option exit status found by those helper checks.
+
+### Native typing, open-time, and memory observations
+
+Measured 2026-10-27 with the release build, Qt 6.12.0, GCC 16.2.1, native
+Wayland, the threaded OpenGL render loop, Mesa 26.2.5, and Intel UHD 630.
+Hyprland reports HDMI-A-1 at 1920×1080, 60 Hz, scale 1. Inputs are regenerated
+175- and 444-scene workloads with seed 1; the pinned Courier Prime hashes
+still pass. This is the uncommitted native-fix follow-up to checkpoint
+`8d189dd`, including root-frame preparation and a timing-window focus guard.
+
+Each run dispatches 200 synthetic keys at the page boundary described under
+[early typing latency](#early-typing-latency), timing dispatch to
+`frameSwapped`. It verifies that the Wayland window remains active before each
+key. It excludes device/compositor input latency. Open time starts inside the
+already initialized Qt process and includes document load through first frame;
+it is not cold-launch time. PSS is sampled after typing, not a peak-memory
+measurement. Fonts, generated inputs, and graphics caches are warm.
+
+The full runner's first timing run overlapped a sanitizer compilation. Both
+timing commands were therefore repeated after agent builds and tests ended;
+the focused results are below. Other normal desktop applications remained
+open. Raw logs are in `build/wayland-timings-dClEm3/`; the end-to-end runner
+logs are in `build/wayland-check-20261027-232150-QOfOw0/`.
+
+| Input (pages include title) | Key→frame p50 / p95 / max | Stalls >100 ms / missing frames | Open→first frame | PSS after typing |
+| --- | --- | --- | --- | --- |
+| 175 scenes, 203 pages | 12.0 / 13.4 / 16.6 ms | 0 / 0 | 205.9 ms | 68.6 MiB |
+| 444 scenes, 507 pages | 31.5 / 32.6 / 33.5 ms | 0 / 0 | 418.2 ms | 104.7 MiB |
+
+The observed 200-page typing, warm-open, and settled-PSS figures are within
+the brief's targets for those measurements. The 500-page figures are recorded
+as the stress case. These observations do not establish export while typing,
+extended-session behavior, cold launch, or a completed check 5/spike.
+
+These scripted checks cannot establish subjective comfort, final appearance,
+or physical keyboard/device latency. The subsequent export experiment is
+recorded below. The approved look screen and final keep/switch report remain
+separate work.
+
+### PDF export while typing: integration and method
+
+The bounded export experiment uses `editor/PdfExportJob` (implemented in
+`pdf_export_job.{h,cpp}`), shared by the real editor's temporary Export PDF
+control, Ctrl+E, agreement/snapshot checks, and `--measure-export`. The path is
+editable in the small export bar; title inclusion is captured with the request.
+Busy, success, and error text refer to the requested snapshot, so a successful
+export does not imply that subsequent live edits are in the PDF. One accepted
+job runs at a time; another request while busy is rejected. Closing drains that
+job before application teardown. There is no cancellation or detached worker;
+a stalled filesystem could therefore prolong shutdown. This is a spike policy,
+not a decision about the eventual product export workflow or look screen.
+
+Concurrency choice (Qt 6.12, investigated 2026-10-27): the existing painter
+registers/unregisters application fonts. Qt documents
+[`QFontDatabase`](https://doc.qt.io/qt-6/qfontdatabase.html) as thread safe, but
+[`QRawFont`](https://doc.qt.io/qt-6/qrawfont.html#details) as confined to its
+creating thread. An earlier direct raw-font attempt lost PDF extraction (see
+[PDF verification](#pdf-export-verification)). Rather than change that painter
+or share font state with the editor/render thread, a
+[`QProcess`](https://doc.qt.io/qt-6/qprocess.html#details) launches the sibling
+`pdf_export` executable with an offscreen `QGuiApplication`. Its main thread
+owns layout, font setup, painting, and `QSaveFile` finalization into a private
+staging file beside the destination. Only after the helper exits successfully
+does the editor atomically rename that file over the destination, preserving
+existing file permissions. Failures remove staging files. This also protects
+an existing destination if the helper fails *after* completing the PDF. Closing
+drains and performs the same finalization without emitting callbacks. This
+process boundary is an implementation choice, not a
+claim that all Qt painting requires the GUI thread. The exporter itself and
+its independent correctness evidence remain unchanged.
+
+On the live document's owning thread, request captures element types, UTF-8
+text, emphasis spans, dual flags, and title inclusion into an owned versioned
+binary message. Version 1 also identifies the compiled fixed profile. The
+message goes through buffered stdin; no `QTextDocument`, layout, cursor, Qt font,
+or live reference crosses the process boundary. This temporary worker protocol
+is not Apollo's future source format. It is checked for truncation, version,
+enum/span bounds, and trailing bytes. The helper lays out its own elements.
+Request paths that alias the Fountain input are rejected, as in the CLI.
+
+The measurement loads each regenerated workload in the actual QML editor,
+places the caret at the first character on the later page of a block spanning
+a page boundary after the document midpoint, and dispatches 200 synthetic keys
+with 60 ms idle between each rendered frame and the next request/key. Every
+key must advance the caret and the final document must contain exactly those
+200 inserted characters. When idle, the same export job requests a new real
+PDF, replacing the previous successful snapshot in the measurement directory.
+There is no artificial export delay. The key timer starts **before** any
+snapshot capture/serialization/process dispatch on that iteration; all such
+GUI work is included in the reported key-to-frame time. Export time starts
+before snapshot capture and ends at GUI receipt of helper completion, including
+process startup, font setup, painting, process teardown, and final atomic
+replacement by the editor. Private staging-file setup is included too.
+
+The helper reports Linux `steady_clock` timestamps from entry to `main` through
+successful export/commit. Key dispatch and observed frame times are compared
+with those actual worker intervals, separately counting overlapping keys and
+frames (a request merely being queued does not establish overlap). `events.tsv`
+saves those intervals, individual key/frame times, capture times, and total
+export times. PSS is sampled on a 20 ms GUI timer from both processes'
+`smaps_rollup`; combined samples sum their proportional shares. These are
+sampled maxima, not a guaranteed peak, and timer execution can slip while the
+GUI is busy. Memory sampling overhead is included in frame timings.
+
+As with the earlier timings, warm caches and the initialized Qt process exclude
+cold launch and physical input/compositor latency. Native focus is checked for
+every key. All agent builds and other test runs must finish before the timing
+window. These observations do not establish extended-session comfort,
+unexercised import/profile cases, or final stack acceptance.
+
+### Export coverage and review
+
+`export_job_tests` exercises the real helper and Qt event loop: immutable
+ownership after editing and destroying the live document, title-option/busy
+policy, missing helper, nonzero exit, missing fonts, unsupported glyphs,
+source/alias protection, invalid destinations, final replacement failure,
+worker SIGKILL followed by a successful retry, and closing immediately with
+more than a pipe buffer of queued snapshot data. It checks preserved existing
+bytes, permissions, staging cleanup, and valid PDF finalization. A real QML
+Ctrl+E check verifies busy/success feedback and typing focus. Malformed worker
+messages are rejected. There are 13 Qt Test cases including init/cleanup.
+
+`editor_pdf_tests.py` now drives this same asynchronous path for every fixture,
+both workloads, and the existing 50-edit comparisons. Its new snapshot mode
+requests export, replaces all live text with different unsupported-glyph text,
+moves the caret, undoes, and redoes through editor key events. Multi-page
+fixtures must repaginate. Poppler then requires the exported original snapshot
+to match the unchanged hand-derived fixture expectations, including Letter
+geometry, text extraction, embedded Courier Prime with Unicode mapping,
+emphasis/underline, generated labels, dual columns, title inclusion and title
+exclusion. This is independent evidence, beyond agreement between two engine
+outputs. No expected fixture was changed.
+
+Review covered the initial unstaged native fixes and untracked runner/prompt,
+all new export files, callers/QML, final tracked changes, and test quality.
+The initial six focused behavior cases failed with the unimplemented job and
+passed after integration. Review added the editor target's helper dependency
+so building that target alone supplies the executable. It also found the
+late-worker-failure replacement issue: a test wrapper runs the real exporter
+to completion and then exits nonzero. That test demonstrated replacement of
+the old destination before the staging fix, and passes with it. The helper's
+successful PDF is now published only after clean exit; final rename failure
+and immediate shutdown use that same path. No Qt private headers, copied Qt
+source, new dependency, engine change, or desktop configuration change was
+introduced. Existing native root-frame initialization is preserved.
+No concrete in-scope finding remains open after the corrections and checks;
+the documented product and verification limitations remain.
+
+Final export verification (2026-10-27/28): release and ASan/UBSan each pass all
+six CTest checks; the engine-only build passes both checks and links no Qt
+library. The sanitizer suite ran outside the tracing sandbox with
+LeakSanitizer enabled. An initial sandboxed attempt reported LeakSanitizer's
+ptrace restriction; it was rerun with execution approval, without disabling
+leak checks. No sanitizer diagnostics were reported in the approved runs.
+Native threaded Wayland/OpenGL checks pass 51/51 interaction/input cases and
+13/13 export cases, plus every independent snapshot fixture and both workloads
+before/after 50 scripted edits. The 13 export cases also pass natively under
+ASan/UBSan, followed by 20-key integrated-export checks on **each** workload,
+with real helper overlap and no sanitizer diagnostic. Those debug timings are
+correctness checks only. Logs: `build/export-native-debug-tgprXy/`.
+
+The unchanged Academy engine/painter comparison evidence is reused; the new
+process integration is independently checked on the eight original fixtures.
+No local reference was changed or added to Git. `bash -n`, help, and
+`git diff --check` pass. Existing display-selection/failure-log helper evidence
+is reused because those runner helpers did not change; ShellCheck remains
+unavailable. A final full native runner result is recorded with measurements
+below. No commit or push is part of this task.
+
+### Native export-while-typing results
+
+Final release measurement, 2026-10-28, native Wayland/fcitx5, threaded OpenGL,
+Qt 6.12.0/GCC 16.2.1, Mesa 26.2.5/Intel UHD 630, the same 1920×1080 60 Hz
+scale-1 display and pinned fonts. The full one-command runner completed with
+exit 0, including builds/checks, native input/rendering, snapshot/PDF checks,
+ordinary typing, and export while typing. All separate agent builds and tests
+had finished before these timings. Other normal desktop applications remained
+open. Raw logs, `results.txt`, PDFs, and per-event `events.tsv` files are in
+`build/wayland-check-20261028-000244-kksJMr/` (local, regenerable artifacts).
+
+Each row uses 200 keys at the page boundary. Times are milliseconds;
+capture/dispatch is included in both the key and total-export measurements.
+
+| Input, pages include title | Key→frame p50 / p95 / max | Request→export completion p50 / p95 / max | Capture/dispatch p50 / p95 / max | Real exports |
+| --- | --- | --- | --- | --- |
+| 175 scenes, 203 pages | 16.0 / 18.7 / 20.6 | 271.5 / 335.2 / 345.0 | 3.4 / 3.9 / 3.9 | 49 |
+| 444 scenes, 507 pages | 35.1 / 41.5 / 44.9 | 562.8 / 612.4 / 761.2 | 8.6 / 9.2 / 9.4 | 33 |
+
+| Input | Keys / frames overlapping actual helper work | Overlapping-key p95 | Settled editor PSS | Sampled max editor / combined PSS |
+| --- | --- | --- | --- | --- |
+| 175 scenes | 151 / 198 | 18.5 ms | 72.5 MiB | 72.6 / 93.4 MiB |
+| 444 scenes | 167 / 198 | 40.7 ms | 118.5 MiB | 118.5 / 141.5 MiB |
+
+Both runs recorded **zero >100 ms stalls and zero missing frames**. The memory
+timer obtained 679/802 helper samples respectively. Open→first frame with the
+export controls was 224.2/444.9 ms. The runner's ordinary typing runs recorded
+p95 13.4/33.2 ms and warm-open 231.9/422.5 ms, with no stalls/missing frames.
+The measured export PDFs also report 203/507 Letter pages with Courier Prime
+font subsets. Saved worker intervals independently recount the overlap above.
+
+The **primary workload meets the measured numeric targets**: typing p95 ≤33 ms,
+no >100 ms stall, every export ≤5 s, warm open ≤1 s, and sampled combined PSS
+below 250 MiB. The 500-page export/typing result is the stress observation:
+typing p95 exceeds 33 ms there, even though no stall or frame loss occurred.
+The brief applies that numeric typing target to the primary workload; this is
+not evidence that the stress case meets it or that the entire spike passed.
+
+A preceding isolated measurement on the same final C++ implementation recorded
+primary/stress typing p95 19.0/42.0 ms, export maxima 367.0/739.9 ms, and overlap
+152/167 keys and 198/197 frames (`build/wayland-check-20261027-235952-Qx8TGE/`).
+Its results were saved, but editing the runner's source while its shell was
+executing caused a trailing read-offset syntax error. The unchanged runner was
+therefore rerun end to end; the clean-exit results above are the final evidence.
+Earlier preliminary timings overlapped verification or preceded the staging
+fix and are not used for the final comparison.
+
+This completes the bounded PDF-export-while-typing experiment and review.
+The timing/memory method's limits above still apply: sampled PSS is not a
+guaranteed peak, input is synthetic, caches are warm, and extended-session
+behavior remains unmeasured. Closing waits for export rather than cancelling.
+The accepted QML look, owner appearance acceptance, remaining evidence/review,
+and final keep/switch report are separate work. Qt remains provisional.
+
+Working tree at handoff: 13 modified tracked files and seven untracked files
+(including the pre-existing `prompt.md` and runner); nothing staged. `main` and
+`origin/main` still point to `8d189dd`. Existing owner/native fixes are
+preserved; no commit or push was made. Generated bytecode incidental to local
+checks was removed/restored without changing the pre-existing tracked artifact.
 
 ### Reproduction
 
 ```sh
+tools/check-wayland.sh    # one-command native checks and both export/typing measurements
 mise run check            # includes editor_tests and editor_pdf_tests
 mise run check-debug
 mise run check-engine
@@ -635,24 +926,26 @@ build/release/apollo_editor build/release/editor-pdf-tests/workload-175.fountain
 
 ## Remaining work and next step
 
-The next concrete step is the owner's manual session and native timings
-(see [Manual session](#manual-session-owner)), then the rest of check 5 (open
-time and PDF export while typing, under native Wayland) and the look screen
-(check 7, brief step 6). If native typing misses the target, reduce the
-remaining per-key work in `ScreenplayLayout` (reading the document and
-checking every block) before considering the custom `QQuickItem` fallback. The
-engine remains independent of QtGui.
+The owner's observations and native automated checks/timings, including the
+bounded export experiment, are recorded above. Next is reproducing approved
+direction B (Writing desk) with C's expandable outline from
+`prototype/editor.html` in QML, within the brief's limits, and obtaining owner
+look acceptance (check 7). The final report follows remaining evidence and
+review. If later primary-workload native typing misses
+the target, profile the remaining per-key work in `ScreenplayLayout` before
+considering the custom `QQuickItem` fallback. The engine remains independent
+of QtGui. The current follow-up does not finish those later steps.
 
 Title-page overflow/long fields, unsupported or malformed Fountain, emphasis
 beyond the exercised cases, multi-element lyric grouping, broader heading and
 transition boundary combinations, and large-document performance still need
 verification. The spike exporter currently rejects unavailable glyphs instead
 of substituting fonts; the product's unexpected-character policy is still open.
-The CLI uses atomic replacement and reports failure, while application export
-UX, asynchronous export, and final metadata policy remain later work.
+The CLI uses atomic replacement and reports failure. The editor now has the
+bounded asynchronous snapshot integration and temporary export controls above;
+the eventual product export workflow and final metadata policy remain open.
 
-The full spike still requires native interaction and performance checks, the
-QML visual screen, the owner's manual session, code-shape review of the
-completed integration, and a final keep/switch recommendation. No export
-latency, native-Wayland responsiveness, or native input-method result is
-claimed.
+The full spike still requires the QML visual screen, remaining evidence/review,
+and a final keep/switch recommendation in `docs/spike-report.md`. This task
+does not implement that screen or issue a final stack verdict. Qt remains
+provisional, and all product/import/layout limitations above remain explicit.
