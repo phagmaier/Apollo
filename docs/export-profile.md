@@ -1,6 +1,6 @@
 # Apollo — export profile
 
-Status: **numeric profile v1**, 2026-10-27. The values come from measuring the Academy reference. The two visible choices are confirmed by the owner (see "Owner confirmations"). Items marked "Apollo proposal" are delegated detail for review in the visual prototype. The [product spec](spec.md) is authoritative for owner decisions. The initial Apollo PDF painter now passes the small-fixture checks; editor agreement and performance remain unverified. See [spike progress](spike-progress.md).
+Status: **numeric profile v1**, 2026-10-27. The values come from measuring the Academy reference. The two visible choices are confirmed by the owner (see "Owner confirmations"). Items marked "Apollo proposal" are delegated detail for review in the visual prototype. The [product spec](spec.md) is authoritative for owner decisions. The initial Apollo PDF painter passes the small-fixture checks, and offscreen editor/PDF agreement passes for the exercised inputs; native interaction and performance remain unverified. See [spike progress](spike-progress.md).
 
 ## Confirmed target
 
@@ -47,7 +47,7 @@ Each wrapped line in the 11 body pages was checked against the next word that di
 | Dialogue | **35** | Longest 35; every wrap would have needed 36 or more. |
 | Parenthetical | **17 columns, counted from the `(` column** | The `(` hangs one column left of the text; continuation lines start one column in and reach column 17 at most. |
 
-An independent formatter, afterwriting, set to these widths reproduces **345 of the 349** distinct body lines. The 4 lines it misses all belong to the one speech that splits across a page, where its split rule differs (see `fixtures/README.md`). Wrapping breaks at spaces only; a word longer than its column breaks at the limit (no Academy example). Emphasis markup is hidden and never counts toward width.
+An independent formatter, afterwriting, set to these widths reproduces **345 of the 349** distinct body lines. The 4 lines it misses all belong to the one speech that splits across a page, where its split rule differs (see `fixtures/README.md`). Wrapping breaks at spaces only; a word longer than its column breaks at the limit (no Academy example). Spaces at a line end are not text, so a trailing space never moves a right-aligned or centered line. Emphasis markup is hidden and never counts toward width.
 
 ## Proposed geometry (Academy sample pages, corrected)
 
@@ -57,14 +57,14 @@ Inches from the left page edge unless noted. "Measured" values have about ±0.02
 | --- | --- | --- | --- |
 | Scene heading | Left 1.5 | 61 columns | Measured (the guide's prose also says left margin 1.5). Uppercase. Not bold: the sample embeds no bold face. |
 | Action | Left 1.5 | 61 columns (to 7.6) | Measured. The prose says right margin 1.0 in; 61 columns at true 10 pitch end at 7.6 in, a 0.9 in margin. |
-| Character cue | Left 4.0 | to 7.6 | Measured; the prose says "about 4.0 to 4.2". Uppercase. |
+| Character cue | Left 4.0 | to 7.6 (36 columns; a longer cue wraps, and its lines count toward fit) | Measured; the prose says "about 4.0 to 4.2". Uppercase. The sample has no cue long enough to wrap. |
 | Parenthetical | `(` at 3.4, text at 3.5 | 17 columns from `(` | Measured; the prose says text starts 0.5 in left of the cue. |
 | Dialogue | Left 3.0 | 35 columns (to 6.5) | Measured. The prose says 2.5 in; the owner chose the sample pages (confirmation 1). |
 | Transition | Right-aligned to 7.1 | max 56 columns | Measured (`INTERCUT WITH:`, `FADE OUT.`). |
 | Centered text | Centered on 4.5 | max 60 columns | Measured (`THE END`, a centered date). |
 | (MORE) | Left 4.0 (cue column) | — | Measured. |
 | Lyrics | Dialogue column, italic | 35 columns | Apollo proposal; the guide has no lyrics. |
-| Dual dialogue | Left column at 1.5, right column at 4.6. Each column: dialogue 28 columns, cue at column + 1.0 in, `(` at column + 0.4 in (17 columns) | — | Apollo proposal; the guide has no dual dialogue. Check it in the visual prototype. |
+| Dual dialogue | Left column at 1.5, right column at 4.6. Each column: dialogue 28 columns, cue at column + 1.0 in (20 columns: the right cue's room to 7.6 in, also used on the left), `(` at column + 0.4 in (17 columns) | — | Apollo proposal; the guide has no dual dialogue. Check it in the visual prototype. |
 
 Glyphs use Courier Prime's natural advance (0.5996 em) from each line's start position, so a 61-character line is about 0.03 in shorter than exact 10 pitch. Right-aligned and centered positions use the same advance. The editor and the PDF follow the same rule.
 
@@ -93,6 +93,24 @@ after other elements still uses 1 blank line. All leading spacing drops at the
 top of a page.
 
 The guide also shows extra blank lines a writer added after a centered line. Whether Apollo preserves author-added vertical space is an editor-behavior decision for later; v1 spacing is automatic.
+
+### Editor states (provisional spike rules)
+
+The editor passes through states a finished script rarely has. So that the
+editor and the PDF always paginate them the same way, the engine lays them out
+as follows. These are spike rules for owner review, not confirmed behavior:
+
+- **An empty element** (no text, or only spaces) keeps one blank slot with its element's normal spacing,
+  so the caret has a line of its own. In a PDF the slot is blank.
+- **A cue without speech** stands alone: one or more cue lines with a cue's
+  spacing, moved whole with a preceding heading; a cue longer than one page
+  is rejected like other unsplittable elements.
+- **A right dual cue without a left speech, or without its own speech,** is an
+  ordinary cue; the pair is not dual.
+- **Parentheticals or dialogue without a cue** keep the speech spacing (one
+  blank line before the run, none inside it) and move whole.
+- **A typed `(CONT'D)`** on a cue where G1 generates one is replaced by the
+  generated form, so it is never doubled. The typed text stays in the document.
 
 ## Page-break rules
 

@@ -6,6 +6,11 @@ namespace apollo {
 std::vector<std::string> wrap(std::string_view text, std::size_t width) {
   if (width == 0) throw std::invalid_argument("wrap width must be positive");
   std::vector<std::string> lines;
+  // Spaces at a line end are break points, not text.
+  auto emit = [&](std::string_view line) {
+    while (!line.empty() && line.back() == ' ') line.remove_suffix(1);
+    lines.emplace_back(line);
+  };
   std::size_t start = 0;
   while (start < text.size()) {
     while (start < text.size() && text[start] == ' ') ++start;
@@ -18,17 +23,17 @@ std::vector<std::string> wrap(std::string_view text, std::size_t width) {
       ++columns;
     }
     if (end == text.size()) {
-      lines.emplace_back(text.substr(start));
+      emit(text.substr(start));
       break;
     }
     if (text[end] == ' ') {
-      lines.emplace_back(text.substr(start, end - start));
+      emit(text.substr(start, end - start));
       start = end + 1;
     } else if (last_space != std::string_view::npos) {
-      lines.emplace_back(text.substr(start, last_space - start));
+      emit(text.substr(start, last_space - start));
       start = last_space + 1;
     } else {
-      lines.emplace_back(text.substr(start, end - start));
+      emit(text.substr(start, end - start));
       start = end;
     }
   }

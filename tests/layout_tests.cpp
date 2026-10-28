@@ -29,6 +29,8 @@ int main() {
   check("unicode columns", wrap("café déjà vu", 5), {"café", "déjà", "vu"});
   check("exact width", wrap("abcde f", 5), {"abcde", "f"});
   check("empty", wrap("", 5), {});
+  check("trailing spaces", wrap("cold.  ", 35), {"cold."});
+  check("only spaces", wrap("   ", 5), {});
   try { (void)wrap("text", 0); std::cerr << "zero width accepted\n"; ++failures; }
   catch (const std::invalid_argument&) {}
   using apollo::ElementType;
@@ -290,6 +292,167 @@ int main() {
         if (covered[e][i] > 1 || (covered[e][i] == 0 && elements[e].text[i] != ' ')) {
           std::cerr << name << " source byte " << e << ':' << i << " is not mapped once\n"; ++failures; break;
         }
+  }
+
+  // States an editor passes through. Slots are worked by hand from the
+  // profile's spacing table; the rules themselves are provisional (see
+  // docs/spike-progress.md): an empty element keeps one blank slot, a cue
+  // without speech stands alone, and speech without a cue keeps its spacing.
+  struct Placed { int page, slot; std::string text; std::size_t source; char column = 0; };
+  auto check_placed = [&](const char* name, const std::vector<apollo::Element>& elements, const std::vector<Placed>& expected) {
+    std::vector<apollo::Line> actual;
+    try { actual = apollo::layout(elements); }
+    catch (const std::exception& error) { std::cerr << name << " threw: " << error.what() << '\n'; ++failures; return; }
+    bool same = actual.size() == expected.size();
+    for (std::size_t i = 0; same && i < actual.size(); ++i)
+      same = actual[i].page == expected[i].page && actual[i].slot == expected[i].slot && actual[i].text == expected[i].text &&
+             actual[i].source == expected[i].source && actual[i].column == expected[i].column;
+    if (!same) { std::cerr << name << " placement failed\n"; ++failures; }
+  };
+  check_placed("empty action", {{ElementType::heading, "INT. ROOM - DAY"}, {ElementType::action, ""}, {ElementType::action, "Mara waits."}},
+               {{1, 1, "INT. ROOM - DAY", 0}, {1, 3, "", 1}, {1, 5, "Mara waits.", 2}});
+  check_placed("empty heading first", {{ElementType::heading, ""}, {ElementType::action, "A lamp."}},
+               {{1, 1, "", 0}, {1, 3, "A lamp.", 1}});
+  check_placed("empty dialogue", {{ElementType::action, "A lamp."}, {ElementType::cue, "MARA"}, {ElementType::dialogue, ""},
+                                  {ElementType::action, "She waits."}},
+               {{1, 1, "A lamp.", 0}, {1, 3, "MARA", 1}, {1, 4, "", 2}, {1, 6, "She waits.", 3}});
+  check_placed("empty cue and lyric", {{ElementType::action, "A lamp."}, {ElementType::cue, ""}, {ElementType::dialogue, "Hi."},
+                                       {ElementType::lyric, ""}},
+               {{1, 1, "A lamp.", 0}, {1, 3, "", 1}, {1, 4, "Hi.", 2}, {1, 6, "", 3}});
+  check_placed("elements of only spaces", {{ElementType::action, "A lamp."}, {ElementType::action, "  "},
+                                           {ElementType::cue, "MARA"}, {ElementType::dialogue, " "},
+                                           {ElementType::parenthetical, " "}, {ElementType::action, "End."}},
+               {{1, 1, "A lamp.", 0}, {1, 3, "", 1}, {1, 5, "MARA", 2}, {1, 6, "", 3}, {1, 7, "", 4}, {1, 9, "End.", 5}});
+  check_placed("cue without speech at end", {{ElementType::action, "A lamp."}, {ElementType::cue, "THEO"}},
+               {{1, 1, "A lamp.", 0}, {1, 3, "THEO", 1}});
+  check_placed("cue without speech before action", {{ElementType::cue, "THEO"}, {ElementType::action, "He waits."}},
+               {{1, 1, "THEO", 0}, {1, 3, "He waits.", 1}});
+  check_placed("heading keeps a lone cue", {{ElementType::heading, "INT. ROOM - DAY"}, {ElementType::cue, "THEO"}},
+               {{1, 1, "INT. ROOM - DAY", 0}, {1, 3, "THEO", 1}});
+  {
+    // 55 action lines fill slots 1-55; a lone cue needs a blank slot first.
+    std::vector<Placed> expected;
+    for (int slot = 1; slot <= 55; ++slot) expected.push_back({1, slot, std::string(61, 'x'), 0});
+    expected.push_back({2, 1, "THEO", 1});
+    check_placed("lone cue moves to next page", {{ElementType::action, std::string(61 * 55, 'x')}, {ElementType::cue, "THEO"}}, expected);
+  }
+  check_placed("right cue without left speech", {{ElementType::action, "A lamp."}, {ElementType::cue, "THEO", true},
+                                                 {ElementType::dialogue, "Hi."}},
+               {{1, 1, "A lamp.", 0}, {1, 3, "THEO", 1}, {1, 4, "Hi.", 2}});
+  check_placed("right cue without right speech", {{ElementType::cue, "MARA"}, {ElementType::dialogue, "Hi."}, {ElementType::cue, "THEO", true}},
+               {{1, 1, "MARA", 0}, {1, 2, "Hi.", 1}, {1, 4, "THEO", 2}});
+  {
+    // The unpaired right cue is ordinary, so B6 moves just its speech with
+    // the transition; the 52-line action stays on the preceding page.
+    std::vector<Placed> expected;
+    for (int slot = 1; slot <= 52; ++slot) expected.push_back({1, slot, std::string(61, 'x'), 0});
+    expected.push_back({2, 1, "THEO", 1});
+    expected.push_back({2, 2, "Hi.", 2});
+    expected.push_back({2, 4, "CUT TO:", 3});
+    check_placed("transition after an unpaired right cue",
+                 {{ElementType::action, std::string(61 * 52, 'x')}, {ElementType::cue, "THEO", true},
+                  {ElementType::dialogue, "Hi."}, {ElementType::transition, "CUT TO:"}}, expected);
+  }
+  check_placed("speech without a cue", {{ElementType::action, "A lamp."}, {ElementType::parenthetical, "(quietly)"},
+                                        {ElementType::dialogue, "Hello."}},
+               {{1, 1, "A lamp.", 0}, {1, 3, "(quietly)", 1}, {1, 4, "Hello.", 2}});
+  {
+    // 54 action lines, then two dialogue lines that need slots 56-57.
+    std::vector<Placed> expected;
+    for (int slot = 1; slot <= 54; ++slot) expected.push_back({1, slot, std::string(61, 'x'), 0});
+    expected.push_back({2, 1, "We should have left before the tide", 1});
+    expected.push_back({2, 2, "turned.", 1});
+    check_placed("speech without a cue moves whole",
+                 {{ElementType::action, std::string(61 * 54, 'x')}, {ElementType::dialogue, "We should have left before the tide turned."}},
+                 expected);
+  }
+  // A cue runs from 4.0 in to 7.6 in, so it wraps at 36 columns. Its lines
+  // count toward fit, and a generated suffix may take a line of its own.
+  const std::string long_cue = "MARA AND THEO AND JUNE AND ODELL AND";
+  check_placed("long cue wraps", {{ElementType::cue, long_cue + " THE KEEPER"}, {ElementType::dialogue, "Hi."}},
+               {{1, 1, long_cue, 0}, {1, 2, "THE KEEPER", 0}, {1, 3, "Hi.", 1}});
+  {
+    // 51 action slots leave a heading at 54 and one cue slot at 56. A
+    // two-line cue without speech needs the heading to move with it.
+    std::vector<Placed> expected;
+    for (int slot = 1; slot <= 51; ++slot) expected.push_back({1, slot, std::string(61, 'x'), 0});
+    expected.push_back({2, 1, "INT. ROOM - DAY", 1});
+    expected.push_back({2, 3, long_cue, 2});
+    expected.push_back({2, 4, "THE KEEPER", 2});
+    check_placed("heading keeps a wrapped lone cue",
+                 {{ElementType::action, std::string(61 * 51, 'x')}, {ElementType::heading, "INT. ROOM - DAY"},
+                  {ElementType::cue, long_cue + " THE KEEPER"}}, expected);
+    try {
+      (void)apollo::layout({{ElementType::cue, std::string(36 * 57, 'x')}});
+      std::cerr << "lone cue exceeding a page accepted\n"; ++failures;
+    } catch (const std::runtime_error&) {}
+  }
+  {
+    const auto wrapped = apollo::layout({{ElementType::cue, long_cue + " THE KEEPER"}, {ElementType::dialogue, "Hi."}});
+    if (wrapped.size() != 3 || wrapped[1].source_offset != 37 || wrapped[1].source_length != 10 || wrapped[1].geometry.x != 288) {
+      std::cerr << "wrapped cue mapping failed\n"; ++failures;
+    }
+    std::vector<Placed> expected;
+    for (int slot = 1; slot <= 54; ++slot) expected.push_back({1, slot, std::string(61, 'x'), 0});
+    expected.push_back({2, 1, long_cue, 1});
+    expected.push_back({2, 2, "THE KEEPER", 1});
+    expected.push_back({2, 3, "Hi.", 2});
+    check_placed("long cue moves with its speech", {{ElementType::action, std::string(61 * 54, 'x')},
+                 {ElementType::cue, long_cue + " THE KEEPER"}, {ElementType::dialogue, "Hi."}}, expected);
+  }
+  check_placed("continuation suffix on its own line",
+               {{ElementType::cue, long_cue}, {ElementType::dialogue, "Hi."}, {ElementType::action, "They wait."},
+                {ElementType::cue, long_cue}, {ElementType::dialogue, "Again."}},
+               {{1, 1, long_cue, 0}, {1, 2, "Hi.", 1}, {1, 4, "They wait.", 2}, {1, 6, long_cue, 3},
+                {1, 7, "(CONT’D)", none}, {1, 8, "Again.", 4}});
+  {
+    // A typed suffix replaced by a generated one that wraps: the typed bytes
+    // are reported on the last line that shows source text.
+    const auto shown = apollo::layout({{ElementType::cue, long_cue}, {ElementType::dialogue, "Hi."}, {ElementType::action, "They wait."},
+                                       {ElementType::cue, long_cue + " (CONT'D)"}, {ElementType::dialogue, "Again."}});
+    if (shown.size() != 6 || shown[3].text != long_cue || shown[3].source_length != 36 || shown[3].replaced_length != 9 ||
+        shown[4].text != "(CONT’D)" || shown[4].source != none) {
+      std::cerr << "wrapped typed continuation mapping failed\n"; ++failures;
+    }
+  }
+  // A trailing space, as left by Enter after a space, is not text: it does
+  // not move right-aligned or centered lines.
+  {
+    const auto aligned = apollo::layout({{ElementType::transition, "CUT TO: "}, {ElementType::centered, "THE END "}});
+    if (aligned.size() != 2 || aligned[0].text != "CUT TO:" || aligned[0].geometry.x != 511.2 - 7 * apollo::profile::advance ||
+        aligned[1].text != "THE END" || aligned[1].geometry.x != 324 - 7 * apollo::profile::advance / 2) {
+      std::cerr << "trailing space moved an aligned line\n"; ++failures;
+    }
+  }
+  // A right dual cue runs from 5.6 in to 7.6 in: 20 columns, as on the left.
+  check_placed("dual cue wraps in its column",
+               {{ElementType::cue, "MARA"}, {ElementType::dialogue, "Hold it."},
+                {ElementType::cue, "ODELL AND THE KEEPER ARE LATE", true}, {ElementType::dialogue, "Wait."}},
+               {{1, 1, "MARA", 0, 'L'}, {1, 1, "ODELL AND THE KEEPER", 2, 'R'}, {1, 2, "Hold it.", 1, 'L'},
+                {1, 2, "ARE LATE", 2, 'R'}, {1, 3, "Wait.", 3, 'R'}});
+  // Cues and headings are shown uppercase; the source keeps what was typed,
+  // and the whole typed text stays mapped.
+  {
+    const auto shown = apollo::layout({{ElementType::heading, "int. room - day"}, {ElementType::cue, "mara (v.o.)"},
+                                       {ElementType::dialogue, "Hi."}, {ElementType::action, "She turns."},
+                                       {ElementType::cue, "Mara"}, {ElementType::dialogue, "Again."}});
+    if (shown.size() != 6 || shown[0].text != "INT. ROOM - DAY" || shown[0].source_length != 15 ||
+        shown[1].text != "MARA (V.O.)" || shown[1].source_length != 11 || shown[2].text != "Hi." ||
+        shown[4].text != "MARA (CONT’D)" || shown[4].source_length != 4 || shown[4].replaced_length != 0) {
+      std::cerr << "cues and headings should be shown uppercase\n"; ++failures;
+    }
+  }
+  // A typed (CONT'D) that G1 would generate is shown as the generated form,
+  // never doubled. The typed suffix is reported as replaced source text so an
+  // editor can hide it under the generated suffix.
+  for (const std::string literal : {" (CONT'D)", " (CONT’D)", " (cont'd)"}) {
+    const auto shown = apollo::layout({{ElementType::cue, "MARA"}, {ElementType::dialogue, "Hello."},
+                                       {ElementType::action, "She turns."}, {ElementType::cue, "MARA" + literal},
+                                       {ElementType::dialogue, "Again."}});
+    if (shown.size() != 5 || shown[3].text != "MARA (CONT’D)" || shown[3].source != 3 || shown[3].source_length != 4 ||
+        shown[3].replaced_length != literal.size()) {
+      std::cerr << "typed continuation" << literal << " should be replaced by the generated form\n"; ++failures;
+    }
   }
   return failures ? 1 : 0;
 }

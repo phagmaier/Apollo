@@ -20,7 +20,7 @@
       "name": "engine-only",
       "inherits": "release",
       "binaryDir": "${sourceDir}/build/engine-only",
-      "cacheVariables": { "APOLLO_BUILD_PDF": "OFF", "APOLLO_BUILD_EDITOR_PROBE": "OFF" }
+      "cacheVariables": { "APOLLO_BUILD_PDF": "OFF", "APOLLO_BUILD_EDITOR": "OFF" }
     }
   ],
   "buildPresets": [

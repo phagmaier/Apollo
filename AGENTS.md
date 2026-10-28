@@ -42,9 +42,10 @@ before recommending whether to keep or switch stacks.
   sanitizer build. They check engine lines and point geometry, the fixture
   PDFs, and engine/PDF agreement on regenerated workloads. Run `mise run
   check-engine` for the engine without Qt or PDF tooling. The Qt checks also run
-  the offscreen QML `TextEdit` probe; `build/release/textedit_probe FILE` opens
-  it for manual use. Passing these checks does not establish editor/PDF
-  agreement, native-Wayland interaction, or performance.
+  the offscreen editor tests and editor/PDF agreement, including 50 scripted
+  edits on each workload; `build/release/apollo_editor FILE` opens the editor,
+  and `--measure` times synthetic typing. Passing these checks does not
+  establish native-Wayland interaction, input methods, or performance.
 - The pinned Courier Prime fonts and OFL license are in `assets/courier-prime/`;
   the build checks their hashes. Use the other pins in the spike brief and
   record deviations and upgrades.

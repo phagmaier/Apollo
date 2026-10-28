@@ -9,6 +9,14 @@
 namespace apollo {
 namespace {
 constexpr int page_slots = 56;
+// A cue runs from 4.0 in to 7.6 in. A right dual cue runs from 5.6 in to
+// 7.6 in; a left one gets the same width, which keeps it clear of the right
+// column (Apollo proposal).
+constexpr std::size_t cue_width = 36, dual_cue_width = 20;
+
+int cue_line_count(std::string_view cue, std::size_t width = cue_width) {
+  return static_cast<int>(std::max<std::size_t>(1, wrap(cue, width).size()));
+}
 
 double text_width(std::string_view text) {
   const auto columns = std::count_if(text.begin(), text.end(), [](unsigned char c) { return (c & 0xc0) != 0x80; });
@@ -67,9 +75,14 @@ std::size_t action_split(std::string_view text, int available) {
   return std::string_view::npos;
 }
 
+// An element with no text but spaces keeps one blank line.
 std::vector<std::string> speech_lines(const Element& element, std::size_t dialogue_width = 35) {
-  if (element.type != ElementType::parenthetical) return wrap(element.text, dialogue_width);
+  if (element.type != ElementType::parenthetical) {
+    auto lines = wrap(element.text, dialogue_width);
+    return lines.empty() ? std::vector<std::string>{""} : lines;
+  }
   const auto first_wrap = wrap(element.text, 17);
+  if (first_wrap.empty()) return {""};
   if (first_wrap.size() < 2) return first_wrap;
   std::vector<std::string> lines{first_wrap.front()};
   auto rest = std::string_view(element.text).substr(first_wrap.front().size());
@@ -116,18 +129,22 @@ bool following_speech_fits(const std::vector<Element>& elements, std::size_t cue
   for (; i < elements.size() &&
        (elements[i].type == ElementType::dialogue || elements[i].type == ElementType::parenthetical); ++i)
     parts.push_back(elements[i]);
-  if (parts.empty() || available < 1) return false;
+  if (available < 1) return false;
+  if (parts.empty()) return cue_line_count(elements[cue_index].text) <= available;
   if (i < elements.size() && elements[i].type == ElementType::cue && elements[i].dual_right) {
-    int left = 1, right = 1;
+    int left = cue_line_count(elements[cue_index].text, dual_cue_width), right = cue_line_count(elements[i].text, dual_cue_width);
+    const int right_cue = right;
     for (const auto& part : parts) left += static_cast<int>(speech_lines(part, 28).size());
     for (++i; i < elements.size() && (elements[i].type == ElementType::dialogue || elements[i].type == ElementType::parenthetical); ++i)
       right += static_cast<int>(speech_lines(elements[i], 28).size());
-    return right > 1 && std::max(left, right) <= available;
+    if (right > right_cue) return std::max(left, right) <= available;
   }
-  int needed = 1;
+  // A heading resets G1, so the cue after one has no generated suffix.
+  const int cue_lines = cue_line_count(elements[cue_index].text);
+  int needed = cue_lines;
   for (const auto& part : parts) needed += static_cast<int>(speech_lines(part).size());
   SpeechBreak split{};
-  return needed <= available || split_speech(parts, available - 1, split);
+  return needed <= available || split_speech(parts, available - cue_lines, split);
 }
 
 void transfer_styles(const Element& element, Line& line, std::size_t start) {
@@ -136,6 +153,22 @@ void transfer_styles(const Element& element, Line& line, std::size_t start) {
     const auto lo = std::max(start, style.start), hi = std::min(end, style.end);
     if (lo < hi) line.styles.push_back({lo - start, hi - start, style.style});
   }
+}
+
+// Cues and headings are shown uppercase (ASCII only, so byte offsets hold).
+std::vector<Element> displayed(const std::vector<Element>& elements) {
+  auto shown = elements;
+  for (auto& element : shown)
+    if (element.type == ElementType::cue || element.type == ElementType::heading)
+      for (auto& c : element.text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  return shown;
+}
+
+// Bytes of a typed continuation suffix at the end of an uppercased cue.
+std::size_t continuation_suffix(std::string_view cue) {
+  for (std::string_view suffix : {" (CONT’D)", " (CONT'D)"})
+    if (cue.ends_with(suffix)) return suffix.size();
+  return 0;
 }
 
 void discard_prefix(Element& element, std::size_t count) {
@@ -151,7 +184,8 @@ void discard_prefix(Element& element, std::size_t count) {
 }
 }
 
-DocumentLayout layout_document(const std::vector<Element>& elements) {
+DocumentLayout layout_document(const std::vector<Element>& input) {
+  const auto elements = displayed(input);
   std::vector<Line> result;
   int page = 1, slot = 0;
   std::string last_speaker;
@@ -204,12 +238,47 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
       continuation = true;
     }
   };
-  auto emit_cue = [&](const Element& element, const std::string& text, std::size_t source) {
-    result.push_back({page, ++slot, ElementType::cue, text});
-    transfer_styles(element, result.back(), 0);
-    if (source != no_source) set_source(result.back(), source, 0);
+  // A cue's lines, wrapped at width. Text past the source cue, such as a
+  // generated (CONT’D), is generated; it replaces the last typed_suffix
+  // source bytes.
+  auto cue_lines = [&](const Element& element, const std::string& text, std::size_t source, std::size_t typed_suffix,
+                       std::size_t width) {
+    const auto base = element.text.size() - typed_suffix;
+    auto texts = wrap(text, width);
+    if (texts.empty()) texts = {""};
+    std::vector<Line> lines;
+    std::size_t offset = 0, last_mapped = no_source;
+    for (const auto& line_text : texts) {
+      const auto pos = text.find(line_text, offset);
+      offset = pos + line_text.size();
+      lines.push_back({0, 0, ElementType::cue, line_text});
+      auto& line = lines.back();
+      transfer_styles(element, line, pos);
+      if (source == no_source || (pos >= base && !line_text.empty())) continue;
+      set_source(line, source, pos);
+      line.source_length = std::min(line.source_length, base - pos);
+      last_mapped = lines.size() - 1;
+    }
+    if (typed_suffix && last_mapped != no_source) {
+      lines[last_mapped].source_length = base - lines[last_mapped].source_offset;
+      lines[last_mapped].replaced_length = typed_suffix;
+    }
+    return lines;
   };
+  auto emit_cue = [&](const Element& element, const std::string& text, std::size_t source, std::size_t typed_suffix = 0) {
+    for (auto& line : cue_lines(element, text, source, typed_suffix, cue_width)) {
+      line.page = page; line.slot = ++slot;
+      result.push_back(std::move(line));
+    }
+  };
+  // State before each element, so a transition that does not fit can resume
+  // from the element it moves instead of laying out the document again.
+  struct Resume { std::size_t lines; int page, slot; std::string last_speaker; bool interrupted; };
+  std::vector<Resume> resume(elements.size());
+  std::vector<bool> break_before(elements.size());
+  std::vector<std::size_t> dual_starts(elements.size(), no_source);
   for (std::size_t index = 0; index < elements.size(); ++index) {
+    resume[index] = {result.size(), page, slot, last_speaker, interrupted};
     const auto& element = elements[index];
     if (element.type == ElementType::title || element.type == ElementType::credit || element.type == ElementType::author ||
         element.type == ElementType::source || element.type == ElementType::contact || element.type == ElementType::draft_date) continue;
@@ -220,6 +289,7 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
                               element.type == ElementType::centered ? 60 :
                               element.type == ElementType::transition ? 56 : 61;
     auto lines = wrap(element.text, width);
+    if (lines.empty()) lines = {""};  // An element without text keeps one blank slot.
     if (element.type == ElementType::cue) {
       std::vector<Element> parts;
       std::vector<std::size_t> part_sources, part_bases;
@@ -228,27 +298,39 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
         part_sources.push_back(end); part_bases.push_back(0);
         parts.push_back(elements[end++]);
       }
-      if (parts.empty()) throw std::runtime_error("cue without speech is not supported");
-      if (element.dual_right) throw std::runtime_error("dual dialogue has no left speech");
+      // A right cue reached here has no left speech, so it is an ordinary cue.
       auto speaker = [](const std::string& cue) { return cue.substr(0, cue.find(" (")); };
       auto continuation_cue = [](std::string cue) {
-        for (std::string_view suffix : {" (CONT’D)", " (CONT'D)"})
-          if (cue.ends_with(suffix)) { cue.erase(cue.size() - suffix.size()); break; }
+        cue.erase(cue.size() - continuation_suffix(cue));
         return cue + " (CONT’D)";
       };
-      const std::string cue_text = interrupted && speaker(element.text) == last_speaker ? continuation_cue(element.text) : element.text;
-      if (end < elements.size() && elements[end].type == ElementType::cue && elements[end].dual_right) {
-        const auto& right = elements[end];
-        std::size_t after = end + 1;
-        std::vector<Element> right_parts;
+      // G1 replaces a typed continuation suffix rather than doubling it.
+      const bool g1 = interrupted && speaker(element.text) == last_speaker;
+      const std::string cue_text = g1 ? continuation_cue(element.text) : element.text;
+      const std::size_t typed_suffix = g1 ? continuation_suffix(element.text) : 0;
+      if (parts.empty()) {
+        // A cue without speech yet stands alone and moves whole.
+        const int needed = cue_line_count(cue_text);
+        if (needed > page_slots) throw std::runtime_error("cue without speech exceeds one page");
+        int gap = slot ? 1 : 0;
+        if (slot + gap + needed > page_slots) { next_page(); gap = 0; }
+        slot += gap;
+        emit_cue(element, cue_text, index, typed_suffix);
+        last_speaker = speaker(element.text); interrupted = false;
+        continue;
+      }
+      std::size_t after = end + 1;
+      std::vector<Element> right_parts;
+      if (end < elements.size() && elements[end].type == ElementType::cue && elements[end].dual_right)
         while (after < elements.size() && (elements[after].type == ElementType::dialogue || elements[after].type == ElementType::parenthetical))
           right_parts.push_back(elements[after++]);
-        if (right_parts.empty()) throw std::runtime_error("dual dialogue has no right speech");
+      // A right cue without speech is laid out after this speech, not as dual.
+      if (!right_parts.empty()) {
+        dual_starts[end] = index;
+        const auto& right = elements[end];
         // Speech parts directly follow their cue in the input.
-        auto column = [&](std::size_t cue_source, const std::string& cue, const std::vector<Element>& speech) {
-          std::vector<Line> out{{0, 0, ElementType::cue, cue}};
-          transfer_styles(elements[cue_source], out.back(), 0);
-          set_source(out.back(), cue_source, 0);
+        auto column = [&](std::size_t cue_source, const std::string& cue, std::size_t suffix, const std::vector<Element>& speech) {
+          auto out = cue_lines(elements[cue_source], cue, cue_source, suffix, dual_cue_width);
           for (std::size_t k = 0; k < speech.size(); ++k) {
             const auto& part = speech[k];
             std::size_t offset = 0;
@@ -264,8 +346,8 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
           }
           return out;
         };
-        const auto left_lines = column(index, cue_text, parts);
-        const auto right_lines = column(end, right.text, right_parts);
+        const auto left_lines = column(index, cue_text, typed_suffix, parts);
+        const auto right_lines = column(end, right.text, 0, right_parts);
         const auto height = std::max(left_lines.size(), right_lines.size());
         if (height > page_slots) throw std::runtime_error("dual dialogue exceeds one page");
         int gap = slot ? 1 : 0;
@@ -283,20 +365,22 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
       bool continued = false;
       while (!parts.empty()) {
         int gap = slot ? 1 : 0;
-        int needed = 1;
+        const auto shown_cue = continued ? continuation_cue(element.text) : cue_text;
+        const int cue_lines = cue_line_count(shown_cue);
+        int needed = cue_lines;
         for (const auto& part : parts) needed += static_cast<int>(speech_lines(part).size());
         const int available = page_slots - slot - gap;
         if (needed <= available) {
           slot += gap;
-          emit_cue(element, continued ? continuation_cue(element.text) : cue_text, continued ? no_source : index);
+          emit_cue(element, shown_cue, continued ? no_source : index, continued ? 0 : typed_suffix);
           for (std::size_t i = 0; i < parts.size(); ++i)
             emit_styled(parts[i], speech_lines(parts[i]), part_sources[i], 0, part_bases[i]);
           break;
         }
         SpeechBreak split{};
-        if (split_speech(parts, available - 1, split)) {
+        if (split_speech(parts, available - cue_lines, split)) {
           slot += gap;
-          emit_cue(element, continued ? continuation_cue(element.text) : cue_text, continued ? no_source : index);
+          emit_cue(element, shown_cue, continued ? no_source : index, continued ? 0 : typed_suffix);
           for (std::size_t i = 0; i < split.part; ++i)
             emit_styled(parts[i], speech_lines(parts[i]), part_sources[i], 0, part_bases[i]);
           auto& part = parts[split.part];
@@ -354,6 +438,13 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
       if (!last_speaker.empty()) interrupted = true;
       std::string_view remaining = element.text;
       bool continuation = false;
+      if (remaining.find_first_not_of(' ') == std::string_view::npos) {
+        int gap = slot ? 1 : 0;
+        if (slot + gap + 1 > page_slots) { next_page(); gap = 0; }
+        slot += gap;
+        emit_styled(element, lines, index);
+        remaining = {};
+      }
       while (!remaining.empty()) {
         const int gap = slot && !continuation ? 1 : 0;
         const int available = page_slots - slot - gap;
@@ -390,26 +481,46 @@ DocumentLayout layout_document(const std::vector<Element>& elements) {
     }
     if (element.type == ElementType::transition && slot + (slot ? 1 : 0) + static_cast<int>(lines.size()) > page_slots) {
       if (index == 0) throw std::runtime_error("transition cannot start a page");
+      auto speech_part = [&](std::size_t at) {
+        return !break_before[at] && (elements[at].type == ElementType::dialogue || elements[at].type == ElementType::parenthetical);
+      };
       std::size_t start = index - 1;
-      while (start && (elements[start].type == ElementType::dialogue || elements[start].type == ElementType::parenthetical)) --start;
-      if (elements[start].type == ElementType::cue && elements[start].dual_right && start) {
-        --start;
-        while (start && (elements[start].type == ElementType::dialogue || elements[start].type == ElementType::parenthetical)) --start;
-      }
+      while (start && speech_part(start)) --start;
+      // Only an actual right column belongs to the preceding speech. An
+      // unpaired right cue is ordinary, including during this retry.
+      if (dual_starts[start] != no_source && !break_before[start]) start = dual_starts[start];
       // Keep the preceding heading attached when moving a scene's first element.
-      if (start && elements[start - 1].type == ElementType::heading) --start;
-      if (!start || elements[start - 1].type == ElementType::page_break)
+      if (start && !break_before[start] && elements[start - 1].type == ElementType::heading) --start;
+      if (!start || break_before[start] || elements[start - 1].type == ElementType::page_break)
         throw std::runtime_error("transition cannot fit with preceding element");
-      auto retry = elements;
-      retry.insert(retry.begin() + static_cast<std::ptrdiff_t>(start), {ElementType::page_break, ""});
-      // The inserted break shifts later input indexes by one.
-      auto retried = layout_document(retry);
-      for (auto& line : retried.lines) if (line.source != no_source && line.source > start) --line.source;
-      return retried;
+      // Resume as if a manual break preceded the moved element.
+      break_before[start] = true;
+      const auto& state = resume[start];
+      result.resize(state.lines);
+      page = state.page; slot = state.slot; last_speaker = state.last_speaker; interrupted = state.interrupted;
+      next_page();
+      index = start - 1;
+      continue;
     }
-    const int gap = slot == 0 || in_speech ? 0 : 1;
+    if (in_speech) {
+      // Speech parts reach here only without a cue. They keep the speech's
+      // spacing and move whole.
+      std::size_t run_end = index;
+      int needed = 0;
+      for (; run_end < elements.size() && (elements[run_end].type == ElementType::dialogue ||
+                                           elements[run_end].type == ElementType::parenthetical); ++run_end)
+        needed += static_cast<int>(speech_lines(elements[run_end]).size());
+      if (needed > page_slots) throw std::runtime_error("speech without a cue exceeds one page");
+      int gap = slot ? 1 : 0;
+      if (slot + gap + needed > page_slots) { next_page(); gap = 0; }
+      slot += gap;
+      for (; index < run_end; ++index) emit_styled(elements[index], speech_lines(elements[index]), index);
+      --index;
+      continue;
+    }
+    const int gap = slot == 0 ? 0 : 1;
     if (slot + gap + static_cast<int>(lines.size()) > page_slots)
-      throw std::runtime_error("speech pagination is not implemented");
+      throw std::runtime_error("element does not fit on an empty page");
     slot += gap;
     emit_styled(element, lines, index);
   }

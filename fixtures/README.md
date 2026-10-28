@@ -26,7 +26,10 @@ How Apollo should pass:
 3. Map each line's x position to an element through the profile.
 4. Require an exact match on page, slot, element, and text.
 
-The spike also compares the editor's own line dump with the same expectations.
+The spike also compares the editor's own line dump with the same expectations:
+`tests/editor_tests.cpp` places every fixture line in the offscreen editor, and
+`tests/editor_pdf_tests.py` requires the editor's dump to equal each fixture
+PDF's lines (see [spike progress](../docs/spike-progress.md#editor-brief-step-5)).
 
 ### Current PDF checks
 
@@ -36,8 +39,8 @@ profile columns; require Letter size and embedded Courier Prime with Unicode
 mapping; inspect bold/italic text and a rasterized underline; and cover title
 exclusion, mixed faces/Unicode, blank manual-break pages, and export failures.
 Both generated workloads are recreated in the build directory and their PDF
-lines compared with the engine. These are engine/PDF checks; no editor exists
-yet. The `.expected` files remain unchanged.
+lines compared with the engine. The editor/PDF checks run separately, in
+`build/*/editor-pdf-tests/`. The `.expected` files remain unchanged.
 
 Artifacts are in `build/release/pdf-tests/` (or `build/debug/pdf-tests/`). To
 export or inspect one directly:
