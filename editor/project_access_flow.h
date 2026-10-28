@@ -39,6 +39,7 @@ class ProjectAccessFlow : public QObject {
   Q_PROPERTY(bool leaveFailed READ leave_failed NOTIFY changed)
   Q_PROPERTY(bool intakePreview READ intake_preview NOTIFY changed)
   Q_PROPERTY(bool intakeActive READ intake_active NOTIFY changed)
+  Q_PROPERTY(bool intakeInterpreted READ intake_interpreted NOTIFY changed)
   Q_PROPERTY(QString intakeSummary READ intake_summary NOTIFY changed)
   Q_PROPERTY(QString intakeSource READ intake_source NOTIFY changed)
   Q_PROPERTY(QVariantList intakeFindings READ intake_findings NOTIFY changed)
@@ -56,6 +57,7 @@ public:
   Q_INVOKABLE void keep_writing();
   Q_INVOKABLE void preview_import(const QString& path);
   Q_INVOKABLE void publish_import(const QString& parent, const QString& name);
+  Q_INVOKABLE void interpret_import(const QString& parent, const QString& name);
   Q_INVOKABLE QUrl folder_url(const QString& path) const;
   Q_INVOKABLE QString local_folder(const QUrl& url) const;
   bool busy() const { return busy_; }
@@ -69,8 +71,9 @@ public:
   QString default_location() const { return default_location_; }
   bool leaving() const { return leaving_; }
   bool leave_failed() const { return leave_failed_; }
-  bool intake_preview() const { return intake_ && !review_session_; }
-  bool intake_active() const { return review_session_ != nullptr; }
+  bool intake_preview() const { return intake_ && !intake_active(); }
+  bool intake_active() const { return review_session_ != nullptr || publishing_reader_; }
+  bool intake_interpreted() const;
   QString intake_summary() const { return intake_ ? intake_->summary : QString(); }
   QString intake_source() const { return intake_ ? intake_->source_view : QString(); }
   QVariantList intake_findings() const { return intake_ ? intake_->findings : QVariantList(); }
@@ -97,6 +100,7 @@ private:
   void finish_leave();
   void update_notice();
   void show_intake();
+  void publish_import_impl(const QString& parent, const QString& name, bool interpret);
   void install_intake(std::unique_ptr<source::ProjectSession> session, source::FountainIntake intake);
   QQuickView& view_;
   QFont font_;
@@ -107,6 +111,7 @@ private:
   std::optional<ResumeState> resume_;
   std::unique_ptr<source::ProjectAccess> access_;
   std::unique_ptr<source::ProjectSession> review_session_;
+  bool publishing_reader_ = false;
   std::optional<source::FountainIntake> intake_;
   std::unique_ptr<QTextDocument> document_;
   std::unique_ptr<Autosaver> saver_;

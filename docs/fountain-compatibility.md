@@ -33,6 +33,87 @@ No notes/stash are declared converted and no editable round-trip promise is made
 The existing unsaved Fountain spike tools remain limited research/instrumentation
 paths; they do not become the new project import workflow.
 
+**2.6b now has two implemented reviewable subtasks: located interpretations and
+explicit interpretation copies.** `source/fountain_conversion.*` derives a
+versioned screenplay interpretation, named read-only note/stash records,
+organization/metadata associations, unresolved ranges and separate layout
+limitations. `fixtures/import/interpretations.expected.json` contains hand-worked
+complete element/text/dual expectations for every official sample and the
+independent original example. These are semantic expectations, not layout
+oracles. The interpretation reader replaces candidate hints with types, named
+records and exact diagnostics when viewing the new version.
+
+The result is still an **interpretation review**, not editable import acceptance.
+No imported project enters the writer yet: even a source with no syntax errors
+has not passed the independent edit/save/reopen/Fountain-export gate, and the
+existing layout cannot faithfully represent all imported breaks/spacing/case.
+The stored output policy and actual project paths block editing and both clean
+exports. The limited spike CLI paths retain their explicit research scope.
+
+### Conversion revision 1 and migration
+
+- Element envelopes and contributing text slices use zero-based half-open
+  original byte ranges, including any BOM/CRLF; one-based first/last occupied
+  lines accompany them. Normalized text uses LF for authored breaks. Emphasis
+  spans use the existing byte-in-memory/code-point-on-disk contract. Source
+  slices describe contributing runs before emphasis decoding; they are not a
+  per-character editor cursor map. Element envelopes locate normalized breaks.
+- Notes and stash retain the exact UTF-8 interior text, including CRLF and
+  spaces, with deterministic names (`Imported note 1 (line N)`), independent
+  record IDs and source anchors. Anchors prefer a containing/preceding body
+  element, or the following body element for leading material; byte provenance
+  remains authoritative. Notes/stash are outside screenplay elements.
+- Sections retain depth and the nearest preceding shallower section as parent,
+  including skipped levels. Synopses anchor to the latest section or scene.
+  Scene numbers retain exact values and heading IDs. Unknown title fields
+  retain the whole field/continuations with their key and source range. None
+  of these are silently turned into printed acts or screenplay text.
+- Complete notes stop at a paragraph boundary unless a blank line contains at
+  least two literal spaces. Unclosed notes quarantine only that paragraph;
+  unclosed boneyards quarantine to EOF. Nested delimiters, orphan/escaped
+  delimiters, invalid encoding/control characters, crossing/unsupported emphasis,
+  unpaired duals and ambiguous opening title keys have located unresolved
+  records. Known unmatched emphasis stays literal. Literal fallback text and
+  incomplete relationships may appear in the interpretation, with output blocked.
+  Crossing, unequal delimiter runs and intraword emphasis are conservatively
+  reported with literal text; this is a tested subset of Markdown emphasis.
+- The older sample's `I./E.` spelling is retained as action with a diagnostic;
+  it is not silently accepted as a published heading prefix. Lyrics within
+  speech retain lyric elements but flag the missing source-v1 speech relationship.
+  Forced headings require a single dot directly followed by an alphanumeric.
+- Action tabs/spacing, extra blank lines, authored case and deliberate breaks
+  remain preserved in source and/or interpreted text, with located layout
+  limitations. This does not establish faithful PDF layout or glyph coverage.
+- Revision 1 is bounded to **1 MiB / 100,000 source lines**. Larger intakes keep
+  their full original (up to the unchanged 16 MiB intake limit) and get one
+  unresolved whole-source `conversion-limit` range. Interpretation metadata is
+  bounded to 64 MiB at publication/reopen, without truncating stored records.
+  The UI caps its display list at 200 and labels clipped excerpts; stored data
+  and complete original are independent of that display cap.
+
+Migration is explicit **Interpret in a New Copy**, available from a preview or
+an existing review-only reader. It writes a new staged project with a fresh
+identity; it never upgrades an existing project in place. Existing readers
+first revalidate their locked project and retained evidence. Failure keeps the
+old reader/lock/session state; success opens the new verified review copy. An
+activation failure retains the published copy/path for inspection. The external
+file is not reread during this operation. The CLI equivalent for a new capture
+is `apollo_editor NEW_PROJECT --interpret-fountain FILE`; an existing destination
+is refused. `--retain-fountain` continues to create the older intake version.
+
+Project manifest v2 `import-review` remains the mode. Intake metadata v1 remains
+unchanged/readable. New copies use metadata v2 `interpreted-review`, embed the
+complete conversion revision 1, and carry the original bytes, origin, length and
+SHA-256 unchanged. Reopen validates the evidence and compares the complete stored
+interpretation against the frozen revision-1 converter. Unknown/newer fields or
+revisions are refused; an older 2.6a build refuses metadata v2 instead of dropping
+it. Copy/recovery retains both assets. Future converter revisions must preserve
+the old reader/algorithm or explicitly require a new build, and migrate through
+another copy. Manually changing a version, permission flag or stored result
+never grants editable access. The frozen revision includes stored names,
+diagnostic wording and output policy; changing those also requires revision
+dispatch rather than invalidating existing interpretation copies.
+
 ## Compatibility table
 
 The target column records the agreed milestone obligation plus selected canonical
@@ -94,10 +175,16 @@ These are intake assertions, not layout or complete parser acceptance.
 
 ## Remaining subtasks and acceptance
 
-- **2.6b:** implement a located conversion model, named note/stash records and
-  metadata associations; supported screenplay conversion and precise unresolved
-  ranges. Keep original bytes immutable. Replace candidate hints with tested
-  interpretations. Choose a migration from review-only projects explicitly.
+- **2.6b.1 / 2.6b.2 implemented:** located conversion model, named note/stash,
+  metadata associations, hand-checked corpus interpretations, precise unresolved
+  ranges and explicit new-copy migration/reader. Original bytes stay immutable.
+  This begins 2.6b; it does not declare the full Fountain grammar complete.
+- **2.6b remaining:** extend semantic coverage for syntax outside the exercised
+  corpus and resolve diagnostics through an explicit correction workflow.
+  Reassess the conservative conversion limits using measured realistic inputs.
+  Editable activation requires a separately tested preservation contract for
+  edits and imported associations, plus the authoring/layout work below. Keep
+  the gate closed until that evidence exists.
 - **2.6c / slice 3:** complete authoring/layout contracts, title form, case,
   spacing and deliberate breaks; expose unresolved imported material in context.
 - **Slice 3/5 compatibility gate:** canonical Fountain serializer, independent

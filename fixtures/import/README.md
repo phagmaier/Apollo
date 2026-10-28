@@ -27,3 +27,15 @@ Task 2.6a only verifies exact-byte intake, provenance/review hints, immutable
 reopen and output refusal. It does **not** claim these editable conversion
 expectations pass. `fountain_intake_tests` exercises those storage contracts;
 the compatibility table tracks the remaining conversion/export work.
+
+Task 2.6b's `interpretations.expected.json` makes the hand-worked text/type/dual
+expectations executable for this example and all 16 official parser samples.
+The expected element sequences are written from the source examples and
+[official syntax](https://fountain.io/syntax/), independently of Apollo's parser
+output. `fountain_conversion_tests` compares whole sequences, retained record
+counts and unresolved codes; focused examples independently check styles,
+byte/code-point locations, record text and associations. The legacy `I./E.`
+heading and lyrics within speech have explicit unresolved expectations, rather
+than being waved through as supported. This tests interpretations, not PDF
+layout or a Fountain import/export round-trip. The original whitespace-only
+dialogue line and trailing transition spaces are intentional test data.

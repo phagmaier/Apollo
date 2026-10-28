@@ -336,8 +336,10 @@ milestone includes all slices; an earlier slice is not the usable writing build.
   failure paths, release/sanitizer/engine checks and review pass as recorded below.
 - **2.6 — Fountain import and imported-material reader (partial).** The
   compatibility investigation scoped completed 2.6a to lossless intake and read-only review;
-  complete editable conversion, named notes/stash and export compatibility are
-  still pending. See [compatibility table](fountain-compatibility.md).
+  initial 2.6b now adds located interpretations, named read-only notes/stash,
+  retained metadata and explicit new-copy migration. Full grammar coverage,
+  correction/editable activation and export compatibility remain pending.
+  See [compatibility table](fountain-compatibility.md).
 - Remaining slice 2 work is pending: stale temporary cleanup and focusing another
   process's existing window. Archive/delete and broader library lifecycle remain
   deferred milestone boundaries as described above.
@@ -590,7 +592,7 @@ in `build/wayland-check-20261028-154102-SQSGlu/`; actual executable logs are in
 The sandbox's uv cache needs `UV_CACHE_DIR=/tmp/apollo-uv-cache`; no tool/font
 pins or dependencies were changed.
 
-Remaining **2.6** work: semantic conversion and precise unresolved ranges,
+At the **2.6a checkpoint**, remaining **2.6** work was semantic conversion and precise unresolved ranges,
 named read-only converted notes/stash and metadata associations, migration from
 review-only intake, correction/editing access, output-specific diagnostics,
 canonical Fountain serialization and independent edited semantic round-trip.
@@ -604,6 +606,68 @@ No deterministic simultaneous input-file mutation during its read, kill during
 staging/publication, new representative import performance, physical-input
 latency, leak detection or power-loss guarantee is established. Existing
 copying/crash-loss and I/O-contention limits remain unchanged.
+
+### Initial task 2.6b evidence and review
+
+Implemented two bounded subtasks: **2.6b.1 located interpretation model** and
+**2.6b.2 explicit interpretation-copy migration/reader**. This begins 2.6b;
+it does not close the complete editable Fountain compatibility gate. The
+contract and remaining work are in
+[fountain-compatibility.md](fountain-compatibility.md#conversion-revision-1-and-migration)
+and [source-format.md](source-format.md#located-interpretation-copies-initial-task-26b).
+
+The model retains immutable original bytes and evidence, complete located
+screenplay interpretations, deterministic named read-only note/stash entries,
+section hierarchy, synopsis/scene-number associations and unknown title fields.
+Precise unresolved ranges are separate from rendering/authoring limitations.
+An explicit new staged project copy with a fresh identity is the only migration;
+the previous review-only project is never rewritten. Publication failure retains
+the original reader and lock. Activation verifies the published interpretation
+against the reviewed snapshot. Metadata v1 remains readable, metadata v2 embeds
+the frozen revision-1 interpretation, and older/newer/altered data cannot silently
+gain editable access. Both clean exports and writer access remain blocked.
+
+| Check | Result |
+| --- | --- |
+| Independent semantics | `fountain_conversion_tests` 33/33: complete type/text/dual expectations for all 16 official samples plus the independent original example; explicit unresolved expectations for the legacy heading spelling and lyric/speech relationship |
+| Located preservation | Exact note/stash interior text and CRLF, named records/anchors, unknown metadata, section hierarchy including skipped levels, scene numbers, Unicode/non-BMP styles and independent byte/code-point expectations, deliberate/empty dialogue lines, optional/multiline title fields |
+| Ambiguity and bounds | Paragraph-bounded unclosed notes, nested/orphan/escaped delimiters, unclosed stash, controls/invalid UTF-8, unequal/crossing/intraword emphasis, unpaired/space-disambiguated duals, empty cues, malformed production numbers and bare unknown title keys; stored data survives the independent UI cap and conversion limit |
+| Integrity/migration | Original project/assets remain unchanged; new identity and complete verified reopen; read-only save refusal; recovery package retains interpretation; changed ranges, records, screenplay, output permissions, unknown fields and newer revisions are refused |
+| Real app/executable | Project-flow suite 26/26; interpretation-copy controls exercise failed publication, retained original lock, successful activation/resume, plain note text, unresolved access and changed-original refusal. Actual executable creates/reopens/SIGKILL-resumes both metadata versions; Python independently checks bytes, hash, content, identity and blocked editing/PDF paths |
+| Required suites | Full release 20/20, ASan/UBSan 20/20 with default leak detection, engine-only 2/2. Following final review corrections, rebuilt related release checks pass 9/9 and sanitizer checks 8/8; the latter cover source/recovery/creation/access, both Fountain suites, actual intake processes and real QML migration |
+| Native/independent layout | Native Wayland project flows 26/26, with final focused migration/refusal cases 4/4 including setup/cleanup. Academy comparison passes with its four existing documented deviations; required full suites retain the independent layout/PDF fixtures |
+
+Direct review covered the converter against the independent expectations, source
+offsets and normalized text, stored schema/integrity, original preservation,
+copy/failure/activation ownership and test necessity. It corrected skipped-level
+section parenting and tightened unsupported emphasis/dual interpretations. Reader
+state is cached from worker validation, avoiding metadata JSON parsing on GUI
+property reads; moving session ownership on the GUI thread avoids a reader/
+worker teardown race. A final focused regression reproduced an empty forced cue
+incorrectly located at byte zero; it now points to its actual source row. The
+regression fails before the correction and passes afterward. No remaining
+concrete in-scope finding was identified. The interpretation reader screenshot
+was visually inspected.
+
+Logs: `build/task-2.6b-{release,debug,engine,native,academy}.log`,
+`build/task-2.6b-final-{related,debug-related,native}.log`, and
+`build/task-2.6b-range-red.log`. The intermediate final-release rerun was
+interrupted when the agent rebuilt the executable during a crash-harness launch
+(`PermissionError`); the completed-binary crash rerun and final related suites
+pass. That interruption was a verification orchestration error, not a failed
+save. Process artifacts are in `build/{release,debug}/intake-process-tests/`;
+the reader capture is `build/release/project-access-tests/import-interpreted.png`.
+
+Remaining: fuller grammar/emphasis and boundary-interaction coverage, explicit
+correction/resolution UI, editable preservation of imported associations, slice
+3 authoring/layout/font/case/CONT'D contracts, canonical Fountain serialization,
+independent import → edit → save/reopen → export semantics, and output-specific
+release gates. No imported writer access is claimed, even when unresolved count
+is zero. Revision 1 interpretation is limited to 1 MiB / 100,000 source lines;
+larger retained intakes get a whole-source unresolved range. No new realistic
+import performance, physical-input latency, power-loss, staging-kill or
+simultaneous-source-mutation guarantee is established. Native controls use
+synthetic Qt input and software rendering, not a new comfort/latency acceptance.
 
 ### Slice 1 result (done 2026-10-28)
 
@@ -720,3 +784,11 @@ against these requirements. Technical validation and tests remain work to do;
 completion of the plan is not completion of those checks. Raise any newly
 discovered consequential product question rather than silently settling it in
 code. Current implementation progress and the remaining scope are recorded above.
+
+Finalization recheck: all 20 release checks pass across
+`build/task-2.6b-commit-release.log` and `build/task-2.6b-commit-retry.log`.
+The first run could not write uv’s default cache inside this sandbox; the six
+affected Python checks passed with `UV_CACHE_DIR=/tmp/apollo-uv-cache`.
+The previously recorded sanitizer, engine, native and Academy evidence remains
+applicable to this unchanged checkpoint. Direct final review found no additional
+concrete in-scope defect.

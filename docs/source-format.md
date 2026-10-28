@@ -1,7 +1,8 @@
-# Apollo source format and saving (editable v1; review-only v2)
+# Apollo source format and saving (editable v1; review-only manifest v2)
 
 2026-10-28. Status: implemented in [writing-build-plan](writing-build-plan.md)
-slice 1 and slice 2 tasks 2.1–2.5, plus bounded import intake 2.6a. This is the
+slice 1 and slice 2 tasks 2.1–2.5, bounded import intake 2.6a, and the initial
+located interpretation/copy workflow 2.6b. This is the
 working contract for the first usable writing build, not yet a long-term compatibility promise: later slices may add files or fields
 under a new format version. The owner chose a portable project folder with
 versioned structured text; the details below are agent engineering choices.
@@ -11,12 +12,13 @@ file replacement), `source/recovery.*` (recovery packages),
 `source/project_access.*` (safe open/recovery decisions),
 `source/project_creation.*` (named staged creation),
 `source/fountain_intake.*` (lossless intake, integrity and review hints),
+`source/fountain_conversion.*` (located interpretations and retained records),
 `editor/project_access_flow.*` (home/open/recovery and writer transitions),
 `editor/project_library.*` (app-local recents),
 `editor/session_state.*` (app-local resume), `editor/screenplay_layout.cpp`
 (Qt document adapter), and `editor/autosave.*` (saving).
 Tests include `source_tests`, `autosave_tests`, `recovery_tests`,
-`project_creation_tests`, `fountain_intake_tests`, `fountain_intake_process_tests.py`,
+`project_creation_tests`, `fountain_intake_tests`, `fountain_conversion_tests`, `fountain_intake_process_tests.py`,
 `project_library_tests`, `project_access_tests`,
 `session_state_tests`, `project_access_flow_tests`, `autosave_crash_tests.py`,
 `project_lock_tests.py`, and `project_access_process_tests.py`.
@@ -882,3 +884,59 @@ Full conversion, note/stash naming, correction, editing, canonical Fountain
 serialization and independent semantic round-trip remain incomplete. No new
 representative performance, physical-input, power-loss or import interruption
 loss bound is claimed.
+
+### Located interpretation copies (initial task 2.6b)
+
+The preceding 2.6a section describes metadata v1. Explicit **Interpret in a New
+Copy** creates a fresh review-only project with intake metadata v2. It never
+rewrites a v1 intake or changes its identity. A validated snapshot is retained
+even when the external file is later changed/deleted. The prior project is
+revalidated before a reader migration; failures keep its reader and lock.
+Publication/activation follows the same staged no-replace and reviewed-assets
+comparison as intake. `--interpret-fountain FILE` captures directly into a new
+destination; `--retain-fountain FILE` keeps its v1 behavior.
+
+Metadata v2 has exactly the six v1 keys plus `conversion`; `version` is `2` and
+`status` is `interpreted-review`. The original bytes, origin, length and SHA-256
+stay unchanged. `conversion` contains exactly:
+
+| Key | Contract |
+| --- | --- |
+| `revision` | Converter revision `1`; newer revisions are refused |
+| `screenplay` | Embedded source-v1 screenplay at revision 0, with deterministic `fN` IDs; title fields, authored case/text, emphasis, deliberate breaks and unambiguous dual flags |
+| `locations` | One entry per interpreted element: `id`, original envelope `range`, and contributing `textSources` runs before emphasis decoding |
+| `retained` | Named records with `id`, `kind`, `name`, `text`, `key`, `anchor`, `parent`, `depth`, `range`; kinds `note`, `stash`, `section`, `synopsis`, `titleMetadata`, `sceneNumber`, `spacing` |
+| `unresolved` | Complete array of `code`, `message`, `range` records, separate from layout limitations |
+| `limitations` | Located authoring/rendering gaps that prevent claiming faithful layout, even for recognized syntax |
+| `editable`, `fountainExport`, `pdfExport` | All `false`; no syntax-error count can enable these paths |
+| `outputReason` | Explicit review-only/output-blocking and future retained-data omission disclosure |
+
+Every `range` has `startByte`, `endByte`, `firstLine`, `lastLine`. Byte offsets are
+zero-based, half-open, into the immutable original including BOM/CRLF. Lines are
+one-based and include the last occupied byte; an empty range points to its
+insertion line. Contributing runs exclude removed notes/delimiters/indentation;
+element envelopes locate normalized separators. They do not yet map cursor
+positions after edits. Notes/stash store exact interior UTF-8 text and source
+ranges; section hierarchy, synopsis/scene-number associations and unknown title
+fields remain outside the screenplay. The complete provenance/interpretation
+rules and conservative limits are in
+[fountain-compatibility.md](fountain-compatibility.md#conversion-revision-1-and-migration).
+
+The project manifest remains v2 `import-review`, and `screenplay.json` remains
+the empty revision-0 placeholder required by that mode. The embedded
+interpretation is never silently substituted into the writer or PDF snapshot.
+Assets are immutable during a reader session and copied into recovery packages.
+Metadata is now bounded to **64 MiB** at publication/reopen, original to **16 MiB**;
+the converter separately bounds interpretation work to **1 MiB / 100,000 lines**.
+Larger sources receive an unresolved whole-source range without dropping bytes.
+Display lists/excerpts are bounded independently and do not truncate stored data.
+
+Reopen validates metadata/evidence first, then recomputes and compares the entire
+stored conversion using the frozen revision-1 algorithm. Edited records/ranges,
+missing keys, unknown fields, changed original bytes and fabricated output
+permissions are refused. Newer algorithms require version dispatch and explicit
+new-copy migration; they must not silently reinterpret old projects. A 2.6a-only
+build rejects v2 metadata. This is a conservative read-only checkpoint; correction
+UI, editable association preservation, complete grammar, canonical Fountain
+serialization, independent post-edit semantic round-trip, faithful layout/font
+diagnostics and production export remain pending.

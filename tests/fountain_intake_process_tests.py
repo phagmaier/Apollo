@@ -79,6 +79,34 @@ def main():
         print("actual CLI intake → explicit reopen → SIGKILL → resume retains byte-exact original and metadata")
         print("editing/layout/export instrumentation and collisions are refused without changing evidence")
 
+        old_evidence = evidence
+        old_project = project
+        project = root / "interpreted"
+        result = subprocess.run([str(editor), str(project), "--interpret-fountain", str(source)], env=env,
+                                capture_output=True, text=True, timeout=15)
+        assert result.returncode == 0, result.stderr
+        metadata = json.loads((project / "imported-material.json").read_bytes())
+        assert metadata["version"] == 2 and metadata["status"] == "interpreted-review"
+        assert metadata["sha256"] == hashlib.sha256(original).hexdigest()
+        model = metadata["conversion"]
+        assert not model["editable"] and not model["fountainExport"] and not model["pdfExport"]
+        assert model["screenplay"]["elements"][0]["text"] == "A line. "
+        assert [(r["kind"], r["text"]) for r in model["retained"]] == [("note", "note"), ("stash", "omitted")]
+        identity = json.loads((project / "project.json").read_bytes())["id"]
+        assert identity != json.loads((old_project / "project.json").read_bytes())["id"]
+        seed = seed | {"directory": str(project), "projectId": identity}
+        evidence = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+        launch("interpreted-explicit", project)
+        launch("interpreted-resume")
+        for options in (("--check",), ("--snapshot", str(root / "blocked"))):
+            result = subprocess.run([str(editor), str(project), *options], env=env, capture_output=True, text=True, timeout=15)
+            assert result.returncode != 0 and "review-only" in result.stderr
+        assert not (root / "blocked/editor.pdf").exists()
+        assert {path: path.read_bytes() for path in old_evidence} == old_evidence
+        assert {path: path.read_bytes() for path in evidence} == evidence
+        assert (project / "imports/original.fountain").read_bytes() == original
+        print("versioned interpretation → reopen → SIGKILL → resume preserves both projects; export stays blocked")
+
 
 if __name__ == "__main__":
     main()

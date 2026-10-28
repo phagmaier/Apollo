@@ -1,4 +1,5 @@
 #include "editor/project_access_flow.h"
+#include "source/fountain_conversion.h"
 #include "editor/autosave.h"
 #include "editor/editor_view.h"
 #include "editor/pdf_export_job.h"
@@ -139,22 +140,46 @@ void ProjectAccessFlow::preview_import(const QString& path) {
 }
 
 void ProjectAccessFlow::publish_import(const QString& parent, const QString& name) {
-  if (busy_ || document_ || review_session_ || !intake_) return;
+  if (review_session_) return;
+  publish_import_impl(parent, name, false);
+}
+bool ProjectAccessFlow::intake_interpreted() const {
+  return intake_ && intake_->interpreted;
+}
+void ProjectAccessFlow::interpret_import(const QString& parent, const QString& name) {
+  publish_import_impl(parent, name, true);
+}
+void ProjectAccessFlow::publish_import_impl(const QString& parent, const QString& name, bool interpret) {
+  if (busy_ || document_ || !intake_) return;
+  // Move ownership on the GUI thread; QML never observes a pointer being reset
+  // by the worker. Failure returns the original locked reader unchanged.
+  publishing_reader_ = review_session_ != nullptr;
+  auto reader = std::move(review_session_);
   busy_ = true; error_.clear(); emit changed();
-  launch([this, parent, name, assets = intake_->assets] {
+  launch([this, parent, name, interpret, assets = intake_->assets, reader = std::move(reader)]() mutable {
     std::optional<source::Project> project;
     QString failure;
-    try { project = source::create_named_project(parent, name, {0, {{ElementType::action, ""}}}, assets); }
+    try {
+      if (reader) {
+        reader->check_destination();
+        if (source::open_project(reader->opened().project.directory).assets != assets)
+          throw source::SourceError(source::SourceError::Kind::external_change, "Retained source changed; reopen it before making an interpretation copy.");
+      }
+      if (interpret) assets = source::interpreted_fountain_assets(assets);
+      project = source::create_named_project(parent, name, {0, {{ElementType::action, ""}}}, assets);
+      reader.reset(); // Release the old reader only after publication.
+    }
     catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
-    QMetaObject::invokeMethod(this, [this, project, failure] {
+    QMetaObject::invokeMethod(this, [this, project, failure, assets = std::move(assets), reader = std::move(reader)]() mutable {
+      review_session_ = std::move(reader);
+      publishing_reader_ = false;
       busy_ = false;
       if (!project) { error_ = failure; emit changed(); return; }
-      const auto expected = intake_->assets;
       intake_.reset();
       show_access();
       // Activation can still fail (changed/locked project). Retain the
       // published folder and its path through the existing safe-access UI.
-      inspect(project->directory, project->id, expected);
+      inspect(project->directory, project->id, assets);
     }, Qt::QueuedConnection);
   });
 }

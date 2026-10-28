@@ -76,7 +76,7 @@ ProjectAssets read_assets(const Project& project) {
     if (!file.open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) { ::close(fd); io_error(QStringLiteral("cannot hold import dependency %1").arg(path)); }
     struct stat status {};
     if (::fstat(fd, &status) != 0 || !S_ISREG(status.st_mode)) io_error(QStringLiteral("import dependency %1 must be a regular file").arg(path));
-    const auto limit = name == QLatin1String("imported-material.json") ? qsizetype(65536) : maximum_fountain_bytes;
+    const auto limit = name == QLatin1String("imported-material.json") ? maximum_fountain_metadata_bytes : maximum_fountain_bytes;
     const auto bytes = project.import_review ? file.read(limit + 1) : file.readAll();
     if (file.error() != QFileDevice::NoError || (project.import_review && bytes.size() > limit))
       io_error(QStringLiteral("cannot read import dependency %1 within its size limit").arg(path));

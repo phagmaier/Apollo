@@ -3,6 +3,9 @@
 #include "editor/pdf_export_job.h"
 #include "editor/screenplay_layout.h"
 #include "source/recovery.h"
+#include "source/fountain_conversion.h"
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -656,6 +659,77 @@ private slots:
     }
     QCOMPARE(bytes(published + "/imports/original.fountain"), original);
     QCOMPARE(bytes(published + "/imported-material.json"), metadata);
+  }
+  void interpretation_copy_uses_real_controls_preserves_old_reader_and_resumes() {
+    const auto original = QByteArray("!A line. [[<b>note</b>]]\r\n\r\n/*keep*/\r\n\r\n[[bad\r\n\r\nVisible.\r\n");
+    const auto input = path("interpret-source");
+    replace_file(input, original);
+    const auto captured = read_fountain_intake(input);
+    const auto old = create_project(path("review-original"), {0, {{ElementType::action, ""}}}, captured.assets);
+    const auto old_manifest = bytes(old.directory + "/project.json");
+    const auto old_screenplay = bytes(old.screenplay_path());
+    const auto state = path("interpret-state");
+    QString published;
+    {
+      Window window(font_, state, old.directory);
+      QTRY_VERIFY(window.flow.intake_active()); QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(!window.flow.intake_interpreted());
+      window.item("intakeProjectName")->setProperty("text", "Interpreted");
+      window.item("intakeProjectParent")->setProperty("text", root_.filePath("missing"));
+      QVERIFY(window.click("interpretIntake"));
+      QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(!window.flow.error().isEmpty());
+      QVERIFY(window.flow.intake_active());
+      QCOMPARE(window.flow.location(), old.directory);
+      QVERIFY_THROWS_EXCEPTION(SourceError, ProjectSession(old.directory));
+      window.item("intakeProjectParent")->setProperty("text", root_.path());
+      QVERIFY(window.click("interpretIntake"));
+      QTRY_VERIFY(window.flow.intake_interpreted()); QTRY_VERIFY(!window.flow.busy());
+      published = window.flow.location();
+      QVERIFY(published != old.directory);
+      QVERIFY(!window.flow.document() && !window.flow.autosaver());
+      QVERIFY(window.flow.intake_summary().contains("1 unresolved ranges"));
+      QVERIFY(window.item("intakeFindingText")->property("text").toString().contains("[[bad"));
+      const auto findings = window.flow.intake_findings();
+      QVERIFY(std::any_of(findings.begin(), findings.end(), [](const QVariant& v) {
+        const auto f = v.toMap(); return f.value("kind").toString().contains("Imported note 1") && f.value("text") == "<b>note</b>";
+      }));
+      QCOMPARE(SessionState(state).load()->directory, published);
+      QCOMPARE(*open_project(published).assets.original_fountain, original);
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/import-interpreted.png")));
+      { ProjectSession released(old.directory); }
+      QVERIFY(window.click("intakeHome")); QTRY_VERIFY(!window.flow.busy());
+    }
+    {
+      Window restarted(font_, state);
+      QTRY_VERIFY(restarted.flow.intake_interpreted()); QTRY_VERIFY(!restarted.flow.busy());
+      QCOMPARE(restarted.flow.location(), published);
+      QVERIFY(!restarted.flow.document());
+    }
+    QCOMPARE(bytes(old.directory + "/project.json"), old_manifest);
+    QCOMPARE(bytes(old.screenplay_path()), old_screenplay);
+    QCOMPARE(open_project(old.directory).assets, captured.assets);
+    QCOMPARE(bytes(input), original);
+  }
+  void interpretation_refuses_changed_original_without_publishing_or_losing_reader() {
+    const auto input = path("changed-source");
+    replace_file(input, "Original. [[note]]");
+    const auto captured = read_fountain_intake(input);
+    const auto old = create_project(path("changed-review"), {0, {{ElementType::action, ""}}}, captured.assets);
+    const auto state = path("changed-state");
+    Window window(font_, state, old.directory);
+    QTRY_VERIFY(window.flow.intake_active()); QTRY_VERIFY(!window.flow.busy());
+    const auto session_before = bytes(state);
+    replace_file(old.directory + "/imports/original.fountain", "Changed on disk.");
+    window.flow.interpret_import(root_.path(), "Refused conversion");
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.error().isEmpty());
+    QVERIFY(window.flow.intake_active());
+    QVERIFY(!window.flow.intake_interpreted());
+    QVERIFY(window.flow.intake_source().contains("Original. [[note]]"));
+    QVERIFY(!QFileInfo::exists(root_.filePath("Refused conversion")));
+    QCOMPARE(bytes(state), session_before);
+    QCOMPARE(bytes(old.directory + "/imports/original.fountain"), QByteArray("Changed on disk."));
   }
   void cancelled_and_failed_imports_do_not_publish_or_replace_resume() {
     const auto state = path("intake-cancel-session");

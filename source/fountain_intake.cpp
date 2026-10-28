@@ -1,4 +1,5 @@
 #include "source/fountain_intake.h"
+#include "source/fountain_conversion.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -22,6 +23,27 @@ namespace {
 }
 QString digest(const QByteArray& bytes) {
   return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+}
+QString element_label(ElementType type) {
+  switch (type) {
+    case ElementType::heading: return "scene heading";
+    case ElementType::action: return "action";
+    case ElementType::cue: return "character";
+    case ElementType::parenthetical: return "parenthetical";
+    case ElementType::dialogue: return "dialogue";
+    case ElementType::page_break: return "page break";
+    case ElementType::lyric: return "lyric";
+    case ElementType::transition: return "transition";
+    case ElementType::centered: return "centered text";
+    case ElementType::title: return "title";
+    case ElementType::credit: return "credit";
+    case ElementType::author: return "author";
+    case ElementType::source: return "source credit";
+    case ElementType::contact: return "contact";
+    case ElementType::draft_date: return "draft date";
+    case ElementType::more: return "unsupported generated MORE";
+  }
+  return "unsupported";
 }
 QString display(const QByteArray& bytes) {
   const auto text = QString::fromUtf8(bytes);
@@ -122,23 +144,62 @@ bool is_fountain_intake(const ProjectAssets& assets) {
 
 void validate_fountain_intake(const ProjectAssets& assets) {
   if (!assets.imported_material || !assets.original_fountain) fail("metadata and original source are both required");
+  if (assets.imported_material->size() > maximum_fountain_metadata_bytes) fail("metadata exceeds the 64 MiB limit");
   if (assets.original_fountain->size() > maximum_fountain_bytes) fail("source exceeds the 16 MiB intake limit");
   QJsonParseError error;
   const auto json = QJsonDocument::fromJson(*assets.imported_material, &error);
   const auto root = json.object();
   if (error.error != QJsonParseError::NoError || !json.isObject() || root.value("format") != "apollo-fountain-intake") fail("invalid metadata format");
-  if (root.value("version").toDouble() > 1) fail("metadata needs a newer Apollo", SourceError::Kind::newer_version);
-  if (root.size() != 6 || root.value("version") != 1 || root.value("status") != "pending-conversion" ||
+  if (root.value("version").toDouble() > 2) fail("metadata needs a newer Apollo", SourceError::Kind::newer_version);
+  const bool interpreted = root.value("version") == 2;
+  if (root.size() != (interpreted ? 7 : 6) || (!interpreted && root.value("version") != 1) ||
+      root.value("status") != (interpreted ? "interpreted-review" : "pending-conversion") ||
       !root.value("origin").isString() || root.value("origin").toString().isEmpty() || !root.value("origin").toString().isValidUtf16() ||
       !QDir::isAbsolutePath(root.value("origin").toString()) || root.value("origin").toString().contains(QChar::Null) ||
       !root.value("sha256").isString() || root.value("sha256").toString() != digest(*assets.original_fountain) ||
       !root.value("bytes").isDouble() || root.value("bytes").toDouble() != assets.original_fountain->size()) fail("metadata or original source does not verify");
+  if (interpreted) validate_fountain_conversion(assets);
 }
 
 FountainIntake open_fountain_intake(const ProjectAssets& assets) {
   validate_fountain_intake(assets);
   const auto origin = QJsonDocument::fromJson(*assets.imported_material).object().value("origin").toString();
-  return describe(assets, origin);
+  auto result = describe(assets, origin);
+  const auto root = QJsonDocument::fromJson(*assets.imported_material).object();
+  if (root.value("version") == 2) {
+    result.interpreted = true;
+    const auto converted = convert_fountain(assets);
+    result.summary = QStringLiteral("Original %1 bytes verified from %2. Interpretation revision 1.\n"
+        "%3 screenplay elements; %4 named notes/stash/metadata records; %5 unresolved ranges; %6 authoring/layout limitations.\n"
+        "Interpretation review only. Editing, Fountain export and PDF export are blocked until faithful authoring/layout and independent round-trip checks pass. "
+        "Notes, stash, organization and production metadata are retained outside the screenplay; future clean output omits them with disclosure. "
+        "Unresolved ranges remain in the complete source below and must be resolved before clean output; interpretations can include literal fallbacks or incomplete relationships. "
+        "The source view escapes control/format characters; invalid encodings use a hex view.")
+        .arg(assets.original_fountain->size()).arg(display(origin.toUtf8())).arg(converted.elements.size()).arg(converted.records.size())
+        .arg(converted.unresolved.size()).arg(converted.limitations.size());
+    result.findings.clear();
+    const auto add_finding = [&](const QString& kind, const FountainRange& r, const QString& message, const QString& text) {
+      if (result.findings.size() >= 200) return;
+      auto excerpt = text.left(2000);
+      if (!excerpt.isEmpty() && excerpt.back().isHighSurrogate()) excerpt.chop(1);
+      result.findings.append(QVariantMap{{"kind", kind}, {"startByte", r.start}, {"endByte", r.end},
+        {"firstLine", r.first_line}, {"lastLine", r.last_line}, {"message", message},
+        {"text", display(excerpt.toUtf8())}, {"truncated", excerpt.size() < text.size()}});
+    };
+    for (const auto& issue : converted.unresolved)
+      add_finding("Unresolved: " + issue.code, issue.range, issue.message,
+          issue.code == "encoding" ? QStringLiteral("See the complete hexadecimal source below.") :
+              QString::fromUtf8(assets.original_fountain->mid(issue.range.start, issue.range.end - issue.range.start)));
+    for (const auto& record : converted.records)
+      add_finding(record.name, record.range, "Retained " + record.kind + "; source anchor: " + record.anchor, record.text);
+    for (const auto& element : converted.elements)
+      add_finding("Screenplay: " + element_label(element.element.type) + " (" + QString::fromStdString(element.element.id) + ")", element.range,
+          "Interpretation revision 1; editing and export remain gated.", QString::fromUtf8(element.element.text));
+    for (const auto& issue : converted.limitations)
+      add_finding("Layout: " + issue.code, issue.range, issue.message, {});
+    if (result.findings.size() == 200) result.summary += "\nDisplay list capped at 200; the stored interpretation and complete original are not truncated.";
+  }
+  return result;
 }
 
 FountainIntake read_fountain_intake(const QString& path) {

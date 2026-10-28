@@ -53,9 +53,9 @@ Rectangle {
                 text: page.access.error; textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere; color: "#9d3030"
             }
             Column {
-                visible: page.access.intakePreview
+                visible: page.access.intakePreview || !page.access.intakeInterpreted
                 width: parent.width; spacing: 10
-                Label { text: "Save this source in a new review-only project"; color: "#303843"; font.pixelSize: 17 }
+                Label { text: page.access.intakeActive ? "Interpret this source in a new project copy" : "Retain or interpret this source in a new project"; color: "#303843"; font.pixelSize: 17 }
                 TextField {
                     id: name; objectName: "intakeProjectName"; width: parent.width
                     enabled: !page.access.busy; placeholderText: "Project folder name"; selectByMouse: true
@@ -74,8 +74,14 @@ Rectangle {
                     }
                     Button {
                         objectName: "publishIntake"; text: page.access.busy ? "Retaining source…" : "Retain for Review"
+                        visible: page.access.intakePreview
                         enabled: !page.access.busy && name.text.trim().length > 0 && parentFolder.text.length > 0
                         onClicked: page.access.publish_import(parentFolder.text, name.text)
+                    }
+                    Button {
+                        objectName: "interpretIntake"; text: page.access.busy ? "Interpreting source…" : "Interpret in a New Copy"
+                        enabled: !page.access.busy && name.text.trim().length > 0 && parentFolder.text.length > 0
+                        onClicked: page.access.interpret_import(parentFolder.text, name.text)
                     }
                 }
             }

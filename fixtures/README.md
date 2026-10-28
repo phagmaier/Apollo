@@ -143,6 +143,10 @@ intake/reopen; this is not parser or layout acceptance. The
 [compatibility table](../docs/fountain-compatibility.md) records each file and
 the remaining semantic contract. Original independent examples and hand-worked
 conversion expectations live in [import/README.md](import/README.md).
+Task 2.6b now compares complete type/text/dual interpretations of all 16 samples
+against hand-worked expected sequences in `import/interpretations.expected.json`,
+including explicit unresolved interpretations. These do not establish editable
+round-trip compatibility or independent layout correctness.
 
 The same repository includes *Big Fish* (John August), a real full-length screenplay. Keep it in `reference/big-fish.fountain` as a local realistic import and performance input; it is gitignored. It renders to 124 pages with the oracle.
 

@@ -84,7 +84,11 @@ frozen every visual detail.
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
   and `apollo_editor DIR` opens editable projects with autosave. Ordinary
   Fountain paths now open a lossless review-only import preview (task 2.6a);
-  `DIR --retain-fountain FILE` publishes that review-only intake. See
+  `DIR --retain-fountain FILE` publishes that review-only intake. Task 2.6b's
+  **Interpret in a New Copy** (or `NEW_DIR --interpret-fountain FILE`) retains
+  located interpretations, named notes/stash and metadata in another read-only
+  project, with unresolved ranges and layout limitations. Original projects
+  are never upgraded in place; editing and clean export remain gated. See
   [fountain-compatibility.md](docs/fountain-compatibility.md): full editable
   conversion and round-trip compatibility remain pending. The explicit spike
   `--create [FILE]`/instrumentation paths retain their limited parser.
