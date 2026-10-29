@@ -877,3 +877,47 @@ are `build/release/project-access-tests/fountain-export-{ready,blocked}.png`.
 The Academy comparison was not rerun: the engine, profile and PDF path are
 unchanged. Remaining gates are listed in the contract; this closes the bounded
 export step, not slice 3 or slice 5 compatibility.
+
+### Layout fix — spaces after a deliberate break
+
+2026-10-28, reported during 2.6d. Pressing Enter before a space in dialogue
+(`At the| same time.`) made the Writing desk footer show `QTextLayout did not
+break block N where the engine did`.
+
+**Cause.** The engine wraps each authored line's visible text, and a line never
+starts with a space, so the line after the break starts at its first letter.
+The editor ended each QTextLayout line where the engine's next line began. That
+end included the break *and* the spaces, but QTextLayout always breaks right
+after the line separator, so the two disagreed.
+
+**Effect, as reproduced.** Text, caret and slots on screen were already right:
+QTextLayout's own break put the space at the start of the next line, and the
+existing lead offset drew the visible text at the dialogue column. The visible
+effect was the red footer error. On such writing, `apollo_editor --check`,
+`--agreement` and `--snapshot` failed, as did any check that requires no layout
+error. Pagination and PDF were unaffected because both come from the engine,
+working on the element snapshot (`pdf_export` does not link the editor layout).
+The fix leaves them unchanged.
+
+**Fix.** `ScreenplayLayout::relayout` ends a line just after the last authored
+break before the next engine line, so the skipped spaces start the next
+QTextLayout line before its first visible character. The spaces stay in the
+writing and are saved. The caret can reach them just left of the column
+([profile note](export-profile.md#editor-states-provisional-spike-rules)). Whether such spaces should be
+shown, or should count toward width, is the separately scoped case and spacing
+task. Fountain export still refuses these lines.
+
+| Check | Independent expectation |
+| --- | --- |
+| `editor_tests` `enter_before_space_keeps_engine_breaks` | Real Enter in fixture 01: second line starts after the break, "I always leave the lights on." at 216 pt on slot 10, caret on the space at 216 − 7.2 pt, later elements at fixture 01's slots, no stray ink; typing either side of the space keeps the mapping |
+| `project_access_flow_tests` `deliberate_break_before_space_saves_and_reopens_without_layout_error` (+ an assertion in the 2.6d flow where it was reported) | Writing desk with real keys: no footer error, autosaved text keeps `\n `, reopened layout places the line at 216 pt on slot 3 |
+| `editor_pdf_tests` `break_before_space` | Saved project with `\n  ` and a wrapped sentence: `--check`, editor/PDF agreement, and the PDF against hand-derived `fixtures/editing/break-before-space.expected` (speech gains one line; later elements move down one slot) |
+
+Each new check failed without the fix, with the original message. Release 23/23,
+ASan/UBSan 23/23 with no sanitizer report, and engine-only 2/2 pass. The native
+Wayland preflight passes: editor 57/57 with OpenGL and fcitx5 input, export
+lifecycle 13/13, project flows 33/33, native PDF snapshots and first paint.
+Editor/PDF agreement on the local Academy transcription (0 and 50 edits) and
+`compare_academy.py` pass; the layout fixtures are unchanged. Logs:
+`build/task-break-space-{release,debug,engine,academy}.log`; native logs are in
+`build/wayland-check-20261028-182633-uXLbC2/`.

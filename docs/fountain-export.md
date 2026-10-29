@@ -148,6 +148,8 @@ is not a representative-workload measurement.
   made.
 - PDF export of imported writing stays blocked pending independent layout
   evidence. The editor/engine layout warning seen when a dialogue line starts
-  with a space after a deliberate break is outside this task.
+  with a space after a deliberate break was an editor placement bug, since
+  fixed; see the [build plan](writing-build-plan.md#layout-fix--spaces-after-a-deliberate-break).
+  Such a line is still refused here, as unverified spacing.
 - Not verified: power-loss durability of the replaced file, very large scripts
   near 1 MiB in the UI, a watchdog/cancel for a stuck worker, and owner comfort.

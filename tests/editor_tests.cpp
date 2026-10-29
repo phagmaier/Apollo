@@ -647,6 +647,49 @@ private slots:
     QVERIFY(near(caret_baseline(cursor()), baseline(1, 10)) && near(caret_rect(cursor()).x(), 216));
   }
 
+  // Enter before a space leaves it at the start of the authored line. The
+  // engine wraps the visible text (wrap() skips leading spaces), so the line
+  // after the break shows "I always ..." at the dialogue column, slot 10, as
+  // fixture 01 does; the rest of the page keeps its slots. The space stays in
+  // the document, to the left of the column, and the caret can reach it.
+  void enter_before_space_keeps_engine_breaks() {
+    QVERIFY(open(QStringLiteral("01-element-geometry")));
+    const int space = position_of(QStringLiteral(" I always leave"));
+    editor_->setProperty("cursorPosition", space);
+    press(Qt::Key_Return);
+    QCOMPARE(block_element(block_at(space)).text, std::string("I left the lights on for you.\n I always leave the lights on."));
+    QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+    const auto block = block_at(space);
+    QCOMPARE(block.layout()->lineCount(), 2);
+    QCOMPARE(block.layout()->lineAt(1).textStart(), space - block.position() + 1);
+    std::vector<std::pair<QString, double>> expected{{"I left the lights on for you.", baseline(1, 9)},
+                                                     {"I always leave the lights on.", baseline(1, 10)}};
+    for (const auto& [text, y] : expected) {
+      const auto lines = laid_out_lines(*document_);
+      const auto line = std::find_if(lines.begin(), lines.end(), [&](const LaidOut& l) { return l.text == text; });
+      QVERIFY2(line != lines.end(), qPrintable(text));
+      QVERIFY2(near(line->x, 216) && near(line->baseline, y), qPrintable(text));
+    }
+    QCOMPARE(cursor(), space + 1);
+    QVERIFY(near(caret_baseline(cursor()), baseline(1, 10)) && near(caret_rect(cursor()).x(), 216 - profile::advance));
+    QVERIFY(near(caret_rect(cursor() + 1).x(), 216));
+    QVERIFY(near(caret_baseline(position_of(QStringLiteral("THEO"))), baseline(1, 12)));
+    QVERIFY(near(caret_baseline(position_of(QStringLiteral("CUT TO:"))), baseline(1, 18)));
+    QCOMPARE(layout()->pageCount(), 1);
+    QCOMPARE(ink_mismatch(QStringLiteral("enter-before-space")), std::make_pair(0, 0));
+    // Typing on either side of the hidden space keeps the mapping.
+    type(QStringLiteral("X"));
+    QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+    QVERIFY(near(caret_rect(cursor()).x(), 216 + profile::advance));
+    press(Qt::Key_Backspace);
+    press(Qt::Key_Right);
+    QVERIFY(near(caret_rect(cursor()).x(), 216));
+    type(QStringLiteral("Y"));
+    QCOMPARE(block_element(block_at(space)).text, std::string("I left the lights on for you.\n YI always leave the lights on."));
+    QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+    QVERIFY(near(caret_rect(cursor()).x(), 216 + profile::advance));
+  }
+
   void deleting_whole_element_keeps_surviving_identity() {
     QVERIFY(open(QStringLiteral("01-element-geometry")));
     const auto first = document_->begin(), second = first.next();

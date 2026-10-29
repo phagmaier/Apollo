@@ -354,6 +354,7 @@ private slots:
       QCOMPARE(block_element(speech).text, std::string("At the same time."));
       window.flow.editor()->setProperty("cursorPosition", speech.position() + 6);
       QTest::keyClick(&window.view, Qt::Key_Return);
+      QVERIFY(static_cast<const ScreenplayLayout*>(window.flow.document()->documentLayout())->error().isEmpty());
       QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
       QTRY_VERIFY(window.popup_open("exportPanel"));
       QVERIFY2(eligibility().contains("Element 13, Dialogue “At the”: has an empty line or leading, trailing or repeated spaces."), qPrintable(eligibility()));
@@ -492,6 +493,42 @@ private slots:
     QTRY_VERIFY(!window.flow.document());
     QCOMPARE(bytes(output), QByteArray("Current writing.\n\nSecond paragraph.\n"));
     QCOMPARE(open_project(p.directory).screenplay.elements.front().text, std::string("Later Current writing."));
+  }
+
+  // Enter before a space in dialogue leaves the space after the break. The
+  // desk shows no layout error, and the saved writing reopens with the line
+  // after the break at the dialogue column (profile: 216 pt), body slot 3.
+  void deliberate_break_before_space_saves_and_reopens_without_layout_error() {
+    const auto p = create_project(path("project"), {1, {{ElementType::cue, "MARA", false, {}, "cue"},
+        {ElementType::dialogue, "I left the lights on for you. I always leave the lights on.", false, {}, "speech"}}});
+    const std::string edited("I left the lights on for you.\n I always leave the lights on.");
+    auto check = [&](Window& window) {
+      const auto* layout = static_cast<const ScreenplayLayout*>(window.flow.document()->documentLayout());
+      QVERIFY2(layout->error().isEmpty(), qPrintable(layout->error()));
+      QVERIFY(!window.item("operationStatus")->property("text").toString().contains("QTextLayout"));
+      const auto speech = window.flow.document()->lastBlock();
+      QCOMPARE(block_element(speech).text, edited);
+      QCOMPARE(speech.layout()->lineCount(), 2);
+      // The second line begins after the break, with the space before the column.
+      const auto line = speech.layout()->lineAt(1);
+      QCOMPARE(line.textStart(), 30);
+      const auto origin = layout->blockBoundingRect(speech).topLeft();
+      QVERIFY(std::abs((origin.x() + line.cursorToX(31)) / px_per_point - 216) < 0.01);
+      QVERIFY(std::abs((origin.y() + line.y() + line.ascent()) / px_per_point - (81 + 2 * profile::line_pitch)) < 0.01);
+    };
+    {
+      Window window(font_, path("session"), p.directory);
+      QTRY_VERIFY(window.flow.document());
+      window.flow.editor()->setProperty("cursorPosition", window.flow.document()->lastBlock().position() + 29);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      check(window);
+      if (QTest::currentTestFailed()) return;
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(open_project(p.directory).screenplay.elements.back().text, edited);
+    }
+    Window reopened(font_, path("session"), p.directory);
+    QTRY_VERIFY(reopened.flow.document());
+    check(reopened);
   }
 
   void unsupported_import_keeps_editable_control_and_publication_gated() {

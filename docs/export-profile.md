@@ -102,6 +102,11 @@ as follows. These are spike rules for owner review, not confirmed behavior:
 
 - **An empty element** (no text, or only spaces) keeps one blank slot with its element's normal spacing,
   so the caret has a line of its own. In a PDF the slot is blank.
+- **Spaces at the start of an authored line**, such as after Enter before a
+  space in dialogue, are kept in the writing but are not shown and do not count
+  toward width: the line starts at its column, as wrapping never begins a line
+  with a space. In the editor the caret can still reach them, just left of the
+  column. Meaningful indentation and spacing are not supported yet.
 - **A cue without speech** stands alone: one or more cue lines with a cue's
   spacing, moved whole with a preceding heading; a cue longer than one page
   is rejected like other unsplittable elements.

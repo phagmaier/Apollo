@@ -183,3 +183,12 @@ pinned afterwriting, must read them as the hand-worked semantic models. Install
 it once with `tools/afterwriting-oracle.sh`, then reconfigure so ctest includes
 `fountain_export_oracle_tests`. See [export/README.md](export/README.md) and the
 [export contract](../docs/fountain-export.md).
+
+## Edited layout — `editing/`
+
+Hand-derived `.expected` files, in the layout format above, for writing that the
+spike Fountain parser cannot express, so the checks edit a saved project
+instead. `break-before-space.expected` is fixture 01 after MARA's dialogue gains
+a deliberate break followed by two spaces and a longer sentence;
+`tests/editor_pdf_tests.py` requires the editor to lay it out without a
+QTextLayout mismatch, to agree with its PDF, and the PDF to match this file.

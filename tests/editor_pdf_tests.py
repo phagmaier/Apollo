@@ -13,8 +13,10 @@ separately, in editor_tests and pdf_tests.
 """
 
 import argparse
+import json
 import pathlib
 import re
+import shutil
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -50,6 +52,34 @@ def agree(editor, source, output, edits=0):
     return len(pages), rows, moved
 
 
+def break_before_space(editor, output):
+    """A saved project whose dialogue has spaces after a deliberate break.
+
+    The spike Fountain parser joins dialogue lines, so the edit is made to the
+    saved writing. The editor must lay it out without a QTextLayout mismatch
+    (--check), agree with its PDF, and the PDF must match the hand-derived
+    expectation in fixtures/editing.
+    """
+    project = output / "break-before-space"
+    shutil.rmtree(project, ignore_errors=True)  # --create never reuses a folder.
+    command(editor, project, "--create", ROOT / "fixtures/layout/01-element-geometry.fountain")
+    writing = project / "screenplay.json"
+    data = json.loads(writing.read_text())
+    speech = [e for e in data["elements"] if e["text"].startswith("I left the lights on")]
+    assert len(speech) == 1 and speech[0]["type"] == "dialogue", speech
+    speech[0]["text"] = "I left the lights on for you.\n  I always leave the lights on, even when nobody comes."
+    writing.write_text(json.dumps(data))
+    command(editor, project, "--check")
+    expected = fixture_pages(ROOT / "fixtures/editing/break-before-space.expected")
+    pages, rows, _ = agree(editor, project, output / "break-before-space-agreement")
+    assert (pages, rows) == (1, sum(len(p["rows"]) for p in expected)), (pages, rows)
+    snapshot = output / "break-before-space-snapshot"
+    command(editor, project, "--snapshot", snapshot)
+    check_pdf(snapshot / "editor.pdf", expected)
+    check_styles(snapshot / "editor.pdf", expected)
+    print("PASS deliberate break before spaces: editor/PDF agreement and independent expectation")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--editor", required=True, type=pathlib.Path)
@@ -71,6 +101,7 @@ def main():
     no_title = args.output / "snapshot-without-title"
     command(args.editor, title, "--snapshot", no_title, "--no-title-page")
     check_pdf(no_title / "editor.pdf", fixture_pages(title.with_suffix(".expected"))[1:])
+    break_before_space(args.editor, args.output)
     sources = []
     for scenes in (175, 444):
         source = args.output / f"workload-{scenes}.fountain"

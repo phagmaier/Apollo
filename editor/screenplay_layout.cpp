@@ -395,11 +395,20 @@ void ScreenplayLayout::relayout() {
     const int preedit_at = text_layout->preeditAreaPosition();
     const auto preedit = static_cast<int>(text_layout->preeditAreaText().size());
     auto layout_index = [&](int at) { return preedit && at > preedit_at ? at + preedit : at; };
+    // A line ends where the next one starts, except that QTextLayout always
+    // breaks after an authored break. Spaces after it, which the engine
+    // skips, begin the next line before its first visible character.
+    const auto& source_text = elements[index].text;
+    auto line_start = [&](std::size_t i) {
+      const auto next = lines[i]->source_offset;
+      const auto authored = next ? source_text.rfind('\n', next - 1) : std::string::npos;
+      return authored != std::string::npos && authored >= lines[i - 1]->source_offset ? authored + 1 : next;
+    };
     std::vector<Placement> placements;
     QList<QTextLayout::FormatRange> own;
     for (std::size_t i = 0; i < lines.size(); ++i) {
       const auto& line = *lines[i];
-      const int end = i + 1 < lines.size() ? layout_index(utf16(lines[i + 1]->source_offset)) : length + preedit;
+      const int end = i + 1 < lines.size() ? layout_index(utf16(line_start(i + 1))) : length + preedit;
       placements.push_back({i ? placements.back().end : 0, end, layout_index(utf16(line.source_offset)),
                             snap(line.geometry.x * px_per_point), baseline_y(line.page, line.geometry.baseline)});
       if (line.replaced_length) {
