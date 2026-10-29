@@ -1,0 +1,19 @@
+# Hand-derived from the profile: each authored marker starts the next body page.
+# The title is unnumbered; body page 1 has no label, then labels 2. and 3.
+# Speech and the whole dual pair remain intact; no wrapping is needed.
+page title number=none
+4	title@center	THE PAPER SIGNAL
+page 1 number=none
+1	heading	INT. RELAY ROOM - NIGHT
+3	action	A brass bell waits.	bold=brass
+page 2 number=2.
+1	cue	MARA
+2	paren	(quietly)
+3	dialogue	Keep the line open.
+5	action	The needle settles.
+page 3 number=3.
+1	dual-cue-L	THEO
+1	dual-cue-R	JUNE
+2	dual-dialogue-L	I hear you.
+2	dual-dialogue-R	Stay with me.
+4	action	The lamp dims.

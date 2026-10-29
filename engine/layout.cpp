@@ -222,6 +222,9 @@ std::string presented_text(ElementType type, std::string text) {
 }
 
 DocumentLayout layout_document(const std::vector<Element>& input) {
+  for (const auto& element : input)
+    if (element.type == ElementType::page_break && !element.text.empty())
+      throw std::runtime_error("manual page break contains text; preserve or move that text before PDF export");
   const auto elements = displayed(input);
   std::vector<Line> result;
   int page = 1, slot = 0;

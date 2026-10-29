@@ -276,6 +276,78 @@ def emphasis_authoring(editor, flow_tests, root):
             (canonical, presented(expected), True)]
 
 
+def page_break_authoring(editor, flow_tests, root):
+    """Real authored markers survive fresh-process export and bounded reimport."""
+    output = root / "page-break-authored"
+    run(flow_tests, "manual_page_break_authoring_survives_save_reopen_and_export",
+        env=dict(os.environ, APOLLO_PAGE_BREAK_OUTPUT=str(output)))
+    project, actual = output / "project", output / "authored.fountain"
+    initial = json.loads((FIXTURES / "editing/page-break-authoring.screenplay.json").read_text())
+    saved_bytes = (project / "screenplay.json").read_bytes()
+    saved = json.loads(saved_bytes)
+    originals = [e for e in saved["elements"] if e["type"] != "pageBreak"]
+    assert (saved["titlePage"], originals) == (initial["titlePage"], initial["elements"]), saved
+    markers = [(i, e) for i, e in enumerate(saved["elements"]) if e["type"] == "pageBreak"]
+    assert [i for i, _ in markers] == [2, 7], markers
+    assert len({e["id"] for _, e in markers}) == 2 and all(e["text"] == "" for _, e in markers)
+    canonical = FIXTURES / "export/page-break-authoring.fountain"
+    assert actual.read_bytes() == canonical.read_bytes(), actual.read_bytes()
+    reopened = output / "reopened.fountain"
+    run(editor, project, "--export-fountain", reopened)
+    assert reopened.read_bytes() == canonical.read_bytes()
+    assert (project / "screenplay.json").read_bytes() == saved_bytes
+    # Hand-built semantic expectation: only these two empty markers are added.
+    expected = json.loads(json.dumps(initial))
+    expected["elements"].insert(2, {"type": "pageBreak", "text": ""})
+    expected["elements"].insert(7, {"type": "pageBreak", "text": ""})
+    imported, roundtrip = output / "bounded-reimport", output / "roundtrip.fountain"
+    run(editor, imported, "--edit-fountain", reopened)
+    assert model(json.loads((imported / "screenplay.json").read_text())) == model(expected)
+    run(editor, imported, "--export-fountain", roundtrip)
+    assert roundtrip.read_bytes() == canonical.read_bytes()
+    assert (imported / "imports/original.fountain").read_bytes() == canonical.read_bytes()
+    # Imported PDF stays blocked, even though this authored ordinary project
+    # was PDF-eligible. A refusal must not replace an existing output.
+    blocked_directory = output / "imported-snapshot"
+    blocked_directory.mkdir()
+    blocked_pdf = blocked_directory / "editor.pdf"
+    blocked_pdf.write_bytes(b"Existing PDF")
+    refused = run(editor, imported, "--snapshot", blocked_directory, expect=1)
+    assert "blocked" in refused.stderr.lower(), refused.stderr
+    assert blocked_pdf.read_bytes() == b"Existing PDF"
+    # Legacy source with hidden marker text remains saveable but cannot export
+    # silently dropped words. This deliberate damaged/legacy fixture is not an
+    # authoring path, and neither an existing export nor source may be changed.
+    legacy = output / "legacy"
+    run(editor, legacy, "--create")
+    legacy_source = legacy / "screenplay.json"
+    legacy_model = json.loads(json.dumps(saved))
+    legacy_model["elements"][2]["text"] = "Must not disappear."
+    legacy_source.write_text(json.dumps(legacy_model))
+    legacy_bytes = legacy_source.read_bytes()
+    legacy_export = output / "legacy.fountain"
+    legacy_export.write_bytes(b"Existing Fountain")
+    run(editor, legacy, "--export-fountain", legacy_export, expect=3)
+    assert legacy_export.read_bytes() == b"Existing Fountain"
+    assert legacy_source.read_bytes() == legacy_bytes
+    cases = [(path, expected, True) for path in (actual, reopened, canonical, roundtrip)]
+    for name, text, elements in (
+        ("edges", "===\n\nA lamp waits.\n\n===\n\n===\n",
+         [{"type": "pageBreak", "text": ""}, {"type": "action", "text": "A lamp waits."},
+          {"type": "pageBreak", "text": ""}, {"type": "pageBreak", "text": ""}]),
+        ("marker-only", "===\n\n===\n", [{"type": "pageBreak", "text": ""}, {"type": "pageBreak", "text": ""}]),
+    ):
+        original, working, edge_export = output / (name + ".fountain"), output / name, output / (name + "-exported.fountain")
+        original.write_text(text)
+        edge_expected = {"titlePage": [], "elements": elements}
+        run(editor, working, "--edit-fountain", original)
+        assert model(json.loads((working / "screenplay.json").read_text())) == model(edge_expected)
+        run(editor, working, "--export-fountain", edge_export)
+        assert edge_export.read_text() == text and original.read_text() == text
+        cases.append((edge_export, edge_expected, True))
+    return cases
+
+
 def title_authoring(editor, flow_tests, root):
     """Applied form fields reach a frozen worker and fresh-process exports."""
     output = root / "title-authored"
@@ -364,6 +436,7 @@ def main():
     scene_spacing_cases = scene_spacing_subset(editor, root)
     emphasis_cases = emphasis_authoring(editor, options.flow_tests, root)
     title_cases = title_authoring(editor, options.flow_tests, root)
+    page_break_cases = page_break_authoring(editor, options.flow_tests, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -376,7 +449,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases + page_break_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

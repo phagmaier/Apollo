@@ -81,6 +81,9 @@ uses plain text fields without the body's paragraph/type conversion.
   specified creation controls or an advisory for unusual blank spacing.
 - Nothing in the writing is rewritten. Saving, autosave, recovery, reopen,
   copying and undo keep authored spaces and empty lines exactly.
+- **Ctrl+Enter** inserts a non-text [manual page-break marker](source-format.md#manual-page-break-authoring-slice-3),
+  not a deliberate line break or blank dialogue line. It keeps the whole speech
+  together; ordinary Enter retains the dialogue behavior above.
 
 ### Page splits
 

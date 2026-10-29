@@ -195,10 +195,11 @@ def main():
     assert "CourierPrime-BoldItalic" in command("pdffonts", pdf)
 
     # Preserve empty pages and number them; no page is inferred only from text.
-    source.write_text("A lamp.\n\n===\n\n===\n")
+    source.write_text("===\n\nA lamp.\n\n===\n\n===\n")
     command(args.exporter, source, pdf)
-    check_pdf(pdf, [dict(body=1, number="none", rows=[(1, "action", "A lamp.", "")]),
-                    dict(body=2, number="2.", rows=[]), dict(body=3, number="3.", rows=[])])
+    check_pdf(pdf, [dict(body=1, number="none", rows=[]),
+                    dict(body=2, number="2.", rows=[(1, "action", "A lamp.", "")]),
+                    dict(body=3, number="3.", rows=[]), dict(body=4, number="4.", rows=[])])
     previous = pdf.read_bytes()
     source.write_text("Unsupported \U0001f680 character.\n")
     failed = subprocess.run([str(args.exporter), str(source), str(pdf)], capture_output=True, text=True)

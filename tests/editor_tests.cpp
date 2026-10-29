@@ -1718,6 +1718,394 @@ private slots:
       QVERIFY(range.format.foreground().color().alpha() != 0);
   }
 
+  void manual_break_insertion_preserves_whole_element() {
+    QVERIFY(open_elements({{ElementType::action, "Before.", false, {}, "before"},
+                           {ElementType::action, "Café waits.", false, {{0, 5, Style::bold}}, "after"}}));
+    const auto original = document_elements(*document_);
+    const int at = document_->lastBlock().position() + 3;
+    editor_->setProperty("cursorPosition", at);
+    press(Qt::Key_Return, Qt::ControlModifier);
+    const auto inserted = document_elements(*document_);
+    QCOMPARE(inserted.size(), std::size_t(3));
+    QCOMPARE(inserted[0], original[0]);
+    QCOMPARE(inserted[1].type, ElementType::page_break);
+    QVERIFY(inserted[1].text.empty() && inserted[1].styles.empty() && !inserted[1].id.empty());
+    QCOMPARE(inserted[2], original[1]);
+    QCOMPARE(cursor(), at + 1);
+    QCOMPARE(layout()->pageCount(), 2);
+    QVERIFY(near(caret_baseline(cursor()), baseline(2, 1)));
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/manual-page-break.png")));
+    // Editing before the marker shifts its position; the gap control must
+    // still remove that marker, not a stale neighboring text position.
+    editor_->setProperty("cursorPosition", 7);
+    type(QStringLiteral("X"));
+    auto shifted = inserted;
+    shifted[0].text += "X";
+    const auto name = QStringLiteral("removePageBreakAt%1").arg(document_->findBlockByNumber(1).position());
+    QTRY_VERIFY(find_item(view_->contentItem(), name));
+    auto* remove = find_item(view_->contentItem(), name);
+    QVERIFY(remove->isVisible());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     remove->mapToScene(remove->boundingRect().center()).toPoint());
+    auto removed = original;
+    removed[0].text += "X";
+    QCOMPARE(document_elements(*document_), removed);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), shifted);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), inserted);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), inserted);
+    editor_->setProperty("cursorPosition", at + 1);
+    type(QStringLiteral("X"));
+    auto typed = inserted;
+    typed[2].text = "CafXé waits.";
+    typed[2].styles = {{0, 6, Style::bold}};
+    QCOMPARE(document_elements(*document_), typed);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), inserted);
+  }
+
+  void manual_break_boundaries_and_marker_only_document() {
+    for (const auto elements : {
+        std::vector<Element>{{ElementType::page_break, "", false, {}, "break"}, {ElementType::action, "After.", false, {}, "after"}},
+        std::vector<Element>{{ElementType::action, "Before.", false, {}, "before"}, {ElementType::page_break, "", false, {}, "break"}},
+        std::vector<Element>{{ElementType::page_break, "", false, {}, "break"}},
+        std::vector<Element>{{ElementType::action, "Before.", false, {}, "before"},
+                             {ElementType::page_break, "", false, {}, "break"}, {ElementType::page_break, "", false, {}, "second"},
+                             {ElementType::action, "After.", false, {}, "after"}}}) {
+      QVERIFY(open_elements(elements));
+      auto* commands = document_->findChild<EditorCommands*>();
+      QVERIFY(commands);
+      auto marker = document_->begin();
+      while (element_type(marker) != ElementType::page_break) marker = marker.next();
+      const int position = marker.position(), index = marker.blockNumber();
+      editor_->setProperty("cursorPosition", position);
+      // Enter navigates to writing (creating an action only for marker-only
+      // bodies); Tab cannot turn a marker into action.
+      press(Qt::Key_Tab);
+      QCOMPARE(document_elements(*document_), elements);
+      press(Qt::Key_Return);
+      const auto navigated = document_elements(*document_);
+      QVERIFY(!commands->isPageBreak(cursor()));
+      if (elements.size() == 1) {
+        QCOMPARE(navigated.size(), std::size_t(2));
+        QCOMPARE(navigated.front(), elements.front());
+        QCOMPARE(navigated.back().type, ElementType::action);
+        QVERIFY(navigated.back().text.empty());
+        press(Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(document_elements(*document_), elements);
+      } else QCOMPARE(navigated, elements);
+      editor_->setProperty("cursorPosition", position);
+      type(QStringLiteral("X"));
+      const auto typed = document_elements(*document_);
+      QCOMPARE(typed[index], elements[index]);
+      QVERIFY(!commands->isPageBreak(cursor()));
+      press(Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), elements);
+      editor_->setProperty("cursorPosition", position);
+      press(Qt::Key_Delete);
+      auto expected = elements;
+      expected.erase(expected.begin() + index);
+      const auto removed = document_elements(*document_);
+      if (expected.empty()) {
+        QCOMPARE(removed.size(), std::size_t(1));
+        QCOMPARE(removed.front().type, ElementType::action);
+        QVERIFY(removed.front().text.empty() && removed.front().id != "break");
+      } else QCOMPARE(removed, expected);
+      QVERIFY(!commands->isPageBreak(cursor()));
+      press(Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), elements);
+      press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*document_), removed);
+    }
+  }
+
+  void manual_break_safe_after_boundary_and_empty_element() {
+    QVERIFY(open_elements({{ElementType::cue, "MARA", false, {}, "cue"},
+                           {ElementType::parenthetical, "(softly)", false, {}, "paren"},
+                           {ElementType::dialogue, "Keep listening.", false, {}, "speech"}}));
+    const auto original = document_elements(*document_);
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    press(Qt::Key_Return, Qt::ControlModifier);
+    const auto inserted = document_elements(*document_);
+    QCOMPARE(std::vector<Element>(inserted.begin(), inserted.begin() + 3), original);
+    QCOMPARE(inserted.size(), std::size_t(5));
+    QCOMPARE(inserted[3].type, ElementType::page_break);
+    QCOMPARE(inserted[4].type, ElementType::action);
+    QVERIFY(inserted[4].text.empty());
+    QCOMPARE(block_element(block_at(cursor())), inserted[4]);
+    type(QStringLiteral("Next."));
+    QCOMPARE(document_elements(*document_)[4].text, std::string("Next."));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), inserted);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    QVERIFY(open_elements({{ElementType::action, "", false, {}, "blank"}}));
+    press(Qt::Key_Return, Qt::ControlModifier);
+    const auto empty = document_elements(*document_);
+    QCOMPARE(empty.size(), std::size_t(2));
+    QCOMPARE(empty[0].type, ElementType::page_break);
+    QCOMPARE(empty[1], (Element{ElementType::action, "", false, {}, "blank"}));
+    QCOMPARE(cursor(), 1);
+  }
+
+  void manual_break_selection_clipboard_and_input_method_boundaries() {
+    const std::vector<Element> elements{
+        {ElementType::action, "Before.", false, {}, "before"},
+        {ElementType::page_break, "", false, {}, "break"},
+        {ElementType::action, "After.", false, {}, "after"}};
+    QVERIFY(open_elements(elements));
+    auto* commands = document_->findChild<EditorCommands*>();
+    QVERIFY(commands);
+    const int marker = document_->findBlockByNumber(1).position(), after = document_->lastBlock().position();
+    for (bool reverse : {false, true}) {
+      const int from = 2, to = after + 3;
+      QVERIFY(QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, reverse ? to : from), Q_ARG(int, reverse ? from : to)));
+      QGuiApplication::clipboard()->setText(QStringLiteral("replacement"));
+      for (const auto key : {Qt::Key_X, Qt::Key_V, Qt::Key_K}) {
+        press(key, Qt::ControlModifier);
+        QCOMPARE(document_elements(*document_), elements);
+        QCOMPARE(editor_->property("selectionStart").toInt(), from);
+        QCOMPARE(editor_->property("selectionEnd").toInt(), to);
+      }
+      QInputMethodEvent replace;
+      replace.setCommitString(QStringLiteral("replacement"));
+      QGuiApplication::sendEvent(editor_, &replace);
+      QCOMPARE(document_elements(*document_), elements);
+      QCOMPARE(editor_->property("selectionStart").toInt(), from);
+      QCOMPARE(editor_->property("selectionEnd").toInt(), to);
+    }
+    // Qt removes a selected prefix before applying IME replacement offsets.
+    // A negative offset then reaches the marker, not the selection's far end.
+    for (bool reverse : {false, true}) {
+      QVERIFY(QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, reverse ? after + 3 : after),
+                                       Q_ARG(int, reverse ? after : after + 3)));
+      QInputMethodEvent offset;
+      offset.setCommitString(QStringLiteral("X"), -1, 1);
+      QGuiApplication::sendEvent(editor_, &offset);
+      QCOMPARE(document_elements(*document_), elements);
+      QCOMPARE(editor_->property("selectionStart").toInt(), after);
+      QCOMPARE(editor_->property("selectionEnd").toInt(), after + 3);
+    }
+    editor_->setProperty("cursorPosition", marker);
+    QInputMethodEvent commit;
+    commit.setCommitString(QStringLiteral("é"));
+    QGuiApplication::sendEvent(editor_, &commit);
+    auto expected = elements;
+    expected[2].text = "éAfter.";
+    QCOMPARE(document_elements(*document_), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), elements);
+    // An IME replacement range can cross a marker without a visible selection.
+    editor_->setProperty("cursorPosition", after);
+    QInputMethodEvent crossing;
+    crossing.setCommitString(QStringLiteral("bad"), -2, 2);
+    QGuiApplication::sendEvent(editor_, &crossing);
+    QCOMPARE(document_elements(*document_), elements);
+    QVERIFY(!commands->pageBreakMessage().isEmpty());
+    crossing.setCommitString(QStringLiteral("bad"), -1, 0);
+    QGuiApplication::sendEvent(editor_, &crossing);
+    QCOMPARE(document_elements(*document_), elements);
+    // Copy retains the structural marker, but paste refuses rather than
+    // inserting it as text or detaching a speech.
+    commands->enter(marker, marker, marker); // Navigation clears the previous refusal without editing.
+    QVERIFY(commands->pageBreakMessage().isEmpty());
+    commands->copy(marker, marker + 1);
+    editor_->setProperty("cursorPosition", after + 2);
+    press(Qt::Key_V, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), elements);
+    QVERIFY(!commands->pageBreakMessage().isEmpty());
+    QVERIFY(!document_->isUndoAvailable());
+    // Marker-only selection deletion removes that marker, not either neighbor.
+    QVERIFY(QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, marker), Q_ARG(int, marker + 1)));
+    press(Qt::Key_Backspace);
+    expected = {elements[0], elements[2]};
+    QCOMPARE(document_elements(*document_), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), elements);
+  }
+
+  void legacy_page_break_cannot_be_retyped_or_deleted() {
+    // open_elements requires a valid layout, so attach this legacy state after
+    // opening the ordinary body; the engine must report it, never hide it.
+    QVERIFY(open_elements({{ElementType::action, "Before."}, {ElementType::page_break, ""},
+                           {ElementType::action, "After."}}));
+    auto marker = document_->findBlockByNumber(1);
+    QTextCursor legacy(marker);
+    legacy.insertText(QStringLiteral("retained text"));
+    document_->clearUndoRedoStacks();
+    const auto original = document_elements(*document_);
+    QVERIFY(!layout()->error().isEmpty());
+    editor_->setProperty("cursorPosition", marker.position());
+    press(Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Delete);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Tab);
+    QCOMPARE(document_elements(*document_), original);
+    editor_->setProperty("cursorPosition", marker.position() + 3);
+    press(Qt::Key_K, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    editor_->setProperty("cursorPosition", marker.position());
+    type(QStringLiteral("X"));
+    auto typed = original;
+    typed[2].text = "XAfter.";
+    QCOMPARE(document_elements(*document_), typed);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+  }
+
+  void manual_break_removal_refuses_ambiguous_speech_attachment() {
+    for (const auto elements : {
+        std::vector<Element>{{ElementType::cue, "MARA"}, {ElementType::page_break, ""},
+                             {ElementType::dialogue, "Orphan."}},
+        std::vector<Element>{{ElementType::cue, "MARA"}, {ElementType::dialogue, "First."},
+                             {ElementType::page_break, ""}, {ElementType::parenthetical, "(orphan)"}, {ElementType::dialogue, "Last."}},
+        std::vector<Element>{{ElementType::cue, "MARA"}, {ElementType::dialogue, "Left."},
+                             {ElementType::page_break, ""}, {ElementType::cue, "THEO", true}, {ElementType::dialogue, "Right."}}}) {
+      QVERIFY(open_elements(elements));
+      const auto original = document_elements(*document_);
+      auto marker = document_->begin();
+      while (element_type(marker) != ElementType::page_break) marker = marker.next();
+      editor_->setProperty("cursorPosition", marker.position());
+      press(Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*document_), original);
+      auto* commands = document_->findChild<EditorCommands*>();
+      QVERIFY(commands && !commands->pageBreakMessage().isEmpty());
+      QVERIFY(!document_->isUndoAvailable());
+    }
+  }
+
+  void manual_break_input_method_in_marker_only_body() {
+    QVERIFY(open_elements({{ElementType::page_break, "", false, {}, "break"}}));
+    QInputMethodEvent preedit(QStringLiteral("pending"), {});
+    QGuiApplication::sendEvent(editor_, &preedit);
+    const auto original = document_elements(*document_);
+    QCOMPARE(original, (std::vector<Element>{{ElementType::page_break, "", false, {}, "break"}}));
+    QInputMethodEvent commit;
+    commit.setCommitString(QStringLiteral("é"));
+    QGuiApplication::sendEvent(editor_, &commit);
+    const auto typed = document_elements(*document_);
+    QCOMPARE(typed.size(), std::size_t(2));
+    QCOMPARE(typed.front(), original.front());
+    QCOMPARE(typed.back().type, ElementType::action);
+    QCOMPARE(typed.back().text, std::string("é"));
+    for (auto block = document_->begin(); block.isValid(); block = block.next())
+      QVERIFY(block.layout()->preeditAreaText().isEmpty());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+  }
+
+  void manual_break_word_deletion_keeps_marker_barrier() {
+    const std::vector<Element> input{{ElementType::action, "Before.  ", false, {}, "before"},
+        {ElementType::page_break, "", false, {}, "break"}, {ElementType::action, "  After.", false, {}, "after"}};
+    for (bool backward : {false, true}) {
+      QVERIFY(open_elements(input));
+      editor_->setProperty("cursorPosition", backward ? document_->lastBlock().position() + 2 : 7);
+      press(backward ? Qt::Key_Backspace : Qt::Key_Delete, Qt::ControlModifier);
+      const auto actual = document_elements(*document_);
+      QCOMPARE(actual.size(), std::size_t(3));
+      QCOMPARE(actual[1], input[1]);
+      QCOMPARE(actual[backward ? 0 : 2], input[backward ? 0 : 2]);
+    }
+  }
+
+  void manual_break_removal_after_title_retains_body_destination() {
+    const std::vector<Element> input{{ElementType::title, "SIGNAL", false, {}, "title"},
+        {ElementType::author, "June Vale", false, {}, "author"}, {ElementType::page_break, "", false, {}, "break"}};
+    QVERIFY(open_elements(input));
+    editor_->setProperty("cursorPosition", document_->lastBlock().position());
+    press(Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+    const auto removed = document_elements(*document_);
+    QCOMPARE(removed.size(), std::size_t(3));
+    QCOMPARE(removed[0], input[0]);
+    QCOMPARE(removed[1], input[1]);
+    QCOMPARE(removed[2].type, ElementType::action);
+    QVERIFY(removed[2].text.empty());
+    QCOMPARE(block_element(block_at(cursor())), removed[2]);
+    type(QStringLiteral("Body."));
+    auto typed = removed;
+    typed[2].text = "Body.";
+    QCOMPARE(document_elements(*document_), typed);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), removed);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), input);
+  }
+
+  void manual_break_destinations_skip_interleaved_title_fields() {
+    const Element before{ElementType::action, "Before.", false, {}, "before"};
+    const Element title{ElementType::title, "SIGNAL", false, {}, "title"};
+    const Element after{ElementType::action, "After.", false, {}, "after"};
+    const Element marker{ElementType::page_break, "", false, {}, "break"};
+    // The editor contract permits title fields anywhere in the block list;
+    // saving later moves them ahead of the body without changing pagination.
+    QVERIFY(open_elements({before, marker, title, after}));
+    editor_->setProperty("cursorPosition", document_->findBlockByNumber(1).position());
+    press(Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), (std::vector<Element>{before, title, after}));
+    QCOMPARE(block_element(block_at(cursor())), after);
+    QVERIFY(open_elements({before, title, after}));
+    editor_->setProperty("cursorPosition", 7);
+    press(Qt::Key_Return, Qt::ControlModifier);
+    auto inserted = document_elements(*document_);
+    QCOMPARE(inserted.size(), std::size_t(4));
+    QCOMPARE(inserted[0], before);
+    QCOMPARE(inserted[1], title);
+    QCOMPARE(inserted[2].type, ElementType::page_break);
+    QCOMPARE(inserted[3], after);
+    QCOMPARE(block_element(block_at(cursor())), after);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), (std::vector<Element>{before, title, after}));
+    QVERIFY(open_elements({before, title}));
+    editor_->setProperty("cursorPosition", 7);
+    press(Qt::Key_Return, Qt::ControlModifier);
+    inserted = document_elements(*document_);
+    QCOMPARE(inserted.size(), std::size_t(4));
+    QCOMPARE(inserted[0], before);
+    QCOMPARE(inserted[1], title);
+    QCOMPARE(inserted[2].type, ElementType::page_break);
+    QCOMPARE(inserted[3].type, ElementType::action);
+    QVERIFY(inserted[3].text.empty());
+    QCOMPARE(block_element(block_at(cursor())), inserted[3]);
+    QVERIFY(open_elements({before, marker, title}));
+    editor_->setProperty("cursorPosition", 7);
+    press(Qt::Key_Return, Qt::ControlModifier);
+    inserted = document_elements(*document_);
+    QCOMPARE(inserted.size(), std::size_t(5));
+    QCOMPARE(inserted[0], before);
+    QCOMPARE(inserted[1].type, ElementType::page_break);
+    QCOMPARE(inserted[2], marker);
+    QCOMPARE(inserted[3], title);
+    QCOMPARE(inserted[4].type, ElementType::action);
+    QVERIFY(inserted[4].text.empty());
+    QCOMPARE(block_element(block_at(cursor())), inserted[4]);
+  }
+
+  void manual_break_plain_paste_uses_redirected_speech_type() {
+    const std::vector<Element> input{{ElementType::cue, "MARA", false, {}, "cue"},
+        {ElementType::dialogue, "Keep listening.", false, {}, "speech"}, {ElementType::page_break, "", false, {}, "break"}};
+    QVERIFY(open_elements(input));
+    editor_->setProperty("cursorPosition", document_->lastBlock().position());
+    QGuiApplication::clipboard()->setText(QStringLiteral("One.\nTwo."));
+    press(Qt::Key_V, Qt::ControlModifier);
+    const auto pasted = document_elements(*document_);
+    QCOMPARE(pasted.size(), std::size_t(5));
+    QCOMPARE(pasted[0], input[0]);
+    QCOMPARE(pasted[1], input[1]);
+    QCOMPARE(pasted[2].type, ElementType::dialogue);
+    QCOMPARE(pasted[2].text, std::string("One."));
+    QCOMPARE(pasted[3].type, ElementType::dialogue);
+    QCOMPARE(pasted[3].text, std::string("Two."));
+    QCOMPARE(pasted[4], input[2]);
+    QVERIFY(!pasted[2].id.empty() && !pasted[3].id.empty() && pasted[2].id != pasted[3].id);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), input);
+  }
+
   // The title page is the first page card; a manual break's caret line sits
   // two slots after the last line of the page it ends (page 1, slot 5).
   void title_page_and_manual_break_carets() {

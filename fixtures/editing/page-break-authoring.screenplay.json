@@ -1,0 +1,21 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [
+    {"id": "title", "field": "title", "text": "THE PAPER SIGNAL"}
+  ],
+  "elements": [
+    {"id": "heading", "type": "sceneHeading", "text": "INT. RELAY ROOM - NIGHT"},
+    {"id": "opening", "type": "action", "text": "A brass bell waits.", "styles": [{"start": 2, "end": 7, "style": "bold"}]},
+    {"id": "single-cue", "type": "character", "text": "MARA"},
+    {"id": "single-aside", "type": "parenthetical", "text": "(quietly)"},
+    {"id": "single-dialogue", "type": "dialogue", "text": "Keep the line open."},
+    {"id": "bridge", "type": "action", "text": "The needle settles."},
+    {"id": "left-cue", "type": "character", "text": "THEO"},
+    {"id": "left-dialogue", "type": "dialogue", "text": "I hear you."},
+    {"id": "right-cue", "type": "character", "text": "JUNE", "dual": true},
+    {"id": "right-dialogue", "type": "dialogue", "text": "Stay with me."},
+    {"id": "tail", "type": "action", "text": "The lamp dims."}
+  ]
+}

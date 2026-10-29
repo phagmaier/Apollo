@@ -4,14 +4,18 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QInputMethodEvent>
+#include <QMouseEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMimeData>
 #include <QRegularExpression>
 #include <QSet>
+#include <QScopedValueRollback>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextLayout>
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -68,7 +72,7 @@ void replace_title_text(QTextCursor& cursor, const QTextBlock& block, const QStr
   cursor.insertText(text.mid(prefix, text.size() - prefix - suffix), QTextCharFormat());
 }
 
-void remove_title_block(QTextCursor& cursor, const QTextBlock& block) {
+void remove_element_block(QTextCursor& cursor, const QTextBlock& block) {
   if (const auto next = block.next(); next.isValid()) {
     const auto format = next.blockFormat();
     const auto characters = next.charFormat();
@@ -131,6 +135,81 @@ SpeechState speech_state(QTextBlock cue) {
   return state;
 }
 
+bool speech_part(ElementType type) {
+  return type == ElementType::dialogue || type == ElementType::parenthetical;
+}
+
+// A speech and its adjacent dual partner are indivisible for break placement,
+// including unfinished speeches. Never insert between a cue and its parts.
+std::pair<QTextBlock, QTextBlock> writing_group(QTextBlock block) {
+  auto first = block, last = block;
+  while (speech_part(element_type(first)) && first.previous().isValid() &&
+         (speech_part(element_type(first.previous())) || element_type(first.previous()) == ElementType::cue))
+    first = first.previous();
+  if (element_type(first) != ElementType::cue) {
+    while (last.next().isValid() && speech_part(element_type(last)) && speech_part(element_type(last.next())))
+      last = last.next();
+    return {first, last};
+  }
+  while (first.blockFormat().boolProperty(dual_right_property)) {
+    auto previous = first.previous();
+    while (previous.isValid() && speech_part(element_type(previous))) previous = previous.previous();
+    if (!previous.isValid() || element_type(previous) != ElementType::cue) break;
+    first = previous;
+  }
+  last = first;
+  for (;;) {
+    while (last.next().isValid() && speech_part(element_type(last.next()))) last = last.next();
+    const auto next = last.next();
+    if (!next.isValid() || element_type(next) != ElementType::cue ||
+        !next.blockFormat().boolProperty(dual_right_property)) break;
+    last = next;
+  }
+  return {first, last};
+}
+
+QTextBlockFormat element_format(ElementType type) {
+  QTextBlockFormat format;
+  format.setProperty(element_type_property, static_cast<int>(type));
+  format.setProperty(element_id_property, new_id());
+  return format;
+}
+
+// Qt gives the original block to the new empty prefix. Put its original
+// format on the surviving text, and a new identity on the inserted marker.
+void insert_before(QTextCursor& cursor, const QTextBlock& block, ElementType type) {
+  const auto format = block.blockFormat();
+  const auto characters = block.charFormat();
+  const int at = block.position();
+  cursor.setPosition(at);
+  cursor.insertBlock(format, characters);
+  cursor.setPosition(at);
+  cursor.setBlockFormat(element_format(type));
+  cursor.setBlockCharFormat(QTextCharFormat());
+}
+
+QTextBlock selected_marker(QTextDocument* document, int start, int end) {
+  const auto [from, to] = std::minmax(start, end);
+  if (to - from != 1) return {};
+  const auto before = document->findBlock(from), after = document->findBlock(to);
+  if (before.isValid() && element_type(before) == ElementType::page_break && before.text().isEmpty()) return before;
+  if (after.isValid() && element_type(after) == ElementType::page_break && after.text().isEmpty() &&
+      from == before.position() + before.length() - 1) return after;
+  return {};
+}
+
+int nearby_writing(const QTextBlock& block, bool backward) {
+  auto find = [&](bool previous) {
+    auto adjacent = previous ? block.previous() : block.next();
+    while (adjacent.isValid() && (element_type(adjacent) == ElementType::page_break ||
+                                  title_index(element_type(adjacent)) >= 0))
+      adjacent = previous ? adjacent.previous() : adjacent.next();
+    return adjacent.isValid() ? adjacent.position() + (previous ? adjacent.length() - 1 : 0) : -1;
+  };
+  const int preferred = find(backward);
+  return preferred < 0 ? find(!backward) : preferred;
+}
+
 QTextBlock cue_with_id(QTextDocument* document, const QString& id) {
   if (id.isEmpty()) return {};
   for (auto block = document->begin(); block.isValid(); block = block.next())
@@ -142,13 +221,15 @@ QTextBlock cue_with_id(QTextDocument* document, const QString& id) {
 // The elements covering [start, end), each cut to the selected part. A
 // selection edge that covers none of a block's text leaves that block out.
 std::vector<Element> selected_elements(QTextDocument* document, int start, int end) {
+  if (const auto marker = selected_marker(document, start, end); marker.isValid())
+    return {block_element(marker)};
   std::vector<Element> elements;
   const auto first = document->findBlock(start), last = document->findBlock(end);
   for (auto block = first; block.isValid(); block = block.next()) {
     const auto text = block.text();
     const int from = std::max(start - block.position(), 0), to = std::min(end - block.position(), static_cast<int>(text.size()));
     const bool edge_only = first != last && ((block == first && from == text.size()) || (block == last && to == 0));
-    if (!edge_only)
+    if (!edge_only || (element_type(block) == ElementType::page_break && block.position() < end))
       elements.push_back(split_element(split_element(block_element(block), utf8_offset(text, to)).first, utf8_offset(text, from)).second);
     if (block == last) break;
   }
@@ -373,20 +454,234 @@ bool EditorCommands::setTitlePage(const QVariantList& entries) {
   for (auto id = removed.crbegin(); id != removed.crend(); ++id) {
     const auto block = block_with_id(document_, *id);
     cursor.setPosition(block.position());
-    remove_title_block(cursor, block);
+    remove_element_block(cursor, block);
   }
   cursor.endEditBlock();
   return true;
 }
 
+void EditorCommands::setPageBreakMessage(const QString& message) {
+  if (message == page_break_message_) return;
+  page_break_message_ = message;
+  emit pageBreakMessageChanged();
+}
+
+bool EditorCommands::isPageBreak(int position) const {
+  const auto block = document_->findBlock(position);
+  return block.isValid() && element_type(block) == ElementType::page_break;
+}
+
+bool EditorCommands::refuseMarkerSelection(int start, int end) {
+  const auto [from, to] = std::minmax(start, end);
+  if (from == to) return false;
+  for (auto block = document_->findBlock(from); block.isValid() && block.position() <= to; block = block.next()) {
+    if (element_type(block) != ElementType::page_break) continue;
+    setPageBreakMessage(QStringLiteral("This selection crosses a page break. Remove the page break first, or select text on one side."));
+    return true;
+  }
+  return false;
+}
+
+int EditorCommands::editablePosition(int position, bool backward) const {
+  const auto block = document_->findBlock(position);
+  if (!block.isValid() || element_type(block) != ElementType::page_break) return position;
+  const int at = nearby_writing(block, backward);
+  return at < 0 ? position : at;
+}
+
+void EditorCommands::moveToWriting(QTextCursor& cursor, bool skipTitle) {
+  const auto type = element_type(cursor.block());
+  if (type != ElementType::page_break && !(skipTitle && title_index(type) >= 0)) return;
+  const int at = nearby_writing(cursor.block(), false);
+  if (at >= 0) { cursor.setPosition(at); return; }
+  cursor.movePosition(QTextCursor::End);
+  cursor.insertBlock(element_format(ElementType::action), QTextCharFormat());
+}
+
+int EditorCommands::insertPageBreak(int position, int start, int end) {
+  if (start != end) {
+    setPageBreakMessage(QStringLiteral("Keep the selected writing: place a single caret to insert a page break."));
+    return -1;
+  }
+  const auto block = document_->findBlock(position);
+  if (!block.isValid()) return -1;
+  if (title_index(element_type(block)) >= 0) {
+    setPageBreakMessage(QStringLiteral("Page breaks belong in the screenplay body, not the title page."));
+    return -1;
+  }
+  const auto [first, last] = writing_group(block);
+  const bool after = block == last && position == block.position() + block.length() - 1 &&
+                     element_type(block) != ElementType::page_break && !block.text().isEmpty();
+  QTextCursor cursor(document_);
+  cursor.beginEditBlock();
+  typed_end_ = typed_steps_ = -1;
+  int caret;
+  if (!after) {
+    insert_before(cursor, first, ElementType::page_break);
+    cursor.setPosition(position + 1);
+    moveToWriting(cursor);
+    caret = cursor.position();
+  } else {
+    auto next = last.next();
+    while (next.isValid() && title_index(element_type(next)) >= 0) next = next.next();
+    if (next.isValid()) insert_before(cursor, next, ElementType::page_break);
+    else {
+      cursor.movePosition(QTextCursor::End);
+      cursor.insertBlock(element_format(ElementType::page_break), QTextCharFormat());
+    }
+    auto following = cursor.block().next();
+    while (following.isValid() && (element_type(following) == ElementType::page_break ||
+                                   title_index(element_type(following)) >= 0))
+      following = following.next();
+    if (following.isValid()) cursor.setPosition(following.position());
+    else {
+      cursor.movePosition(QTextCursor::End);
+      cursor.insertBlock(element_format(ElementType::action), QTextCharFormat());
+    }
+    caret = cursor.position();
+  }
+  cursor.endEditBlock();
+  setPageBreakMessage({});
+  return caret;
+}
+
+int EditorCommands::removePageBreak(int position, int start, int end) {
+  auto block = document_->findBlock(position);
+  if (start != end) {
+    block = selected_marker(document_, start, end);
+    if (!block.isValid()) {
+      setPageBreakMessage(QStringLiteral("Keep the selected writing: place the caret beside the page break to remove it."));
+      return -1;
+    }
+  } else if (block.isValid() && element_type(block) != ElementType::page_break) {
+    if (position == block.position() && block.previous().isValid() &&
+        element_type(block.previous()) == ElementType::page_break) block = block.previous();
+    else if (position == block.position() + block.length() - 1 && block.next().isValid() &&
+             element_type(block.next()) == ElementType::page_break) block = block.next();
+    else block = {};
+  }
+  if (!block.isValid() || element_type(block) != ElementType::page_break) {
+    setPageBreakMessage(QStringLiteral("Place the caret on a page break or at the adjacent element boundary to remove it."));
+    return -1;
+  }
+  if (!block.text().isEmpty()) {
+    setPageBreakMessage(QStringLiteral("This legacy page break contains saved text and is retained for review. It cannot be removed as an empty marker."));
+    return -1;
+  }
+  const auto previous = block.previous(), next = block.next();
+  if (previous.isValid() && next.isValid() &&
+      (element_type(previous) == ElementType::cue || speech_part(element_type(previous))) &&
+      (speech_part(element_type(next)) ||
+       (element_type(next) == ElementType::cue && next.blockFormat().boolProperty(dual_right_property)))) {
+    setPageBreakMessage(QStringLiteral("Removing this break would attach dialogue to a different speech or create a dual pair. Resolve the surrounding speech structure first."));
+    return -1;
+  }
+  QTextCursor cursor(document_);
+  cursor.beginEditBlock();
+  typed_end_ = typed_steps_ = -1;
+  remove_element_block(cursor, block);
+  moveToWriting(cursor, true);
+  cursor.endEditBlock();
+  setPageBreakMessage({});
+  return cursor.position();
+}
+
+int EditorCommands::deleteText(int position, int start, int end, bool backward) {
+  if (start != end) {
+    if (const auto marker = selected_marker(document_, start, end); marker.isValid()) {
+      const int caret = removePageBreak(marker.position(), start, end);
+      return caret < 0 ? -2 : caret;
+    }
+    return refuseMarkerSelection(start, end) ? -2 : -1;
+  }
+  const auto block = document_->findBlock(position);
+  if (!block.isValid()) return -1;
+  auto marker = block;
+  if (element_type(marker) != ElementType::page_break) {
+    if (backward && position == block.position()) marker = block.previous();
+    else if (!backward && position == block.position() + block.length() - 1) marker = block.next();
+    else return -1;
+  }
+  if (!marker.isValid() || element_type(marker) != ElementType::page_break) return -1;
+  const int caret = removePageBreak(marker.position(), marker.position(), marker.position());
+  return caret < 0 ? position : caret;
+}
+
+bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
+  if (forwarding_input_) return false;
+  if (event->type() != QEvent::InputMethod && event->type() != QEvent::MouseButtonPress &&
+      event->type() != QEvent::MouseButtonRelease)
+    return QObject::eventFilter(watched, event);
+  if (event->type() != QEvent::InputMethod && static_cast<QMouseEvent*>(event)->button() != Qt::MiddleButton)
+    return QObject::eventFilter(watched, event);
+  const int position = watched->property("cursorPosition").toInt();
+  const int start = watched->property("selectionStart").toInt(), end = watched->property("selectionEnd").toInt();
+  if (event->type() == QEvent::InputMethod) {
+    const auto* input = static_cast<QInputMethodEvent*>(event);
+    // Qt removes the selection first, then applies replacement offsets at its
+    // left edge. Map that effective range back to original document positions.
+    const auto [left, right] = std::minmax(start, end);
+    const int base = start == end ? position : left;
+    auto original_position = [&](int at) { return at < left ? at : at + right - left; };
+    const int from = original_position(base + input->replacementStart());
+    const int to = original_position(base + input->replacementStart() + input->replacementLength());
+    if (refuseMarkerSelection(start, end) || (input->replacementLength() && refuseMarkerSelection(from, to))) {
+      event->accept();
+      return true;
+    }
+    if (input->replacementStart() && (isPageBreak(position) || isPageBreak(from))) {
+      setPageBreakMessage(QStringLiteral("Input-method replacement cannot cross a page-break boundary."));
+      event->accept();
+      return true;
+    }
+    if (isPageBreak(position)) {
+      auto preedit_event = [&](const QString& text, const QList<QInputMethodEvent::Attribute>& attributes) {
+        QScopedValueRollback guard(forwarding_input_, true);
+        QInputMethodEvent update(text, attributes);
+        QGuiApplication::sendEvent(watched, &update);
+      };
+      const int adjacent = editablePosition(position);
+      if (adjacent != position && !input->replacementLength()) {
+        preedit_event({}, {});
+        watched->setProperty("cursorPosition", adjacent);
+      } else if (!input->commitString().isEmpty() || input->replacementLength()) {
+        if (input->replacementLength())
+          setPageBreakMessage(QStringLiteral("Input-method replacement cannot cross a page-break boundary."));
+        else {
+          preedit_event({}, {});
+          watched->setProperty("cursorPosition", typeText(position, start, end, input->commitString()));
+          // Clear the old marker's transient ink before moving the caret;
+          // deliver any new preedit on the actual writing element.
+          preedit_event(input->preeditString(), input->attributes());
+        }
+        event->accept();
+        return true;
+      }
+    }
+  } else {
+    const auto* mouse = static_cast<QMouseEvent*>(event);
+    const int target = document_->documentLayout()->hitTest(mouse->position(), Qt::FuzzyHit);
+    if (mouse->button() == Qt::MiddleButton &&
+        (isPageBreak(position) || isPageBreak(target) || refuseMarkerSelection(start, end))) {
+      setPageBreakMessage(QStringLiteral("Use Paste (Ctrl+V) beside a page break; primary-selection paste is unavailable on markers."));
+      event->accept();
+      return true;
+    }
+  }
+  return QObject::eventFilter(watched, event);
+}
+
 int EditorCommands::typeText(int position, int selectionStart, int selectionEnd, const QString& text) {
+  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setPageBreakMessage({});
   auto cursor = selection(document_, position, selectionStart, selectionEnd);
   const bool word_start = !text.isEmpty() && !text.front().isSpace() &&
                           (cursor.atBlockStart() || document_->characterAt(cursor.selectionStart() - 1).isSpace());
-  const bool group = !cursor.hasSelection() && cursor.position() == typed_end_ &&
+  const bool group = !cursor.hasSelection() && !isPageBreak(position) && cursor.position() == typed_end_ &&
                      document_->availableUndoSteps() == typed_steps_ && !word_start;
   // Outside an edit block, consecutive inserts merge into the previous step.
   if (!group) cursor.beginEditBlock();
+  moveToWriting(cursor);
   if (!cursor.hasSelection() && !cursor.atBlockStart() && !cursor.atBlockEnd() &&
       document_->characterAt(cursor.position() - 1) == QChar::LineSeparator) {
     // The break itself is plain. At the start of a continued authored line,
@@ -403,8 +698,15 @@ int EditorCommands::typeText(int position, int selectionStart, int selectionEnd,
 }
 
 int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
+  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setPageBreakMessage({});
   auto cursor = selection(document_, position, selectionStart, selectionEnd);
   cursor.beginEditBlock();
+  if (isPageBreak(position) && !cursor.hasSelection()) {
+    moveToWriting(cursor);
+    cursor.endEditBlock();
+    return cursor.position();
+  }
   cursor.removeSelectedText();
   const auto block = cursor.block();
   const auto type = element_type(block);
@@ -439,6 +741,11 @@ int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
 }
 
 void EditorCommands::cycleType(int position, bool backward) {
+  if (isPageBreak(position)) {
+    setPageBreakMessage(QStringLiteral("A page break is not a text element. Move to adjacent writing to change its type."));
+    return;
+  }
+  setPageBreakMessage({});
   QTextCursor cursor(document_);
   cursor.setPosition(position);
   const auto type = element_type(cursor.block());
@@ -530,6 +837,8 @@ void EditorCommands::copy(int selectionStart, int selectionEnd) {
 }
 
 int EditorCommands::cut(int selectionStart, int selectionEnd) {
+  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setPageBreakMessage({});
   copy(selectionStart, selectionEnd);
   auto cursor = selection(document_, selectionStart, selectionStart, selectionEnd);
   cursor.beginEditBlock();
@@ -539,6 +848,8 @@ int EditorCommands::cut(int selectionStart, int selectionEnd) {
 }
 
 int EditorCommands::paste(int position, int selectionStart, int selectionEnd) {
+  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setPageBreakMessage({});
   const auto* data = QGuiApplication::clipboard()->mimeData();
   if (!data) return position;
   std::vector<Element> elements;
@@ -549,10 +860,15 @@ int EditorCommands::paste(int position, int selectionStart, int selectionEnd) {
       apollo_selection = true;
     }
   }
+  if (std::any_of(elements.begin(), elements.end(), [](const Element& e) { return e.type == ElementType::page_break; })) {
+    setPageBreakMessage(QStringLiteral("This Apollo selection contains page breaks. Paste text from one side, then use Insert page break to preserve speech boundaries."));
+    return -1;
+  }
   if (!apollo_selection) {
     // Plain text: one action paragraph per non-empty line, or dialogue when
     // pasted inside dialogue. Line separators and tabs never reach the layout.
-    const auto type = element_type(document_->findBlock(selectionStart != selectionEnd ? selectionStart : position));
+    const int target = selectionStart != selectionEnd ? std::min(selectionStart, selectionEnd) : editablePosition(position);
+    const auto type = element_type(document_->findBlock(target));
     for (auto line : data->text().split(QRegularExpression(QStringLiteral("\\r\\n|[\\r\\n\\x{2028}\\x{2029}]")))) {
       line.replace(QLatin1Char('\t'), QLatin1Char(' '));
       if (!line.trimmed().isEmpty())
@@ -562,6 +878,7 @@ int EditorCommands::paste(int position, int selectionStart, int selectionEnd) {
   if (elements.empty()) return position;
   auto cursor = selection(document_, position, selectionStart, selectionEnd);
   cursor.beginEditBlock();
+  moveToWriting(cursor);
   cursor.removeSelectedText();
   int caret;
   const auto target = cursor.block();

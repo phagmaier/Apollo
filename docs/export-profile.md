@@ -144,6 +144,14 @@ Task 3c's emphasis boundary: authored cue text keeps its styles, but generated
 suffixes are plain in editor and PDF. A typed suffix replaced by G1 remains
 styled in the saved source without transferring that style to generated text.
 This changes no wrapping, geometry, continuation wording or fixture expectation.
+Manual-break authoring preserves whole elements, speeches and dual pairs; see
+the [source interaction contract](source-format.md#manual-page-break-authoring-slice-3).
+Leading, consecutive and trailing markers preserve every empty body page and
+its normal numbering. The writer labels markers in the page gap, outside the
+printed page; the label is not a layout line. A legacy marker with nonempty
+text now causes an explicit layout/PDF refusal rather than dropping its words.
+Its text stays visible in the editor's error fallback and remains saveable.
+
 
 ### Fit against the Academy pages
 

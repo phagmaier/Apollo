@@ -85,6 +85,26 @@ comparison below; agreement with the engine alone does not prove correctness.
   - it puts one blank line after `FADE IN:` before a heading.
 - Use it to catch wrapping mistakes and to estimate page counts. It is not a page-break authority.
 
+### Manual page-break authoring
+
+`editing/page-break-authoring.screenplay.json` is an original, unbroken model:
+title, heading, emphasized action, one speech, bridge action, a dual pair and
+tail action. The real Writing desk flow inserts markers before the single
+speech and complete dual pair. `editing/page-break-authoring.expected` gives
+hand-derived title/body pages, slots, columns, emphasis and body numbers;
+`export/page-break-authoring.fountain` is the hand-written canonical output.
+The PDF checks read the actual control-authored export through Poppler, then
+check fresh-process snapshot and title omission. The independent aw-parser
+checks actual export, fresh-process re-export and bounded reimport.
+
+`page_break_layout_tests` separately checks leading/consecutive/trailing and
+marker-only empty pages, title/body numbering, a full-page boundary, source
+mapping and legacy-text refusal without touching the existing layout fixture
+expectations. `tools/check-wayland.sh` includes
+`tests/page_break_native_smoke.py`: isolated ordinary project, compositor
+`wtype` commands, adjacent typing, safe deletion, undo/redo, autosave, fresh
+process reopen, exact Fountain and independently read PDF pages.
+
 ## Source format — `source/`
 
 `v1-example.screenplay.json` is a hand-written screenplay file in Apollo's

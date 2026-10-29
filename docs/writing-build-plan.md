@@ -41,6 +41,10 @@ one-second crash-loss target; see task 2.3's evidence and limits.
 **Task 3d — structured title-page form is done for this bounded step**, with
 release, sanitizer, engine and full native evidence below. Other slice 3
 controls and writing assistance remain separate work.
+**Manual page-break authoring is done for its bounded slice 3 task**, with
+whole-element/speech-safe controls, marker-only deletion, undo, autosave/reopen
+and independently checked PDF/Fountain output. Final release, sanitizer,
+engine and native evidence follows below; imported PDF remains blocked.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1354,4 +1358,129 @@ the remaining writing features retain their earlier gates. Extended comfort,
 owner appearance acceptance and screen-reader interaction were not exercised.
 Native virtual input is not physical-input latency. No new crash-loss,
 copying-loss or power-loss guarantee follows from these title checks.
+
+### Manual page-break authoring — bounded slice 3
+
+2026-10-29. The Writing desk gains **Page break → Insert / Remove**,
+**Ctrl+Enter / Ctrl+Shift+Enter**, and a nonprinting **Remove** control in each
+manual-break page gap. This authorizes/completes only this bounded capability,
+not act labels, dual-dialogue authoring, general paste, assistance or the rest
+of slice 3.
+
+The owner explicitly chose **before the whole element or speech** rather than
+splitting words, and **refuse selected insertion while preserving selection**.
+An adjacent dual pair is one group. A safe final end inserts after the group;
+with no following writing it creates a plain empty action in the same undo
+step. See the [boundary behavior table](source-format.md#manual-page-break-authoring-slice-3).
+Existing words, types, emphasis, identities and dual flags stay unchanged.
+Removal deletes only a marker, without joining its neighboring elements.
+Selections crossing markers are refused for replacement, Enter, cut, paste
+and deletion; a marker-only separator selection can remove that marker.
+Potentially meaning-changing orphan-speech/dual attachment is explicitly refused.
+
+The existing source model and autosave adapter are unchanged. Markers survive
+undo/redo, autosave and reopen with their identities. Leading, consecutive and
+trailing markers retain empty pages and body numbering; title pages do not
+enter that count. Editor gap labels never enter PDF or Fountain. Legacy text
+inside a marker remains visible/saveable and causes a PDF/Fountain refusal,
+not hidden content loss. Imported PDF and every existing Fountain eligibility
+gate remain in force.
+
+#### Verification design and review
+
+The initial real-key regression fails on the previous authoring path:
+Ctrl+Enter splits action into another ordinary action instead of creating a
+marker. Corrected focused tests cover whole-element text/styles/IDs, whole
+speech/dual placement, safe boundary deletion, leading/consecutive/trailing
+and marker-only bodies, empty elements, reversed selections, type/paste/IME
+redirection, one-step undo and title-only removal destinations.
+
+The original public `page-break-authoring` fixtures pair an unbroken model
+with hand-derived title/body slots, columns, emphasis and numbering and
+hand-written canonical Fountain. Real QML controls author the two markers,
+save/reopen and export both formats. Poppler reads the actual PDF, and
+aw-parser reads actual/fresh-process/reimported Fountain. Independent edge
+cases retain leading/consecutive/trailing and marker-only Fountain.
+The actual PDF worker also refuses legacy marker text while retaining the
+existing PDF and exact source bytes.
+
+Review caught a real instrumentation integration failure: `--snapshot` used
+select-all replacement across protected markers. It now explicitly removes
+safe markers through the same command as the gap control before replacing
+text, with the entire live change grouped as one undo step. Its restoration
+assertion now includes full elements, styles and identities, not only text.
+The accepted PDF must still match the original independent fixture after
+typing, undo/redo and live repagination.
+
+Further review-driven corrections guard Ctrl+K's native delete-to-end-of-line
+route and IME replacement offsets after selection removal, classify plain
+paste from its actual redirected type, and create body writing rather than
+append to a title when the last body marker is removed. A marker-only IME
+composition check exposed lingering preedit ink; the command now clears Qt's
+old transient preedit before moving/committing. The gap-control check edits
+preceding text first, then clicks the updated control and checks undo.
+Focused corrected checks pass; no scope-expanding compatibility change was
+needed.
+
+The final source-contract edge check also reproduces a wrong destination when
+title fields are interleaved with body blocks. Marker insertion/removal now
+skips those fields, reuses existing body writing, and creates a plain body
+action only when needed. A failing-before/passing-after regression protects
+these cases without changing ordinary title editing.
+
+#### Final verification
+
+| Check | Observed result |
+| --- | --- |
+| Release (`mise run check`, final native runner stage 1) | **24/24** |
+| Sanitizers (`mise run check-debug`) | **24/24**, ASan/UBSan without a sanitizer report |
+| Engine-only (`mise run check-engine`) | **2/2**, without Qt/PDF |
+| Full `tools/check-wayland.sh`, final code state | All six stages pass: native editor **95/95**, export lifecycle **13/13**, project flows **41/41**, compose/dead-key input, first paint, PDF snapshots, typing and PDF export while typing |
+| Focused page-break layout | **9/9**: independent slots, number geometry, source mapping, title/body and empty-page cases, legacy retention/refusal |
+| Compositor-delivered authoring | Real `wtype` insertion/removal, safe Backspace, adjacent typing, exact IDs, Undo/Redo, autosave, fresh-process reopen, canonical Fountain and independently read PDF pages/numbers |
+| Independent exports | Poppler checks actual authored PDF, frozen snapshots and title omission against hand-derived expectations; leading/consecutive/trailing empty PDF pages retain numbering; aw-parser 0.1.1 independently reads **30** exports/expected cases, including authored markers, bounded reimport and marker-only/edge cases |
+| Academy reference | All **11** anchored body pages and the full **245-element** text sequence pass with the four unchanged documented deviations |
+| Actual surface | Native page-gap label/Remove and numbered-page capture inspected; no owner appearance/comfort acceptance inferred |
+
+Final native Wayland/threaded-OpenGL samples, 200 synthetic keys per workload
+per mode, with no concurrent sanitizer run:
+
+| Observed sample | Primary (203 displayed pages) | Stress (507 displayed pages) |
+| --- | ---: | ---: |
+| Typing key-to-frame p95 / max | 18.7 / 22.5 ms | 45.6 / 48.1 ms |
+| Export-while-typing key-to-frame p95 / max | 24.0 / 27.3 ms | 54.3 / 60.9 ms |
+| Warm open to first frame, typing run | 294.7 ms | 533.8 ms |
+| Actual PDF requests / maximum completion time | 49 / 491.0 ms | 35 / 711.3 ms |
+| Sampled editor-plus-helper PSS maximum, export mode | 116.6 MiB | 175.0 MiB |
+
+No >100 ms stall or missing frame was observed. These are the existing unsaved
+`--measure` / `--measure-export` workloads, not measurements with autosave or
+later assistance. The real-key marker/autosave/reopen check is a separate small
+ordinary project. PSS is a requested-20-ms sampled maximum, not an unsampled peak.
+Final review has no remaining in-scope finding. No source-schema, import/export
+contract revision, dependency or font pin changed.
+
+Evidence: `build/task-page-break-debug-final.log`,
+`build/task-page-break-engine.log`, `build/task-page-break-academy.log` and
+`build/task-page-break-native-final.log`. Final native artifacts:
+`build/wayland-check-20261029-044018-YHaBlu/`, including `results.txt` and
+`native-page-break/evidence.json`. The native editor capture is
+`build/release/editor-tests/manual-page-break.png`. Earlier
+`build/task-page-break-{release,debug}.log` retain the snapshot-instrumentation
+failure, not final verification.
+
+#### Retained limits
+
+Apollo-to-Apollo paste containing a marker is explicitly refused for this
+bounded step; use the page-break command rather than silently detaching a
+speech. Mixed marker/text selections must remove markers explicitly before
+replacement or deletion. Legacy text-bearing markers are retained for review,
+not automatically converted into writing. A new empty action remains valid
+source but keeps the existing clean-Fountain empty-element refusal until
+written or explicitly removed.
+
+Act labels, dual authoring, full Fountain grammar and independently correct
+imported PDF remain separate work. Automated native input is not physical-key
+latency or owner appearance/comfort acceptance. No new crash-loss, copying-loss
+or power-loss guarantee follows from these checks.
 

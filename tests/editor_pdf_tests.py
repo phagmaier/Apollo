@@ -193,6 +193,43 @@ def authored_emphasis(editor, output):
           "independent editor/PDF geometry, bold/italic/underline and plain generated CONT'D")
 
 
+def authored_page_breaks(editor, output):
+    """Actual Writing desk markers, independently checked beyond engine agreement."""
+    authored = output / "page-break-authored"
+    shutil.rmtree(authored, ignore_errors=True)  # Only this test's disposable output.
+    authored.mkdir(mode=0o700)
+    result = subprocess.run(
+        [str(editor.resolve().parent / "project_access_flow_tests"),
+         "manual_page_break_authoring_survives_save_reopen_and_export"],
+        env=dict(os.environ, APOLLO_PAGE_BREAK_OUTPUT=str(authored.resolve())),
+        capture_output=True, text=True)
+    (authored / "authoring.log").write_text(result.stdout + result.stderr)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    expected = fixture_pages(ROOT / "fixtures/editing/page-break-authoring.expected")
+    assert (authored / "authored.fountain").read_bytes() == (
+        ROOT / "fixtures/export/page-break-authoring.fountain").read_bytes()
+    project = authored / "project"
+    saved = (project / "screenplay.json").read_bytes()
+    command(editor, project, "--check")
+    pages, rows, _ = agree(editor, project, authored / "agreement")
+    assert (pages, rows) == (4, 12), (pages, rows)
+    # The flow's ordinary PDF is read directly with Poppler, not compared only
+    # with editor rows produced by the same pagination implementation.
+    check_pdf(authored / "authored.pdf", expected)
+    check_styles(authored / "authored.pdf", expected)
+    assert (project / "screenplay.json").read_bytes() == saved
+    for included in (True, False):
+        snapshot = authored / ("snapshot" if included else "body-snapshot")
+        command(editor, project, "--snapshot", snapshot, *([] if included else ["--no-title-page"]))
+        check_pdf(snapshot / "editor.pdf", expected if included else expected[1:])
+        check_styles(snapshot / "editor.pdf", expected if included else expected[1:])
+        # --snapshot deliberately edits/undoes/redoes after capture. Restore
+        # only this disposable project's original saved snapshot for the next request.
+        (project / "screenplay.json").write_bytes(saved)
+    print("PASS actual manual page-break authoring: preserved speech/dual pair, "
+          "fresh reopen, canonical ===, independent title/body slots and page numbers")
+
+
 def title_pages(editor, output):
     """Multiline title geometry and actual form-authored PDF content."""
     fixture = ROOT / "fixtures/editing/multiline-title.screenplay.json"
@@ -262,6 +299,7 @@ def main():
     authored_lowercase(args.editor, args.output)
     authored_emphasis(args.editor, args.output)
     title_pages(args.editor, args.output)
+    authored_page_breaks(args.editor, args.output)
     sources = []
     for scenes in (175, 444):
         source = args.output / f"workload-{scenes}.fountain"

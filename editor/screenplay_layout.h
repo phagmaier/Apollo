@@ -6,6 +6,7 @@
 #include <QAbstractTextDocumentLayout>
 #include <QFont>
 #include <QTextFormat>
+#include <QVariantList>
 #include <memory>
 #include <vector>
 
@@ -102,6 +103,7 @@ class ScreenplayLayout : public QAbstractTextDocumentLayout {
   Q_PROPERTY(QFont font READ font CONSTANT)
   Q_PROPERTY(QObject* decorations READ decoration_model CONSTANT)
   Q_PROPERTY(QString error READ error NOTIFY layoutChanged)
+  Q_PROPERTY(QVariantList pageBreaks READ pageBreaks NOTIFY layoutChanged)
 public:
   explicit ScreenplayLayout(QTextDocument* document);
   void draw(QPainter* painter, const PaintContext& context) override;
@@ -124,6 +126,8 @@ public:
   double page_top(int page) const { return (page - (title_page_ ? 0 : 1)) * page_stride; }
   // The engine's failure for the current text, or empty when it laid out.
   QString error() const { return error_; }
+  // Editor-only marker labels, outside the printed body in the page gap.
+  QVariantList pageBreaks() const { return page_breaks_; }
   // Total time spent laying the document out, and blocks whose lines were
   // rebuilt by the last layout, for measurements and tests.
   qint64 relayout_nanoseconds() const { return relayout_nanoseconds_; }
@@ -140,6 +144,7 @@ private:
   void fallback_layout();
   std::vector<QRectF> block_rects_;
   std::vector<Decoration> decorations_;
+  QVariantList page_breaks_;
   DecorationModel model_;
   int pages_ = 1;
   bool title_page_ = false;

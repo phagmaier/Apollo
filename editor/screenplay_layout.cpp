@@ -331,6 +331,7 @@ void ScreenplayLayout::relayout() {
   auto baseline_y = [&](int page, double baseline) { return page_top(page) + baseline * px_per_point; };
   std::vector<std::vector<const Line*>> by_block(elements.size());
   decorations_.clear();
+  page_breaks_.clear();
   int body_pages = 1;
   for (const auto& page : laid.pages) {
     body_pages = std::max(body_pages, page.body_number);
@@ -424,6 +425,10 @@ void ScreenplayLayout::relayout() {
           ? page_top(current_page) + page_height + page_gap * 0.75
           : baseline_y(current_page, 81 + std::min(current_slot + (current_slot ? 1 : 0), page_slots - 1) * profile::line_pitch);
       placements.push_back({0, length + preedit, 0, left_margin, baseline});
+      if (elements[index].type == ElementType::page_break)
+        page_breaks_.push_back(QVariantMap{{QStringLiteral("position"), block.position()},
+                                          {QStringLiteral("y"), page_top(current_page) + page_height + 4},
+                                          {QStringLiteral("hasText"), !block.text().isEmpty()}});
       if (elements[index].type == ElementType::page_break) { ++current_page; current_slot = 0; }
     }
     if (presented_in_capitals(elements[index].type)) {
@@ -481,9 +486,10 @@ void ScreenplayLayout::relayout() {
 }
 
 // Keeps every block editable while the engine rejects the document, for
-// example an element longer than a page. The result is not paginated.
+// example an element longer than a page. Only explicit markers end pages.
 void ScreenplayLayout::fallback_layout() {
   decorations_.clear();
+  page_breaks_.clear();
   model_.replace({});
   block_rects_.clear();
   title_page_ = false;
@@ -506,7 +512,15 @@ void ScreenplayLayout::fallback_layout() {
     text_layout->endLayout();
     text_layout->setPosition({0, top});
     block_rects_.push_back(QRectF(0, top, page_width, y - top));
-    y += pitch;
+    if (element_type(block) == ElementType::page_break) {
+      const int card = static_cast<int>(std::floor((y - 1) / page_stride));
+      page_breaks_.push_back(QVariantMap{{QStringLiteral("position"), block.position()},
+                                        {QStringLiteral("y"), card * page_stride + page_height + 4},
+                                        {QStringLiteral("hasText"), !block.text().isEmpty()}});
+      y = std::max(y, (card + 1) * page_stride + 72 * px_per_point);
+    } else {
+      y += pitch;
+    }
   }
   pages_ = std::max(1, static_cast<int>(std::ceil(y / page_stride)));
 }

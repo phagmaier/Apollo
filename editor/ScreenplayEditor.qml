@@ -20,6 +20,17 @@ Rectangle {
             commands.toggleEmphasis(editor.selectionStart, editor.selectionEnd, style)
         editor.forceActiveFocus()
     }
+    function insertPageBreak() {
+        editor.place(commands.insertPageBreak(editor.cursorPosition, editor.selectionStart, editor.selectionEnd))
+        editor.forceActiveFocus()
+    }
+    function removePageBreak(position) {
+        if (position === undefined)
+            editor.place(commands.removePageBreak(editor.cursorPosition, editor.selectionStart, editor.selectionEnd))
+        else
+            editor.place(commands.removePageBreak(position, position, position))
+        editor.forceActiveFocus()
+    }
     function selectElement(position, length) {
         if (position < 0)
             return
@@ -102,6 +113,15 @@ Rectangle {
                     const shift = event.modifiers & Qt.ShiftModifier
                     const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
                     const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
+                    if ((event.modifiers & Qt.ControlModifier)
+                            && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+                        if (shift)
+                            root.removePageBreak()
+                        else
+                            root.insertPageBreak()
+                        event.accepted = true
+                        return
+                    }
                     if (event.modifiers === Qt.ControlModifier
                             && (event.key === Qt.Key_B || event.key === Qt.Key_I || event.key === Qt.Key_U)) {
                         // Always consume these keys, even without a selection:
@@ -120,12 +140,52 @@ Rectangle {
                         place(root.commands.cut(selectionStart, selectionEnd))
                     } else if (event.key === Qt.Key_Up && (event.modifiers & Qt.AltModifier) && shift) {
                         place(root.commands.moveSceneUp(cursorPosition))
+                    } else if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete
+                               || event.matches(StandardKey.DeleteEndOfLine)) {
+                        const result = root.commands.deleteText(cursorPosition, selectionStart, selectionEnd,
+                                                                event.key === Qt.Key_Backspace)
+                        if (result === -1)
+                            return
+                        place(result)
                     } else if (code >= 32 && code !== 127 && !command) {
                         place(root.commands.typeText(cursorPosition, selectionStart, selectionEnd, event.text))
                     } else {
                         return
                     }
                     event.accepted = true
+                }
+            }
+
+            Repeater {
+                model: root.screenplayLayout.pageBreaks
+                Row {
+                    required property var modelData
+                    x: 144
+                    y: modelData.y
+                    spacing: 12
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.hasText ? "Page break — contains saved text" : "Page break"
+                        font { family: "Liberation Sans"; pixelSize: 14 }
+                        color: "#626e78"
+                    }
+                    Button {
+                        objectName: "removePageBreakAt" + modelData.position
+                        height: 24
+                        text: "Remove"
+                        font { family: "Liberation Sans"; pixelSize: 14 }
+                        Accessible.name: modelData.hasText ? "Review page break containing saved text" : "Remove page break"
+                        background: Rectangle {
+                            color: parent.hovered ? "#e9edf0" : "transparent"
+                            radius: 3
+                            border.width: parent.visualFocus ? 2 : 0
+                            border.color: "#90a9e1"
+                        }
+                        contentItem: Text { text: parent.text; font: parent.font; color: "#626e78"; verticalAlignment: Text.AlignVCenter }
+                        onClicked: root.removePageBreak(modelData.position)
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Remove only this marker, keeping both surrounding elements. Ctrl+Shift+Enter beside a break."
+                    }
                 }
             }
 

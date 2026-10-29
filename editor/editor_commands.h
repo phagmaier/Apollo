@@ -15,6 +15,7 @@ class EditorCommands : public QObject {
   Q_OBJECT
   Q_PROPERTY(QVariantList emptySpeeches READ emptySpeeches NOTIFY emptySpeechesChanged)
   Q_PROPERTY(QString titleText READ titleText NOTIFY titleTextChanged)
+  Q_PROPERTY(QString pageBreakMessage READ pageBreakMessage NOTIFY pageBreakMessageChanged)
 public:
   // Clipboard format that keeps element types, emphasis, and dual flags.
   static inline const QString mime_type = QStringLiteral("application/x-apollo-elements");
@@ -31,6 +32,15 @@ public:
   Q_INVOKABLE void copy(int selectionStart, int selectionEnd);
   Q_INVOKABLE int cut(int selectionStart, int selectionEnd);
   Q_INVOKABLE int paste(int position, int selectionStart, int selectionEnd);
+  // Markers never replace selected writing or split an element/speech.
+  Q_INVOKABLE int insertPageBreak(int position, int selectionStart, int selectionEnd);
+  Q_INVOKABLE int removePageBreak(int position, int selectionStart, int selectionEnd);
+  // -1 delegates an ordinary deletion to TextEdit; otherwise handled/refused.
+  Q_INVOKABLE int deleteText(int position, int selectionStart, int selectionEnd, bool backward);
+  Q_INVOKABLE bool isPageBreak(int position) const;
+  Q_INVOKABLE int editablePosition(int position, bool backward = false) const;
+  const QString& pageBreakMessage() const { return page_break_message_; }
+  bool eventFilter(QObject* watched, QEvent* event) override;
   // Moves the scene containing position above the previous scene. Returns
   // the caret's new position, or -1 when there is no previous scene.
   Q_INVOKABLE int moveSceneUp(int position);
@@ -51,12 +61,18 @@ public:
 signals:
   void emptySpeechesChanged();
   void titleTextChanged();
+  void pageBreakMessageChanged();
 
 private:
   QTextDocument* document_;
   int typed_end_ = -1, typed_steps_ = -1;
   QVariantList empty_speeches_;
   QString title_text_;
+  QString page_break_message_;
+  bool forwarding_input_ = false;
+  void setPageBreakMessage(const QString& message);
+  bool refuseMarkerSelection(int start, int end);
+  void moveToWriting(QTextCursor& cursor, bool skipTitle = false);
   void refreshDocumentState();
 };
 }

@@ -110,6 +110,9 @@ run_wizard() {
   run_logged native-title-page timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/title_page_native_smoke.py \
     --editor "$editor" --output "$APOLLO_RUN_DIR/native-title-page"
   printf '\nNative title page: real wtype six-field editing, Tab focus/scroll, Apply/Cancel, one-step undo/redo, autosave, fresh-process reopen, PDF content and exact Fountain passed.\n' >> "$APOLLO_RESULTS"
+  run_logged native-page-break timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/page_break_native_smoke.py \
+    --editor "$editor" --output "$APOLLO_RUN_DIR/native-page-break"
+  printf '\nNative page break: real wtype Ctrl+Return/Ctrl+Shift+Return, adjacent typing, marker-only Backspace, exact IDs, Undo/Redo, autosave/reopen, independent PDF pages/numbers and exact Fountain passed.\n' >> "$APOLLO_RESULTS"
   run_logged native-export-snapshots timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/editor_pdf_tests.py \
     --editor "$editor" --output "$APOLLO_RUN_DIR/native-editor-pdf-tests"
   while IFS= read -r line; do

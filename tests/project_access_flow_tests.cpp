@@ -433,6 +433,186 @@ private slots:
       QCOMPARE(bytes(input), original);
     }
   }
+  void manual_page_break_authoring_survives_save_reopen_and_export() {
+    const auto initial = parse_screenplay(bytes(APOLLO_IMPORT_FIXTURE_DIR "/../editing/page-break-authoring.screenplay.json"));
+    const auto expected_fountain = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/page-break-authoring.fountain");
+    QVERIFY(!expected_fountain.isEmpty());
+    const auto requested = qEnvironmentVariable("APOLLO_PAGE_BREAK_OUTPUT");
+    const auto output_root = requested.isEmpty() ? path("page-break-output") : requested;
+    QVERIFY(QDir().mkpath(output_root));
+    const auto project = create_project(output_root + "/project", initial);
+    const auto state = path("page-break-state");
+    auto writing = [](const QTextDocument* document) {
+      return canonical(Screenplay{0, document_elements(*document)});
+    };
+    auto without_markers = [](Screenplay screenplay) {
+      std::erase_if(screenplay.elements, [](const Element& element) { return element.type == ElementType::page_break; });
+      return screenplay;
+    };
+    Screenplay authored;
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      auto* document = window.flow.document();
+      auto* editor = window.flow.editor();
+      auto* commands = document->findChild<EditorCommands*>();
+      QVERIFY(commands);
+      auto block = [&](const char* id) {
+        for (auto current = document->begin(); current.isValid(); current = current.next())
+          if (block_element(current).id == id) return current;
+        return QTextBlock();
+      };
+      auto caret = [&](const char* id, int offset = 0) {
+        editor->setProperty("cursorPosition", block(id).position() + offset);
+        editor->forceActiveFocus();
+      };
+      // Selected insertion is refused even in ordinary writing, without
+      // collapsing the selection or changing emphasis or existing identities.
+      const auto start = block("opening").position() + 2;
+      QVERIFY(QMetaObject::invokeMethod(editor, "select", Q_ARG(int, start), Q_ARG(int, start + 5)));
+      QTest::keyClick(&window.view, Qt::Key_Return, Qt::ControlModifier);
+      QCOMPARE(writing(document), initial);
+      QCOMPARE(editor->property("selectionStart").toInt(), start);
+      QCOMPARE(editor->property("selectionEnd").toInt(), start + 5);
+      QVERIFY(!commands->property("pageBreakMessage").toString().isEmpty());
+      caret("single-dialogue", 5);
+      QVERIFY(window.click("pageBreakButton"));
+      QTRY_VERIFY(window.popup_open("pageBreakMenu"));
+      QVERIFY(window.click("pageBreakInsert"));
+      QTRY_VERIFY(editor->hasActiveFocus());
+      const auto first = writing(document);
+      QCOMPARE(without_markers(first), initial);
+      QCOMPARE(first.elements.size(), initial.elements.size() + 1);
+      QCOMPARE(first.elements[3].type, ElementType::page_break); // title, heading, action, marker, cue...
+      QVERIFY(first.elements[3].text.empty());
+      const auto first_marker = first.elements[3].id;
+      QVERIFY(!first_marker.empty());
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), initial);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(writing(document), first);
+      // A right-hand dialogue caret inserts before the complete dual pair,
+      // never between cue/dialogue or between its left and right speeches.
+      caret("right-dialogue", 4);
+      QTest::keyClick(&window.view, Qt::Key_Return, Qt::ControlModifier);
+      authored = writing(document);
+      QCOMPARE(without_markers(authored), initial);
+      QCOMPARE(authored.elements.size(), initial.elements.size() + 2);
+      QCOMPARE(authored.elements[8].type, ElementType::page_break);
+      QVERIFY(authored.elements[8].text.empty());
+      const auto second_marker = authored.elements[8].id;
+      QVERIFY(!second_marker.empty() && second_marker != first_marker);
+      QCOMPARE(authored.elements[9].id, std::string("left-cue"));
+      QCOMPARE(authored.elements[11].id, std::string("right-cue"));
+      QVERIFY(authored.elements[11].dual_right);
+      // Removing through the discoverable control touches only the marker.
+      caret(second_marker.c_str());
+      QVERIFY(window.click("pageBreakButton"));
+      QTRY_VERIFY(window.popup_open("pageBreakMenu"));
+      QVERIFY(window.click("pageBreakRemove"));
+      QCOMPARE(writing(document), first);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), authored);
+      caret(first_marker.c_str());
+      QTest::keyClick(&window.view, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+      auto only_second = authored;
+      only_second.elements.erase(only_second.elements.begin() + 3);
+      QCOMPARE(writing(document), only_second);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), authored);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(writing(document), only_second);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), authored);
+      // Boundary deletion removes exactly one marker, not either text block
+      // or the paragraph separator joining them. Undo preserves marker ID.
+      caret("single-cue");
+      QTest::keyClick(&window.view, Qt::Key_Backspace);
+      QCOMPARE(writing(document), only_second);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), authored);
+      caret("bridge", block("bridge").text().size());
+      QTest::keyClick(&window.view, Qt::Key_Delete);
+      QCOMPARE(writing(document), first);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), authored);
+      // Cross-marker replacement, Enter and deletion all preserve selection.
+      const auto from = block("opening").position() + 2;
+      const auto to = block("single-cue").position() + 2;
+      QVERIFY(QMetaObject::invokeMethod(editor, "select", Q_ARG(int, from), Q_ARG(int, to)));
+      window.type("X");
+      QCOMPARE(writing(document), authored);
+      for (const auto key : {Qt::Key_Return, Qt::Key_Backspace, Qt::Key_Delete}) {
+        QTest::keyClick(&window.view, key);
+        QCOMPARE(writing(document), authored);
+        QCOMPARE(editor->property("selectionStart").toInt(), from);
+        QCOMPARE(editor->property("selectionEnd").toInt(), to);
+      }
+      // Typing while on the marker redirects to editable writing; the marker
+      // stays an empty non-text element and one undo restores all source.
+      caret(first_marker.c_str());
+      window.type("X");
+      const auto typed = writing(document);
+      QCOMPARE(typed.elements[3], authored.elements[3]);
+      QCOMPARE(typed.elements[4].text, std::string("XMARA"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), authored);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      auto saved = open_project(project.directory).screenplay;
+      saved.revision = 0;
+      QCOMPARE(saved, authored);
+    }
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      QCOMPARE(writing(window.flow.document()), authored);
+      auto* fountain_job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      auto* pdf_job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+      QVERIFY(fountain_job && pdf_job);
+      QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(window.item("exportEligibility")->property("text").toString().startsWith("Ready."));
+      window.item("fountainDestination")->setProperty("text", output_root + "/authored.fountain");
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!fountain_job->busy());
+      QCOMPARE(bytes(output_root + "/authored.fountain"), expected_fountain);
+      QVERIFY(window.click("exportButton"));
+      QVERIFY(window.click("exportFormatPdf"));
+      QVERIFY(window.item("includeTitle")->property("checked").toBool());
+      window.item("exportDestination")->setProperty("text", output_root + "/authored.pdf");
+      QSignalSpy completed(pdf_job, &PdfExportJob::completed);
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!pdf_job->busy());
+      QCOMPARE(completed.size(), 1);
+      QVERIFY(completed[0][0].toBool());
+      QVERIFY(bytes(output_root + "/authored.pdf").startsWith("%PDF-"));
+      QCOMPARE(writing(window.flow.document()), authored);
+      // A legacy source value is simulated directly, not through authoring.
+      // Its exact text remains saveable; the real PDF helper must refuse it
+      // without replacing the already successful PDF or changing the source.
+      const auto previous_pdf = bytes(output_root + "/authored.pdf");
+      QTextCursor legacy(window.flow.document()->findBlockByNumber(3));
+      legacy.insertText(QStringLiteral("Legacy words."));
+      auto retained = authored;
+      retained.elements[3].text = "Legacy words.";
+      QCOMPARE(writing(window.flow.document()), retained);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      const auto legacy_source = bytes(project.directory + "/screenplay.json");
+      completed.clear();
+      QVERIFY(pdf_job->request(output_root + "/authored.pdf"));
+      QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 15000);
+      QVERIFY(!completed[0][0].toBool());
+      QCOMPARE(bytes(output_root + "/authored.pdf"), previous_pdf);
+      QCOMPARE(bytes(project.directory + "/screenplay.json"), legacy_source);
+      QCOMPARE(writing(window.flow.document()), retained);
+      window.flow.document()->undo();
+      QCOMPARE(writing(window.flow.document()), authored);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+    }
+    auto saved = open_project(project.directory).screenplay;
+    saved.revision = 0;
+    QCOMPARE(saved, authored);
+  }
   void scene_spacing_choice_and_empty_speech_resolution_survive_reopen_and_export() {
     const auto input = path("scene-spacing") + ".fountain";
     const auto original = bytes(APOLLO_IMPORT_FIXTURE_DIR "/scene-spacing.fountain");

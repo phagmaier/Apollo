@@ -99,6 +99,15 @@ aw-parser now also verify six authored title fields, an accepted snapshot
 followed by a later title edit, body-only output and fresh-process re-export.
 
 
+Manual page-break authoring uses the existing empty marker and canonical `===`;
+it does not widen `fountain-canonical-4` / `writer-subset-5`. The real-controls
+`page-break-authoring` case preserves the whole speech and dual pair, saves and
+reopens, then exports hand-written canonical bytes. Fresh-process re-export and
+bounded reimport use the same gates; imported PDF remains blocked. An empty
+action created after a final marker remains unexportable until written or
+explicitly removed. Legacy marker text is retained in source and refused by
+both clean Fountain and PDF, not exported as a blank marker.
+
 ## Verification of each export
 
 After the explicit checks pass, the worker reads the produced text with the

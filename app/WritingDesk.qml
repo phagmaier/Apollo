@@ -480,6 +480,39 @@ Rectangle {
                 Text { text: "100%"; color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 } }
             }
             DeskButton {
+                id: pageBreakButton
+                objectName: "pageBreakButton"
+                anchors { right: emphasisButton.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
+                text: "Page break"
+                ink: "#303843"; fill: "#e9edf0"
+                enabled: editorPage.enabled
+                Accessible.name: "Insert or remove a manual page break"
+                ToolTip.text: "Insert: Ctrl+Enter. Remove: Ctrl+Shift+Enter. Page breaks keep whole elements and speeches together."
+                onClicked: pageBreakMenu.open()
+                Menu {
+                    id: pageBreakMenu
+                    objectName: "pageBreakMenu"
+                    y: pageBreakButton.height
+                    onClosed: editorPage.focusEditor()
+                    MenuItem {
+                        objectName: "pageBreakInsert"
+                        text: "Insert page break\tCtrl+Enter"
+                        onTriggered: editorPage.insertPageBreak()
+                    }
+                    MenuItem {
+                        objectName: "pageBreakRemove"
+                        text: "Remove page break\tCtrl+Shift+Enter"
+                        onTriggered: editorPage.removePageBreak()
+                    }
+                    MenuSeparator {}
+                    Label {
+                        width: 310; padding: 12; wrapMode: Text.Wrap
+                        text: "Inserts before the whole element, speech or dual pair; at its final end, inserts after it. Selected writing is never replaced. Backspace or Delete beside a break removes only the marker."
+                        font.pixelSize: 12
+                    }
+                }
+            }
+            DeskButton {
                 id: emphasisButton
                 objectName: "emphasisButton"
                 anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
@@ -575,7 +608,7 @@ Rectangle {
         Text {
             anchors { left: parent.left; right: parent.right; margins: 20; verticalCenter: parent.verticalCenter }
             objectName: "operationStatus"
-            text: desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.lastExport === "fountain" && desk.fountainJob ? desk.fountainJob.status : desk.exportJob ? desk.exportJob.status : "")
+            text: desk.commands.pageBreakMessage || desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.lastExport === "fountain" && desk.fountainJob ? desk.fountainJob.status : desk.exportJob ? desk.exportJob.status : "")
             elide: Text.ElideMiddle
             ToolTip.visible: footerArea.containsMouse
             ToolTip.text: text

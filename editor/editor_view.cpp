@@ -43,6 +43,8 @@ QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob*
   // Public since Qt 6.7. The layout must be installed first: TextEdit's text
   // control connects to the document's layout when the document is set.
   handle->setTextDocument(&document);
+  // Input-method commits and primary-selection paste bypass Keys.onPressed.
+  editor->installEventFilter(commands);
   // TextEdit limits text nodes to the visible area only when large text
   // arrives through its text property; a document set directly needs the
   // flag set here, or every keystroke rebuilds nodes for every page.

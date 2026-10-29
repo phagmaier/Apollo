@@ -1,4 +1,5 @@
 #include "editor/autosave.h"
+#include "editor/editor_commands.h"
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
 #include "editor/pdf_export_job.h"
@@ -367,14 +368,37 @@ int agreement(const char* path, const QString& directory, int edits, bool snapsh
   QObject::connect(&job, &apollo::editor::PdfExportJob::completed, &view, [&](bool ok) { success = ok; });
   if (!job.request(destination, include_title)) throw std::runtime_error(job.status().toStdString());
   if (snapshot) {
+    const auto original_elements = apollo::editor::document_elements(*document);
+    // Select-all replacement deliberately cannot cross non-text markers.
+    // Explicitly remove safe markers first, through the same command as the
+    // gap control, grouping the entire live mutation as one undo step.
+    auto* commands = document->findChild<apollo::editor::EditorCommands*>();
+    QTextCursor live(document.get());
+    live.beginEditBlock();
+    for (auto block = document->lastBlock(); block.isValid();) {
+      const auto previous = block.previous();
+      if (apollo::editor::element_type(block) == apollo::ElementType::page_break) {
+        const int at = block.position();
+        const int caret = commands->removePageBreak(at, at, at);
+        if (caret < 0) {
+          live.endEditBlock();
+          throw std::runtime_error("snapshot instrumentation cannot remove this speech barrier: " +
+                                   commands->pageBreakMessage().toStdString());
+        }
+        editor->setProperty("cursorPosition", caret);
+      }
+      block = previous;
+    }
     // Real editor typing, caret movement, undo and redo after the request.
     // The resulting live text cannot be exported (unsupported glyph) and
     // repaginates the multi-page fixtures. The accepted snapshot must survive.
     send_key(view, Qt::Key_A, Qt::ControlModifier);
     send_key(view, Qt::Key_unknown, Qt::NoModifier, QString::fromUtf8("Changed after request 🚀."));
+    live.endEditBlock();
     send_key(view, Qt::Key_Left);
     send_key(view, Qt::Key_Z, Qt::ControlModifier);
-    if (document->toPlainText() != original) throw std::runtime_error("undo during export did not restore the document");
+    if (apollo::editor::document_elements(*document) != original_elements)
+      throw std::runtime_error("undo during export did not restore the document");
     send_key(view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
     if (document->toPlainText() == original) throw std::runtime_error("redo during export did not change the document");
     if (original_pages > 1 && layout->pageCount() >= original_pages) throw std::runtime_error("snapshot edit did not repaginate");

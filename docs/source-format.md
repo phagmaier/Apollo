@@ -102,9 +102,10 @@ code-point offset can never fall inside a character. Spans of different
 styles may overlap.
 
 Unfinished or currently unexportable writing is valid source: empty elements,
-a character cue without dialogue, control characters, or text typed into a
-`pageBreak` element (an editor limitation the plan schedules for slice 3) all
-save and reopen unchanged. Layout errors never block saving.
+a character cue without dialogue, control characters, or legacy text in a
+`pageBreak` element all save and reopen unchanged. The writer now prevents
+typing into markers; legacy marker text is retained visibly with a layout/PDF
+refusal, not silently discarded. Layout errors never block saving.
 
 ### Canonical form and serialization
 
@@ -230,6 +231,50 @@ subset (for example crossing styles or intraword boundaries); saving remains
 allowed and clean export reports the located refusal. The
 [task 3c record](writing-build-plan.md#task-3c--emphasis-authoring) holds evidence
 and remaining limits.
+
+### Manual page-break authoring (slice 3)
+
+**Page break → Insert page break / Remove page break**, **Ctrl+Enter /
+Ctrl+Shift+Enter**, and the **Remove** control in the page gap edit the existing
+`pageBreak` element. The gap label is editor chrome, never screenplay text or
+PDF ink. No schema version changes.
+
+The owner chose **before the whole element or speech**, and **refuse insertion
+while text is selected**. No command splits authored words or invents a repeated
+cue. A speech includes its cue and all consecutive dialogue/parenthetical parts;
+an adjacent dual pair is one indivisible group, including unfinished parts.
+
+| Situation | Behavior |
+| --- | --- |
+| Caret inside an ordinary element, cue, parenthetical, dialogue or either dual speech | Insert before the whole element/speech/pair; keep the caret with its original text |
+| Caret at the final end of a nonempty element/speech/pair | Insert after it; move into following writing |
+| Empty element | Insert before it; keep the empty element and its identity |
+| End of the body without following writing | Insert marker and a new empty action in one undo step; typing goes into the action |
+| Selected insertion | Refuse visibly; words, selection and undo history remain unchanged |
+| Backspace at the next element's start; Delete at the previous element's end | Remove exactly one adjacent empty marker, keeping both elements separate |
+| Caret on an empty marker, or selection of just its separator | Remove only that marker; move into adjacent body writing, following preferred |
+| No editable body remains | Retain remaining markers and create an empty action rather than turning a marker into text |
+| Typing, plain paste or an input-method commit on a marker | Redirect to adjacent body writing; if none exists, create an action |
+| Enter / Tab on a marker | Enter navigates to writing; Tab refuses a type change |
+| Text replacement, Enter, cut, paste or deletion spanning a marker | Refuse visibly and preserve the selection; remove the marker explicitly first |
+| Apollo clipboard containing a marker | Copy retains the structural marker; paste is explicitly refused, never interpreted as ordinary text or inserted inside a speech |
+| Removing a barrier that would attach orphan speech parts or create a dual pair | Refuse visibly; resolve the speech structure explicitly first |
+| Title-page insertion; legacy marker containing text | Refuse without changing source; legacy words remain available for review/copy |
+
+Title fields may be interleaved with body blocks in the editor's existing
+model. Page-break operations skip them when choosing a body typing destination;
+they never append screenplay writing to a title or create a spare body element
+when existing adjacent writing is available.
+
+Each insertion/removal is one document undo step. Existing neighboring words,
+types, styles, identities and dual flags stay intact; no associations are
+retargeted. Undo/redo, autosave/reopen and existing recovery snapshots use the
+same document/source adapter. Leading, consecutive and trailing markers remain
+meaningful empty pages. Empty writing elements remain valid source but retain
+Fountain's existing export refusal until written or explicitly removed.
+Primary-selection paste onto markers is refused; Ctrl+V uses the guarded paste
+command. Native input and exports are exercised separately from owner comfort
+and appearance acceptance in the build-plan evidence.
 
 ### Identity
 
