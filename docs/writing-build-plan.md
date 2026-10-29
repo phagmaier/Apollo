@@ -6,7 +6,7 @@ within the implementation slices. No owner question from this interview remains
 pending. Implementation requires task-specific authorization; the progress
 record below distinguishes completed work from remaining proposals.
 
-**Current status (2026-10-28):** slice 1 and tasks **2.1–2.5** are done.
+**Current status (2026-10-29):** slice 1 and tasks **2.1–2.5** are done.
 Project sessions are guarded; Save a Copy becomes active without resetting the
 editor; Reload preserves current writing first; recovery/emergency packages and
 explicit failure-close choices are implemented and verified as recorded below.
@@ -25,10 +25,15 @@ PDF of imported writing remains gated. See the
 The representative assessment added six preserved typographic punctuation
 marks in `writer-subset-4` / `fountain-canonical-4`. The subsequent
 **`writer-subset-5` full-length continuation** admits the owner's representative
-script only with explicit scene-spacing normalization and unfinished-speech
-review/correction; the original stays immutable. The independently exercised
-bound is 128 KiB / 3,072 elements, not general Fountain compatibility.
-See [the measured workflow and remaining limits](fountain-compatibility.md#full-length-workflow-continuation).
+script with explicit scene-spacing normalization while preserving unfinished
+speeches; the original stays immutable. The independently exercised bound is
+128 KiB / 3,072 elements, not general Fountain compatibility.
+The owner settled the normalization, manual speech resolution and unchanged
+250 MiB memory target in [planning round 25](planning.md#round-25--owner-reference-writing-readiness-settled-2026-10-28).
+**Owner-reference readiness is done as a bounded step:** a private writable
+copy leaves both speeches for the owner; clean single-project memory and the
+required release/sanitizer/native checks pass. See
+[readiness evidence](fountain-compatibility.md#owner-reference-writing-readiness-2026-10-29).
 Crash loss during copying remains unverified. The other slice 2
 flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
@@ -1058,3 +1063,56 @@ acceptance, verifies exact save/reopen/re-export and the unchanged input, and
 keeps potentially private screenshots/projects/logs under a mode-0700 output.
 Only aggregate JSON is printed. Measured outcomes and remaining gates are
 recorded in the continuation above.
+
+### Owner-reference writing readiness — bounded step
+
+2026-10-29. **Done for this bounded readiness step**, not slice 3/4 authorization
+or completion of task 2.6. [Planning round 25](planning.md#round-25--owner-reference-writing-readiness-settled-2026-10-28)
+records the owner-confirmed acceptance of explicit non-equivalent normalization
+of 49 scene gaps, exact import of both unfinished speeches for manual resolution,
+and the unchanged 250 MiB primary-workload PSS target. The prior rehearsal's
+type corrections are not acceptance of either speech's resolution.
+
+The actual QML import admitted the reference at the existing bound only after
+selecting the initially unchecked spacing choice. The private writable copy
+retains the byte-exact original and both speeches unchanged. Native real-key
+typing, accurate Saved acknowledgment, normal close, separate-process reopen,
+both live issue selections and refused Fountain/PDF requests passed. All
+rehearsal text was removed through the writer; final authored text, types,
+styles, IDs and title fields match the initial imported writing.
+
+Three fresh ordinary-application processes per workload, one project each,
+120 `wtype` keys per run and external requested-50-ms PSS sampling, with no
+in-application comparison snapshots or reopen, stayed below 250 MiB. Sampled
+maxima: **120.0 MiB** for the standard nominal 200-page primary (203 displayed),
+**169.4 MiB** for the 91-page import. Separate writer-ready/settled/post-autosave
+numbers, method and limits are in the
+[compatibility readiness record](fountain-compatibility.md#owner-reference-writing-readiness-2026-10-29).
+No application or contract change, new fixture, speculative optimization or
+stack reassessment was needed.
+
+Final checks: release **23/23**, ASan/UBSan **23/23** without a sanitizer report,
+engine-only **2/2**. Native preflight passes editor **71/71**, export lifecycle
+**13/13**, project flows **37/37**, native PDF snapshots and first paint.
+The independent synthetic spacing copy passed both speech corrections,
+Undo/Redo, typing/autosave/reopen and byte-identical re-export; aw-parser
+independently matched both actual exports to the complete saved writing.
+Editor/PDF agreement includes both generated workloads and the local Academy
+transcription at 0/50 scripted edits; the independent Academy comparison passes
+with its four unchanged deviations. Full native typing/export timing was not
+rerun because no editor or layout code changed.
+
+Initial configure failures came from ignored CMake caches pointing at a deleted
+temporary Ninja installation. Repairing only those cached paths to the installed
+pinned Ninja allowed all final checks above to pass. Logs and bounded-method
+limits are in the compatibility readiness record. Direct completion review
+found no additional in-scope defect; no new permanent tests were needed for
+this unchanged-behavior rehearsal.
+
+Private command, both source-line/issue-list locations, logs and artifacts:
+`build/owner-readiness-20261029/handoff.txt`. The entire readiness directory is
+mode 0700 and ignored; only its named aggregate JSON is publishable. The owner
+must still resolve both speeches before Fountain export; saving already works.
+Arbitrary spacing, tabs/NBSP, the second reference's title gate and imported PDF
+remain blocked. Extended writing/comfort, full compatibility and the remaining
+writing-milestone features stay open.

@@ -11,11 +11,14 @@ not changed or incorporated into fixtures.
 
 ## Result and scope
 
-**Current continuation:** `writer-subset-5` adds an explicit, disclosed
-normal-scene-spacing choice and saveable unfinished empty speeches with an
-undoable correction. Earlier assessments below are historical; see
-[the full-length continuation](#full-length-workflow-continuation) for current
-admission, workflow evidence and remaining limits. Imported PDF remains gated.
+**Current readiness (2026-10-29):** the owner accepted explicit non-equivalent
+normalization of the reference's 49 scene gaps and will resolve its two
+unfinished speeches by hand ([planning round 25](planning.md#round-25--owner-reference-writing-readiness-settled-2026-10-28)).
+The private writable copy preserves both speeches and the byte-exact original.
+Fresh single-project native writer sessions meet the unchanged 250 MiB PSS
+target in the measured samples; see [readiness evidence](#owner-reference-writing-readiness-2026-10-29).
+`writer-subset-5` admission remains 128 KiB / 3,072 elements; imported PDF
+remains gated. This does not complete task 2.6 or slices 3/4.
 
 
 Task 2.6 is larger than one reviewable import change. The spike importer is not
@@ -491,11 +494,12 @@ Times below are medians across runs unless labeled maximum.
 
 The admitted workloads met the observed typing and one-second save/reopen
 targets in these samples, not a durability guarantee or worst-case proof.
-Full-workflow memory is **not cleared against the 250 MiB target**: the harness
-retains comparison snapshots and exercises reopen in one process, and the
-sample includes allocator/render caches. Memory profiling and the complete
-milestone's 200-/500-page measurements remain open; a low typing sample must not
-be presented as a peak-memory pass.
+These historical full-workflow samples do **not** establish a writer-only
+250 MiB failure or waive the target: the harness retains comparison snapshots
+and exercises reopen in one process. The clean single-project measurements
+below supersede that unresolved writer-memory verdict, not these observations.
+The complete milestone's later-feature and 500-page measurements remain open;
+a sampled maximum is not an unsampled peak bound.
 
 The initially considered **4,096-element** bound was **not enabled**. Even after
 the validation improvement its exact-size stress workload reached 1,089.8 ms
@@ -514,13 +518,14 @@ hand-written fixture expectations protect the same choices without private text.
 The PDF request was refused in every run and left an existing destination intact.
 There were no redacted Qt messages in the six final runs.
 
-The owner still chooses whether each unfinished cue needs dialogue or should
-be action, and whether the explicit non-equivalent scene-spacing normalization
-is acceptable. The automated corrections/normalization are **disposable
-rehearsal choices**, not changes to the private original or recorded author
-acceptance. Spacing-equivalent export of the original gaps is not implemented;
-declining the choice keeps that import gated. Arbitrary spacing, the second
-reference's unsupported content and imported PDF remain blocked.
+The owner subsequently accepted the explicit non-equivalent scene-spacing
+normalization and reserved each unfinished cue's resolution for manual writing
+([planning round 25](planning.md#round-25--owner-reference-writing-readiness-settled-2026-10-28)).
+The earlier automated corrections were **disposable rehearsal choices**, not
+acceptance of either speech's correction. Spacing-equivalent reconstruction
+is not required for this milestone. Declining the unchecked option still keeps
+that import gated; arbitrary spacing, the second reference's unsupported content
+and imported PDF remain blocked.
 
 Aggregate evidence: ignored
 `build/full-length-workflow-hgj6ljwr/{native-admitted,measured-summary,final-independent}.json`;
@@ -561,5 +566,142 @@ detection. `bash -n tools/measure-fountain-workflow.sh` and `git diff --check`
 pass. A separate CR-only synthetic-fixture CLI import also retained byte-exact
 original evidence and disclosed both normalized gaps. Earlier Academy and
 full-length native measurements remain the evidence recorded above; they were
-not repeated during completion review. Owner acceptance and the 250 MiB
-memory-target miss remain open.
+not repeated during that completion review. Round 25 and the readiness evidence
+below supersede its pending owner-decision and writer-memory status.
+
+## Owner-reference writing readiness (2026-10-29)
+
+This is the bounded readiness step authorized after round 24, not slice 3 or 4.
+No application, layout, admission, source-format or export-contract code changed.
+The decisions are owner-confirmed in [round 25](planning.md#round-25--owner-reference-writing-readiness-settled-2026-10-28);
+the measurements and rehearsal actions here are engineering evidence only.
+
+### Private writable copy and live writer
+
+The real QML import review started with **Use Apollo's normal scene spacing**
+unchecked and editable admission refused. Selecting it explicitly admitted the
+100,514-byte / 2,319-element reference at the unchanged 128 KiB / 3,072-element
+bound and published a separate writable project. All 49 normalized gaps remain
+located in imported material and counted in the export disclosure.
+SHA-256 before/after and of `imports/original.fountain` match; the external
+original was never the writing/save target.
+
+Both unfinished speeches entered unchanged. The actual live issue-list controls
+selected the exact cue ranges, before and after fresh-process reopen. The real
+Fountain panel disabled export; a direct request also refused without changing
+an existing destination. Imported PDF refused without creating an output.
+No speech was corrected or invented on the owner's copy.
+
+An ordinary native `apollo_editor` session received 120 compositor-delivered
+keys through `wtype`, saved the exact changed snapshot, displayed **Saved**, and
+closed normally. A separate process reopened that saved writing with both
+issues still navigable and export still blocked. The bounded rehearsal text was
+then removed through the writer and autosaved; final text, types, styles, IDs
+and title fields equal the original imported writing. Only the save revision
+and derived recovery/session history advanced. Memory sessions likewise removed
+their rehearsal text, leaving both speeches for the owner.
+
+Private handoff: `build/owner-readiness-20261029/handoff.txt`. It contains the
+open command, the two original source-line locations and issue-list positions,
+checks and artifact paths. No private wording, source-derived fixture, screenshot
+or export is incorporated into this document or committed.
+
+### Clean writer memory
+
+Three fresh processes per workload, sequentially: each runs the **ordinary
+application**, one already-published project, isolated writable XDG state, native
+Wayland/fcitx and threaded OpenGL. No comparison model is retained inside the
+application, no export worker runs, and no process reopens or switches projects.
+The external observer owns the comparison JSON; it is not part of application
+PSS. The primary is the standard generated 175-scene, seed-1 **nominal 200-page**
+workload; the real writer displays **203 pages**, as does its existing agreement
+check. The imported writer displays **91 pages**.
+
+Externally read `/proc/PID/smaps_rollup` every requested 50 ms from process launch
+through post-autosave: 437 primary and 436 imported observations across the three
+runs. Writer-ready is sampled after three seconds; 120 real Wayland keys type
+`readiness ` repeatedly into the first nonempty action at requested 20 ms spacing
+(about 2.97 s including dispatch). Settled-after-typing is a separate sample
+200 ms after dispatch ends. Post-autosave is sampled one second after the exact
+typed snapshot is observed on disk; **Saved** is also checked on the actual
+surface. Autosave may already have completed at the settled sample: these are
+separate observations, not claims of three mutually exclusive saving states.
+
+Each phase below is the **highest observation across three runs**, in MiB:
+
+| PSS observation | Nominal 200-page primary (203 displayed) | Imported copy (91 displayed) |
+| --- | ---: | ---: |
+| Writer-ready | 112.3 | 148.5 |
+| Settled after typing | 119.2 | 159.4 |
+| Post-autosave | 119.2 | 149.4 |
+| Maximum sampled from launch through post-autosave | 120.0 | 169.4 |
+
+**Measured verdict: both pass 250 MiB**, including every sampled observation.
+No over-target cause triggered profiling; no speculative optimization was made.
+This is six short bounded sessions, not a continuous peak bound, extended
+writing soak, cold-start timing, 500-page memory pass, export-worker memory
+measurement, or validation with the unfinished milestone's later assistance.
+An initial exploratory heading-typing session and a failed primary title-field
+cursor-targeting rehearsal are excluded from this clean-method dataset.
+The observed sampling interval was approximately 51.8 ms median, 53.3 ms
+maximum; reading `smaps_rollup` adds overhead to the requested 50 ms delay.
+Intake/publication peaks were not part of these saved-project writing sessions.
+
+### Resolved synthetic export and final checks
+
+An independent public `scene-spacing` fixture copy, not the owner's writing,
+used the native real-QML runner with explicit spacing selection, both one-step
+speech corrections, Undo/Redo, 12 synthetic QWindow keys, verified autosave,
+Home/reopen and successful byte-identical Fountain re-export. aw-parser 0.1.1
+then independently read **both actual exported files** as the complete saved
+writing, including types, presented text, styles, dual flags and title fields.
+Those correction choices apply only to synthetic material. The owner's copy
+remains unresolved and correctly export-blocked.
+
+Required final checks pass:
+
+- `mise run check`: **23/23**, including the independent Fountain oracle.
+- `mise run check-debug`: **23/23**, default ASan/UBSan checks with no sanitizer
+  report.
+- `mise run check-engine`: **2/2**.
+- `tools/check-wayland.sh --preflight`: editor **71/71**, export lifecycle
+  **13/13**, project flows **37/37**, native PDF snapshots and first paint.
+- `tests/editor_pdf_tests.py --academy`: fixtures and both generated workloads
+  still agree at 0/50 scripted edits; the local Academy transcription agrees
+  too. `compare_academy.py` passes all 11 body pages with the four existing
+  documented deviations. No profile or independent fixture changed.
+
+No final functional check failed. Initial release/debug/native/measurement
+configure attempts failed because ignored CMake caches referenced a removed
+`/tmp/apollo-mise/.../ninja` binary. Both cached `CMAKE_MAKE_PROGRAM` values were
+reset to the installed pinned Ninja, without changing project configuration or
+application code; the final runs above then passed. The failed attempt logs
+remain distinct from the `*-final.log` evidence. No full native typing/export
+timing run was required or performed: editor/layout code did not change.
+
+Final logs: `build/owner-readiness-20261029/{release,debug,engine,native-preflight,synthetic-export,academy,academy-editor-pdf}-final.log`.
+Native preflight's additional synthetic-only artifacts are in
+`build/wayland-check-20261029-011755-UOh03A/`. The resolved synthetic workflow is
+under `synthetic-resolved-final/` within the private readiness directory.
+`synthetic-independent-aggregate.json` records its independent parse;
+`verification-aggregate.json` records the required checks.
+Direct completion review checked these outcomes against the prompt and the
+unchanged contracts. No new application defect or permanent test addition was
+needed; disposable probe source/binaries were removed.
+
+### Remaining gates
+
+The owner still resolves both speeches by adding dialogue or explicitly choosing
+**Treat speech as action**; saving is already allowed, Fountain export is not.
+The accepted 49-gap normalization is disclosed non-equivalence, not arbitrary
+spacing support. Tabs/NBSP, the other reference's title/content gates and imported
+PDF remain blocked. General Fountain compatibility, extended comfort/soak and
+the later writing features remain outside this completed readiness step.
+
+
+All detailed material is under mode-0700 ignored
+`build/owner-readiness-20261029/`: private project, screenshots, source hashes,
+located issues, raw samples and runtime logs. Only aggregate JSON is publishable:
+`clean-memory-aggregate.json`, `memory-summary-aggregate.json` and the explicitly
+named `*-aggregate.json` results. The earlier full-length workflow directories
+remain private and retain their historical observations.

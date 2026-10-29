@@ -402,6 +402,32 @@ three choices as the initial case policy:
 Diagnostics, suggested corrections and the mixed-case exception itself remain to
 be specified.
 
+## Round 25 — owner-reference writing readiness (settled, 2026-10-28)
+
+The owner confirmed these decisions for the bounded readiness step, not
+authorization for slices 3 or 4:
+
+1. Accept the **non-equivalent normalization of the reference's 49 two-blank-line
+   scene gaps**. Keep **Use Apollo's normal scene spacing** explicit and unchecked
+   by default, preserve the untouched original bytes, and retain the export
+   count/disclosure. Spacing-equivalent reconstruction is not required for this
+   milestone; arbitrary spacing is not admitted by this decision.
+2. Import the **two unfinished speeches exactly as authored**. The owner will
+   resolve each in the writer, either by adding dialogue or by the existing
+   one-step, type-only **Treat speech as action** correction. Do not invent
+   dialogue, delete material, or choose for either speech. Unresolved speeches
+   block Fountain export, **not saving**.
+3. Keep the **250 MiB PSS target for the 200-page primary workload**. The earlier
+   250.8/270.3 MiB workflow samples do not waive it: their harness retained
+   comparison snapshots and reopened in-process. First measure a realistic
+   single-project writer session in one application process, without those
+   harness effects. If it exceeds the target, profile a located cause and fix
+   it in scope or report the evidence with the target still open.
+
+Measurement-only corrections and disposable rehearsal choices are not owner
+acceptance. The [readiness evidence](fountain-compatibility.md#owner-reference-writing-readiness-2026-10-29)
+is a separate engineering record; it does not settle additional product choices.
+
 ## Subsequent decision branches
 
 Visual exploration: [editor prototype](../prototype/editor.html) presents three
