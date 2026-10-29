@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QTextDocument>
+#include <QVariantList>
 
 namespace apollo::editor {
 // The spike's editing rules (docs/spike-brief.md, "Editor behavior under
@@ -12,6 +13,7 @@ namespace apollo::editor {
 // return its new position.
 class EditorCommands : public QObject {
   Q_OBJECT
+  Q_PROPERTY(QVariantList emptySpeeches READ emptySpeeches NOTIFY emptySpeechesChanged)
 public:
   // Clipboard format that keeps element types, emphasis, and dual flags.
   static inline const QString mime_type = QStringLiteral("application/x-apollo-elements");
@@ -28,9 +30,20 @@ public:
   // Moves the scene containing position above the previous scene. Returns
   // the caret's new position, or -1 when there is no previous scene.
   Q_INVOKABLE int moveSceneUp(int position);
+  // Cached diagnostics, refreshed when the document changes. Locations are
+  // current UTF-16 positions; ids survive edits and undo/redo.
+  const QVariantList& emptySpeeches() const { return empty_speeches_; }
+  Q_INVOKABLE int locateEmptySpeech(const QString& id) const;
+  // One undoable type-only change. Refuses stale, valid, or dual-related speech.
+  Q_INVOKABLE int treatSpeechAsAction(const QString& id);
+
+signals:
+  void emptySpeechesChanged();
 
 private:
   QTextDocument* document_;
   int typed_end_ = -1, typed_steps_ = -1;
+  QVariantList empty_speeches_;
+  void refreshEmptySpeeches();
 };
 }

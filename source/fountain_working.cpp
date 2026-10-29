@@ -11,25 +11,27 @@ namespace {
 [[noreturn]] void fail(const QString& reason, SourceError::Kind kind = SourceError::Kind::malformed) {
   throw SourceError(kind, "Editable Fountain copy: " + reason);
 }
-struct Review { ProjectAssets assets; QString contract; };
+struct Review { ProjectAssets assets; QString contract; bool normalize_scene_spacing = false; };
 Review review_of(const ProjectAssets& assets) {
   if (!assets.imported_material || !assets.original_fountain) fail("metadata and original are required");
   if (assets.imported_material->size() > maximum_fountain_metadata_bytes) fail("metadata exceeds its limit");
   QJsonParseError error;
   const auto json = QJsonDocument::fromJson(*assets.imported_material, &error);
   const auto root = json.object();
-  if (root.value("version").toDouble() > 1) fail("needs a newer Apollo", SourceError::Kind::newer_version);
-  if (error.error != QJsonParseError::NoError || !json.isObject() || root.size() != 4 ||
-      root.value("format") != "apollo-fountain-working" || root.value("version") != 1 ||
-      (root.value("contract") != "writer-subset-1" && root.value("contract") != "writer-subset-2" &&
-       root.value("contract") != "writer-subset-3" && root.value("contract") != writer_subset_contract) ||
+  if (root.value("version").toDouble() > 2) fail("needs a newer Apollo", SourceError::Kind::newer_version);
+  const bool current = root.value("version") == 2 && root.value("contract") == writer_subset_contract;
+  const bool legacy = root.value("version") == 1 &&
+      (root.value("contract") == "writer-subset-1" || root.value("contract") == "writer-subset-2" ||
+       root.value("contract") == "writer-subset-3" || root.value("contract") == "writer-subset-4");
+  if (error.error != QJsonParseError::NoError || !json.isObject() || root.size() != (current ? 5 : 4) ||
+      root.value("format") != "apollo-fountain-working" || (!current && !legacy) ||
+      (current && !root.value("normalizeSceneSpacing").isBool()) ||
       !root.value("intake").isObject() || root.value("intake").toObject().value("version") != 2)
     fail("unsupported preservation contract");
   ProjectAssets review{QJsonDocument(root.value("intake").toObject()).toJson(), assets.original_fountain};
   validate_fountain_intake(review);
-  return {review, root.value("contract").toString()};
+  return {review, root.value("contract").toString(), current && root.value("normalizeSceneSpacing").toBool()};
 }
-ProjectAssets review_assets(const ProjectAssets& assets) { return review_of(assets).assets; }
 // Letters in a character name, before any extension, only appear in Fountain
 // in lowercase when the cue is forced (@McCLANE): its author wants mixed case
 // printed, an exception to presenting cues in capitals that is not specified.
@@ -59,14 +61,47 @@ bool admitted_spacing(const Element& e) {
 bool legacy_character(char32_t cp) {
   return (cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9;
 }
-QStringList blockers(const FountainConversion& c, qsizetype size, const QString& contract) {
+// Deliberately narrow: exactly two physically empty lines between ordinary
+// action/dialogue and a scene heading, with no removed/retained material in the
+// gap. All other vertical spacing remains gated, even after opting in.
+std::vector<FountainRange> scene_spacing(const FountainConversion& c, const QByteArray& bytes) {
+  std::vector<FountainRange> result;
+  for (const auto& gap : c.limitations) {
+    if (gap.code != "vertical-spacing") continue;
+    const auto next = std::lower_bound(c.elements.begin(), c.elements.end(), gap.range.end,
+        [](const LocatedFountainElement& e, qsizetype byte) { return e.range.start < byte; });
+    if (next == c.elements.begin() || next == c.elements.end() || next->range.start != gap.range.end ||
+        next->element.type != ElementType::heading) continue;
+    const auto& previous = *std::prev(next);
+    if (previous.element.type != ElementType::action && previous.element.type != ElementType::dialogue) continue;
+    const auto raw = bytes.mid(previous.range.end, next->range.start - previous.range.end);
+    if (raw == "\n\n\n" || raw == "\r\n\r\n\r\n" || raw == "\r\r\r") result.push_back(gap.range);
+  }
+  return result;
+}
+QStringList blockers(const FountainConversion& c, const QByteArray& bytes, const QString& contract, bool normalize_scene_spacing) {
   QStringList result;
-  if (size > 64 * 1024 || c.elements.empty() || c.elements.size() > 256) result << "Writer subset is bounded to 64 KiB and 1–256 elements.";
+  const bool current = contract == writer_subset_contract;
+  const auto maximum_bytes = current ? writer_subset_maximum_bytes : 64 * 1024;
+  const auto maximum_elements = current ? writer_subset_maximum_elements : 256;
+  if (bytes.size() > maximum_bytes || c.elements.empty() || c.elements.size() > maximum_elements)
+    result << QString("Writer subset is bounded to %1 KiB and 1–%2 elements.").arg(maximum_bytes / 1024).arg(maximum_elements);
   if (c.records.size() > 256) result << "Writer subset is bounded to 256 imported records.";
-  if (!c.unresolved.empty()) result << "Unresolved source ranges require review.";
-  for (const auto& gap : c.limitations)
-    if (gap.code != "authored-case" && gap.code != "deliberate-break-layout")
-      result << "Unverified spacing or layout: " + gap.code;
+  if (bytes.contains('\t')) result << "Tabs are outside the verified writer subset.";
+  if (std::any_of(c.unresolved.begin(), c.unresolved.end(), [&](const FountainIssue& issue) {
+        return !current || issue.code != "empty-speech";
+      })) result << "Unresolved source ranges require review.";
+  const auto spacing = current ? scene_spacing(c, bytes) : std::vector<FountainRange>{};
+  if (current && normalize_scene_spacing && spacing.empty())
+    result << "No verified scene-spacing normalization is available for this source.";
+  for (const auto& gap : c.limitations) {
+    if (gap.code == "authored-case" || gap.code == "deliberate-break-layout") continue;
+    const bool supported = gap.code == "vertical-spacing" &&
+        std::find(spacing.begin(), spacing.end(), gap.range) != spacing.end();
+    if (supported && normalize_scene_spacing) continue;
+    result << (supported ? QString("Choose normal scene spacing explicitly to omit %1 extra empty lines before scene headings; original lines stay retained.").arg(spacing.size())
+                         : "Unverified spacing or layout: " + gap.code);
+  }
   for (const auto& located : c.elements) {
     const auto& e = located.element;
     const auto id = QString::fromStdString(e.id);
@@ -74,8 +109,8 @@ QStringList blockers(const FountainConversion& c, qsizetype size, const QString&
     if (legacy_case) result << id + ": authored case requires review.";
     else if (mixed_case_name(e)) result << id + ": forced mixed-case character name requires review; Apollo presents cues in capitals.";
     // writer-subset-1 and -2 admitted no empty line and no leading, trailing or repeated space.
-    const bool spacing = (contract == "writer-subset-3" || contract == writer_subset_contract) && admitted_spacing(e);
-    for (const auto gap : writer_subset_gaps(e, contract == writer_subset_contract))
+    const bool spacing = (contract == "writer-subset-3" || contract == "writer-subset-4" || current) && admitted_spacing(e);
+    for (const auto gap : writer_subset_gaps(e, contract == "writer-subset-4" || current))
       if (!(legacy_case && gap == WriterSubsetGap::uncapitalized_letter) && !(spacing && gap == WriterSubsetGap::spacing)) switch (gap) {
         case WriterSubsetGap::character: result << id + ": character outside the verified writer subset."; break;
         case WriterSubsetGap::authored_case: result << id + ": authored case requires review."; break;
@@ -91,6 +126,15 @@ QStringList blockers(const FountainConversion& c, qsizetype size, const QString&
   }
   result.removeDuplicates();
   return result;
+}
+// review_of has verified the complete frozen interpretation against these
+// exact bytes. Do not validate it again through convert_fountain while
+// deriving the working admission model.
+FountainConversion working_conversion(const Review& review) {
+  auto conversion = interpret_fountain(*review.assets.original_fountain);
+  const auto reasons = blockers(conversion, *review.assets.original_fountain, review.contract, review.normalize_scene_spacing);
+  if (!reasons.empty()) fail(reasons.join('\n'));
+  return conversion;
 }
 }
 bool writer_subset_character(char32_t cp) {
@@ -122,41 +166,62 @@ std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e, bool typograph
 bool is_fountain_working(const ProjectAssets& assets) {
   return assets.imported_material && QJsonDocument::fromJson(*assets.imported_material).object().value("format") == "apollo-fountain-working";
 }
-QStringList fountain_edit_blockers(const ProjectAssets& review, const QString& contract) {
+int fountain_scene_spacing_count(const ProjectAssets& review) {
   const auto c = convert_fountain(review);
-  auto result = blockers(c, review.original_fountain->size(), contract);
-  if (review.original_fountain->contains('\t')) result << "Tabs are outside the verified writer subset.";
-  return result;
+  return int(scene_spacing(c, *review.original_fountain).size());
 }
-ProjectAssets editable_fountain_assets(const ProjectAssets& review) {
+QStringList fountain_edit_blockers(const ProjectAssets& review, const QString& contract, bool normalize_scene_spacing) {
+  const auto c = convert_fountain(review);
+  return blockers(c, *review.original_fountain, contract, normalize_scene_spacing);
+}
+ProjectAssets editable_fountain_assets(const ProjectAssets& review, bool normalize_scene_spacing) {
   const auto interpreted = interpreted_fountain_assets(review);
-  const auto reasons = fountain_edit_blockers(interpreted);
+  const auto reasons = fountain_edit_blockers(interpreted, writer_subset_contract, normalize_scene_spacing);
   if (!reasons.empty()) fail(reasons.join('\n'));
-  const QJsonObject root{{"format", "apollo-fountain-working"}, {"version", 1}, {"contract", writer_subset_contract},
+  const QJsonObject root{{"format", "apollo-fountain-working"}, {"version", 2}, {"contract", writer_subset_contract},
+      {"normalizeSceneSpacing", normalize_scene_spacing},
       {"intake", QJsonDocument::fromJson(*interpreted.imported_material).object()}};
   return {QJsonDocument(root).toJson(), interpreted.original_fountain};
 }
 void validate_fountain_working(const ProjectAssets& assets) {
-  const auto review = review_of(assets);
-  const auto reasons = fountain_edit_blockers(review.assets, review.contract);
-  if (!reasons.empty()) fail(reasons.join('\n'));
+  // Validation is a pure function of the complete evidence bytes. Recovery
+  // repeatedly opens copies of the same immutable assets on one worker.
+  // Keep one exact-value result per thread, never a path/mtime/hash-only trust
+  // cache. QByteArray's copy-on-write keeps this key immutable if a caller edits.
+  thread_local std::optional<ProjectAssets> verified;
+  if (verified && *verified == assets) return;
+  (void)working_conversion(review_of(assets));
+  verified = assets;
 }
 Screenplay initial_fountain_writing(const ProjectAssets& assets) {
-  validate_fountain_working(assets);
-  return convert_fountain(review_assets(assets)).screenplay();
+  return working_conversion(review_of(assets)).screenplay();
 }
 FountainIntake open_working_fountain(const ProjectAssets& assets) {
-  validate_fountain_working(assets);
-  const auto review = review_assets(assets);
-  auto result = open_fountain_intake(review);
-  const auto c = convert_fountain(review);
+  const auto review = review_of(assets);
+  const auto c = working_conversion(review);
+  FountainIntake result;
+  result.interpreted = true;
+  result.source_view = fountain_source_view(*review.assets.original_fountain);
   result.assets = assets;
   result.working = true;
   result.summary = QString("Editable import copy. %1 screenplay elements; %2 retained records.\n"
       "The original and imported records are read-only. Associations refer to original elements, not tracked text ranges; removed anchors are shown as Detached. "
       "Notes, stash, organization and production metadata stay outside screenplay output.\n%3")
       .arg(c.elements.size()).arg(c.records.size()).arg(imported_pdf_block);
-  result.findings.clear();
+  const auto spacing = scene_spacing(c, *review.assets.original_fountain);
+  result.scene_spacing_count = int(spacing.size());
+  if (!spacing.empty()) result.summary += QString("\nBy explicit import choice, %1 extra empty lines before scene headings use Apollo's normal scene spacing. "
+      "They are retained below and in the original, not laid out or written in clean Fountain. To reverse this choice, return to the original review and make another copy.").arg(spacing.size());
+  for (const auto& r : spacing)
+    result.findings.append(QVariantMap{{"kind", "Scene spacing normalized by choice"}, {"startByte", r.start}, {"endByte", r.end},
+      {"firstLine", r.first_line}, {"lastLine", r.last_line}, {"text", ""},
+      {"truncated", false}, {"message", "One extra empty line before a scene heading is retained in the original, not laid out or exported; normal scene spacing was explicitly chosen."},
+      {"anchor", ""}, {"anchorType", -1}});
+  for (const auto& issue : c.unresolved)
+    result.findings.append(QVariantMap{{"kind", "Original diagnostic: " + issue.code}, {"startByte", issue.range.start}, {"endByte", issue.range.end},
+      {"firstLine", issue.range.first_line}, {"lastLine", issue.range.last_line}, {"text", ""},
+      {"truncated", false}, {"message", issue.message + " Current writing diagnostics appear in the Writing desk; original evidence is unchanged."},
+      {"anchor", ""}, {"anchorType", -1}});
   QMap<QString, int> types;
   for (const auto& e : c.elements) types.insert(QString::fromStdString(e.element.id), int(e.element.type));
   for (const auto& r : c.records)
@@ -168,8 +233,9 @@ FountainIntake open_working_fountain(const ProjectAssets& assets) {
 }
 QString fountain_export_omissions(const ProjectAssets& assets) {
   if (!is_fountain_working(assets)) return {};
-  // The frozen interpretation is the record of what the import retained.
-  const auto records = convert_fountain(review_assets(assets)).records;
+  const auto review = review_of(assets);
+  const auto conversion = interpret_fountain(*review.assets.original_fountain);
+  const auto& records = conversion.records;
   const std::pair<const char*, std::pair<const char*, const char*>> labels[] = {
       {"note", {"imported note", "imported notes"}}, {"stash", {"stash passage", "stash passages"}},
       {"titleMetadata", {"unsupported title-page field", "unsupported title-page fields"}},
@@ -181,8 +247,15 @@ QString fountain_export_omissions(const ProjectAssets& assets) {
     const auto count = std::count_if(records.begin(), records.end(), [&](const FountainRecord& r) { return r.kind == kind; });
     if (count) parts << QString("%1 %2").arg(count).arg(count == 1 ? names.first : names.second);
   }
-  if (parts.isEmpty()) return {};
-  return "Not included in clean Fountain: " + parts.join(", ") + ". They stay in this project's imported material and original.";
+  QString disclosure;
+  if (!parts.isEmpty()) disclosure = "Not included in clean Fountain: " + parts.join(", ") + ". They stay in this project's imported material and original.";
+  if (review.normalize_scene_spacing) {
+    if (!disclosure.isEmpty()) disclosure += '\n';
+    disclosure += QString("By explicit import choice, %1 extra empty lines before scene headings use Apollo's normal scene spacing and are not written. "
+        "Their exact source locations and original lines stay in the imported material; this is not spacing-equivalent output.")
+        .arg(scene_spacing(conversion, *review.assets.original_fountain).size());
+  }
+  return disclosure;
 }
 QString imported_origin(const ProjectAssets& assets) {
   if (!assets.imported_material) return {};

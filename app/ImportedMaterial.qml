@@ -68,6 +68,21 @@ Rectangle {
                     enabled: !page.access.busy; text: page.access.defaultLocation; selectByMouse: true
                     Accessible.name: "Parent folder for retained import"
                 }
+                CheckBox {
+                    objectName: "normalizeSceneSpacing"
+                    visible: page.access.intakeSceneSpacingCount > 0
+                    enabled: !page.access.busy
+                    width: parent.width
+                    checked: page.access.intakeNormalizeSceneSpacing
+                    text: "Use Apollo's normal scene spacing for " + page.access.intakeSceneSpacingCount + " extra empty lines before scene headings"
+                    onToggled: page.access.intakeNormalizeSceneSpacing = checked
+                }
+                Label {
+                    visible: page.access.intakeSceneSpacingCount > 0
+                    width: parent.width; textFormat: Text.PlainText; wrapMode: Text.Wrap
+                    text: "This is an explicit spacing change, not equivalent formatting. The extra lines stay in the read-only original and located review findings, but are not shown in the writer or written in clean Fountain. Cancel or clear the choice before creating the copy; afterward the original review remains available to start again. Other unsupported spacing stays gated."
+                    color: "#303843"
+                }
                 Flow {
                     width: parent.width; spacing: 12
                     Button {
@@ -94,7 +109,7 @@ Rectangle {
                 }
                 Label {
                     width: parent.width; textFormat: Text.PlainText; wrapMode: Text.Wrap
-                    text: page.access.intakeEditSupported ? "This source meets the bounded writer subset. Editing creates a new copy; clean exports remain blocked."
+                    text: page.access.intakeEditSupported ? "This source meets the bounded writer subset. Editing creates a new copy. Empty speeches remain unfinished and block Fountain export until explicitly resolved; imported PDF remains blocked."
                         : "Editable conversion is gated:\n" + page.access.intakeEditBlockers
                     color: "#303843"
                 }

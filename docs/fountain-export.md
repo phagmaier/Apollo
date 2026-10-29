@@ -113,6 +113,16 @@ When lines with text had spaces at an edge, they say `Written without the
 spaces at the start or end of 2 lines, which Apollo does not show or print. The
 project keeps them as typed.`
 
+Imported copies made with the explicit scene-spacing choice disclose, e.g.,
+`By explicit import choice, 49 extra empty lines before scene headings use
+Apollo's normal scene spacing and are not written.` The disclosure states
+that this is **not spacing-equivalent output** and that the original lines and
+locations stay in imported material. The unchecked import gate is the default;
+export cannot silently opt into normalization. Canonical revision 4's spelling
+is unchanged. `writer-subset-5` permits unfinished empty speeches to enter the
+writer, but this export contract still refuses them until manually corrected
+or explicitly, undoably treated as action.
+
 ## Snapshot, files and departure
 
 - The request captures the document on the GUI thread and runs the linear
@@ -162,8 +172,9 @@ Measured on this machine (release build, synthetic repeats of the subset model):
 worker; 10,506 elements / 200 KB take 20 ms and 57 ms. These are not
 representative-script measurements. The later
 [full-length assessment](fountain-compatibility.md#representative-full-length-assessment-2026-10-28)
-records actual preview/publication timings and remaining gates; neither full
-reference is currently editable or exportable.
+records the original assessment and subsequent workflow evidence. The owner
+reference's path requires explicit spacing and empty-speech choices; the second
+reference remains gated.
 
 ## Remaining gates
 
@@ -173,11 +184,12 @@ reference is currently editable or exportable.
   title/lyric/centered text, lyric within speech, adjacent dialogue elements and
   complex emphasis remain refused, not exported lossily. See
   [case-handling.md](case-handling.md) for the remaining case limitations.
-- Complete Fountain grammar and corrections remain 2.6b work. aw-parser was
-  checked on these fixtures only; it differs from Fountain 1.1 where it reads
-  inner action lines as headings/transitions or `Key:` lines anywhere before the
-  first heading, so a general claim of agreement with other applications is not
-  made.
+- Complete Fountain grammar and general corrections remain 2.6b work.
+  aw-parser was checked on these fixtures and the bounded representative
+  workflow, not every syntax combination. It differs from Fountain 1.1 where
+  it reads inner action lines as headings/transitions or `Key:` lines anywhere
+  before the first heading; no general agreement claim with other applications
+  follows.
 - PDF export of imported writing stays blocked pending independent layout
   evidence. The editor/engine layout warning seen when a dialogue line starts
   with a space after a deliberate break was an editor placement bug, since

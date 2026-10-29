@@ -11,6 +11,13 @@ not changed or incorporated into fixtures.
 
 ## Result and scope
 
+**Current continuation:** `writer-subset-5` adds an explicit, disclosed
+normal-scene-spacing choice and saveable unfinished empty speeches with an
+undoable correction. Earlier assessments below are historical; see
+[the full-length continuation](#full-length-workflow-continuation) for current
+admission, workflow evidence and remaining limits. Imported PDF remains gated.
+
+
 Task 2.6 is larger than one reviewable import change. The spike importer is not
 a safe production converter: it joins source lines with spaces, trims action
 indentation and transition-significant trailing spaces, accepts ellipses as
@@ -369,3 +376,190 @@ native `build/wayland-check-20261028-202516-i6rXY1/`, spacing runner
 disposable private copies: do not publish that directory.** Temporary probe
 sources/binaries were removed. No dependency pins, engine layout rules or
 independent layout references changed.
+
+## Full-length workflow continuation
+
+### Actual meaning of the blockers
+
+The owner's disposable 100,514-byte reference contains **49 distinct runs of
+exactly two empty lines before scene headings**: 37 after action and 12 after
+dialogue. No run is leading, trailing, longer, whitespace-only or an internal
+dialogue blank. The two separate unresolved speeches each contain a cue and
+parenthetical without dialogue; neither overlaps a spacing run. Counts therefore
+do not describe 51 occurrences of one formatting problem.
+
+[Official Fountain syntax](https://fountain.io/syntax/) promises vertical
+whitespace preservation. Independent synthetic examples confirm aw-parser 0.1.1
+emits one additional separator token for the second blank line. Apollo cannot
+silently discard these lines or call normalized output spacing-equivalent.
+
+The smallest implemented workflow is an **unchecked-by-default, explicit
+normal-scene-spacing choice**, only for that exact gap pattern. Original bytes
+and frozen located limitations remain immutable. Every affected line is surfaced
+in the working imported-material reader, with an export-panel/completion/CLI
+disclosure of the count and non-equivalence. Other vertical spacing, longer runs,
+whitespace-only lines, or removed material inside a gap remain gated. Cancel or
+clear the option before publication; afterward keep/revisit the original review
+and make another copy to reverse the normalization decision.
+
+Empty speeches remain exact unfinished elements instead of forcing an invented
+line or deletion before editing. A live list navigates every affected cue.
+**Treat speech as action** is an explicit type-only change to the cue and its
+parentheticals, preserving every word, style and identity in one undo step;
+manual dialogue authoring is the alternative. Stale/now-valid and dual-related
+corrections are refused. Unresolved empty speeches block Fountain export, not
+saving. Other unresolved source syntax still blocks editable admission.
+
+New copies use `writer-subset-5`, working metadata v2 and the required
+`normalizeSceneSpacing` boolean. The frozen converter, source schema, old copy
+contracts, canonical Fountain revision 4 and imported PDF gate are unchanged.
+Admission is bounded to **128 KiB / 3,072 elements / 256 retained records**,
+not the converter's 1 MiB limit; later unfinished writing remains saveable.
+
+The full original's interpreted types, presented text, emphasis spans, dual
+flags and title fields matched aw-parser on all **2,319 interpreted elements** before
+correction. The oracle adapter needed its independently documented `shot` token
+mapped to action for two isolated uppercase actions; unknown token categories
+now fail rather than silently disappearing from comparisons. Synthetic `HOLD.`
+checks that representation separately, without using private wording.
+
+The script's private original is never edited or committed. Tests use independently
+written `scene-spacing` fixtures. Measurement artifacts contain disposable
+private copies, screenshots and output; only aggregate numbers may be published.
+
+
+### Responsiveness method and initial finding
+
+`tools/measure-fountain-workflow.sh` drives the actual QML import, explicit
+spacing choice, issue picker/correction with real Undo/Redo, keyboard edits,
+autosave acknowledgments, Fountain panel, Home, reopen and identical re-export.
+The measurement-only corrections are not author acceptance. Each run uses
+isolated application state, a fresh disposable project, native Wayland/OpenGL
+and synchronized `frameSwapped` observations; these are synthetic QWindow
+events, not device/compositor input latency. Preview timing begins at its
+control click; publication timing includes staged creation, verified activation
+and the first writer frame. Reopen timing begins at Open Project. Build/startup
+before Home is excluded. Autosave acknowledgment includes correction/undo/redo
+and typing revisions, including revisions superseded by a newer save.
+
+The first enabled-flow measurements exposed a saving-target miss despite
+responsive typing. A throwaway aggregate-only profiler isolated repeated frozen
+interpretation validation during creation/open/recovery. Working operations now
+derive admission from already verified bytes and render the original through
+the shared source-view formatter instead of constructing and discarding another
+full interpretation reader. Validation retains **one exact complete
+metadata-plus-original value per thread**: byte-identical evidence may reuse a
+successful deterministic result; any changed byte requires full verification.
+Qt copy-on-write keeps a stored key immutable when callers edit their copies.
+This is not a path/mtime/hash-only trust cache. Filesystem, manifest, lock and
+dependency checks are unchanged. Altered original bytes, nested interpretation,
+contract/version and unknown metadata remain refused after a valid open.
+
+Review also corrected the runner's build environment: application XDG isolation
+must start in the executable, **after** using the existing mise toolchain.
+Changing tool-manager XDG paths before building had unnecessarily reinstalled
+tools into disposable output. Those preliminary runs are not the final
+performance evidence.
+
+
+### Final admitted-workload measurements
+
+Three isolated warm runs per workload, **120 keys per run**, with autosave and
+the live diagnostic list enabled. The boundary is an independently generated
+ASCII action workload at both admission limits, not derived from private text.
+Times below are medians across runs unless labeled maximum.
+
+| Measured operation / observation | Owner disposable copy | Admitted synthetic boundary |
+| --- | ---: | ---: |
+| Original bytes / elements | 100,514 / 2,319 | 131,072 / 3,072 |
+| Apollo editor pages (not imported PDF validation) | 91 | 110 |
+| Import preview → first reader frame | 198.6 ms | 246.0 ms |
+| Explicit editable publication → first writer frame | 1,332.6 ms | 1,446.5 ms |
+| Saved-project reopen → first writer frame | 665.0 ms | 731.7 ms |
+| Reopen maximum across runs | 716.2 ms | 982.9 ms |
+| Key handling p95 | 7.9 ms | 7.6 ms |
+| Key → synchronized frame p95 | 17.1 ms | 16.9 ms |
+| Key → synchronized frame maximum | 27.8 ms | 29.6 ms |
+| Frames above 100 ms / unobserved frames | 0 / 0 | 0 / 0 |
+| Mutation → verified autosave acknowledgment maximum | 857.8 ms | 931.6 ms |
+| GUI autosave capture maximum | 2.6 ms | 4.0 ms |
+| Fountain request → successful completion | 113.6 ms | 82.5 ms |
+| Export mouse handler/capture/dispatch upper bound, maximum | 17.0 ms | 21.4 ms |
+| Reopened Fountain re-export → completion | 79.1 ms | 93.7 ms |
+| PSS after typing, maximum sampled | 218.4 MiB | 240.7 MiB |
+| PSS maximum of writer-ready / after-typing / after-reopen-workflow samples | 250.8 MiB | 270.3 MiB |
+
+The admitted workloads met the observed typing and one-second save/reopen
+targets in these samples, not a durability guarantee or worst-case proof.
+Full-workflow memory is **not cleared against the 250 MiB target**: the harness
+retains comparison snapshots and exercises reopen in one process, and the
+sample includes allocator/render caches. Memory profiling and the complete
+milestone's 200-/500-page measurements remain open; a low typing sample must not
+be presented as a peak-memory pass.
+
+The initially considered **4,096-element** bound was **not enabled**. Even after
+the validation improvement its exact-size stress workload reached 1,089.8 ms
+autosave acknowledgment and 283.9 MiB after typing. The final element bound is
+3,072; source bytes remain 128 KiB and retained records 256. The tests separately
+admit the exact boundaries and refuse one additional byte/element on otherwise
+supported writing, so another fidelity refusal cannot mask a missing limit.
+
+Every final run exercised the actual import review/spacing choice, both
+empty-speech corrections and Undo/Redo when present, editing, verified autosave,
+Home/reopen, Fountain-panel export and byte-identical re-export. Model comparison
+kept every type, word, emphasis span, identity, dual flag and imported asset except
+the deliberately changed types and typed measurement text. aw-parser separately
+matched the saved/exported meaning of **all six final exports**. Synthetic
+hand-written fixture expectations protect the same choices without private text.
+The PDF request was refused in every run and left an existing destination intact.
+There were no redacted Qt messages in the six final runs.
+
+The owner still chooses whether each unfinished cue needs dialogue or should
+be action, and whether the explicit non-equivalent scene-spacing normalization
+is acceptable. The automated corrections/normalization are **disposable
+rehearsal choices**, not changes to the private original or recorded author
+acceptance. Spacing-equivalent export of the original gaps is not implemented;
+declining the choice keeps that import gated. Arbitrary spacing, the second
+reference's unsupported content and imported PDF remain blocked.
+
+Aggregate evidence: ignored
+`build/full-length-workflow-hgj6ljwr/{native-admitted,measured-summary,final-independent}.json`;
+the six `native-*-admitted-*` folders retain actual application artifacts.
+**Those directories contain private projects, screenshots and exports: do not
+publish them.** Earlier `native-*-warm-*`, `native-*-final-*` and
+`native-*-verified-*` folders are explicitly pre-final candidate measurements.
+No private text or derived fixture is committed. Temporary profiling source,
+binaries and unnecessary isolated tool installations were removed.
+
+### Completion review and recheck
+
+Direct review covered the exact spacing opt-in, legacy contracts, complete-byte
+validation cache, live speech diagnostics, type-only correction/Undo, QML
+publication/export, independent expectations and the measurement runner. No
+additional functional change was needed. The element-count label above was
+clarified to include title fields; the recorded full-length measurements were
+preserved. Untracked Python caches were removed and the tracked generated cache
+restored. The private original and existing rehearsal directory were not opened
+or changed during this review.
+
+A fresh native Wayland/OpenGL runner smoke used only the public
+`scene-spacing` fixture: 12 keys, both speech corrections with Undo/Redo,
+explicit spacing selection, exact autosave/reopen and byte-identical Fountain
+re-export all passed. The original fixture stayed unchanged, PDF remained
+blocked, and no Qt messages were redacted. The writer and diagnostic-bar
+captures were visually inspected. These small synthetic checks do not replace
+the full-length evidence or owner comfort/spacing/speech decisions above.
+Artifacts are ignored under `build/full-length-review-native/`.
+
+Required rechecks pass: `mise run check` **23/23**, `mise run check-debug`
+**23/23** with no sanitizer report, and `mise run check-engine` **2/2**.
+Both Qt suites include the independent aw-parser export oracle. Logs are
+`build/full-length-review-{release,debug,engine}.log`. The initial sandboxed
+release attempt could not write uv's cache; the successful release and sanitizer
+runs used normal cache access outside that restriction, with default leak
+detection. `bash -n tools/measure-fountain-workflow.sh` and `git diff --check`
+pass. A separate CR-only synthetic-fixture CLI import also retained byte-exact
+original evidence and disclosed both normalized gaps. Earlier Academy and
+full-length native measurements remain the evidence recorded above; they were
+not repeated during completion review. Owner acceptance and the 250 MiB
+memory-target miss remain open.

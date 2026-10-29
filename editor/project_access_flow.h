@@ -44,6 +44,8 @@ class ProjectAccessFlow : public QObject {
   Q_PROPERTY(bool intakeWorking READ intake_working NOTIFY changed)
   Q_PROPERTY(bool intakeEditSupported READ intake_edit_supported NOTIFY changed)
   Q_PROPERTY(QString intakeEditBlockers READ intake_edit_blockers NOTIFY changed)
+  Q_PROPERTY(bool intakeNormalizeSceneSpacing READ intake_normalize_scene_spacing WRITE set_intake_normalize_scene_spacing NOTIFY changed)
+  Q_PROPERTY(int intakeSceneSpacingCount READ intake_scene_spacing_count NOTIFY changed)
   Q_PROPERTY(QString intakeSummary READ intake_summary NOTIFY changed)
   Q_PROPERTY(QString intakeSource READ intake_source NOTIFY changed)
   Q_PROPERTY(QVariantList intakeFindings READ intake_findings NOTIFY changed)
@@ -63,6 +65,7 @@ public:
   Q_INVOKABLE void publish_import(const QString& parent, const QString& name);
   Q_INVOKABLE void interpret_import(const QString& parent, const QString& name);
   Q_INVOKABLE void edit_import(const QString& parent, const QString& name);
+  void set_intake_normalize_scene_spacing(bool normalize);
   Q_INVOKABLE QUrl folder_url(const QString& path) const;
   Q_INVOKABLE QString local_folder(const QUrl& url) const;
   bool busy() const { return busy_; }
@@ -82,6 +85,8 @@ public:
   bool intake_working() const { return intake_ && intake_->working && document_; }
   bool intake_edit_supported() const { return intake_ && !intake_->working && intake_->edit_supported; }
   QString intake_edit_blockers() const { return intake_ ? intake_->edit_blockers : QString(); }
+  bool intake_normalize_scene_spacing() const { return normalize_scene_spacing_; }
+  int intake_scene_spacing_count() const { return intake_ ? intake_->scene_spacing_count : 0; }
   QString intake_summary() const { return intake_ ? intake_->summary : QString(); }
   QString intake_source() const { return intake_ ? intake_->source_view : QString(); }
   QVariantList intake_findings() const;
@@ -130,6 +135,7 @@ private:
   std::thread worker_;
   bool busy_ = false, current_available_ = false, state_writing_ = false, state_dirty_ = false;
   bool leaving_ = false, leave_failed_ = false, saver_drained_ = false, library_dirty_ = false;
+  bool normalize_scene_spacing_ = false;
   QString default_location_, session_notice_, library_notice_;
   QString location_, error_, notice_, current_summary_;
   QVariantList candidates_;

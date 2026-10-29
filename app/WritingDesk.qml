@@ -24,6 +24,16 @@ Rectangle {
     property bool includeTitle: true
     property bool showReloadStatus: false
     property string sessionNotice: ""
+    property var emptySpeechIssues: commands.emptySpeeches
+    property string emptySpeechId: ""
+    property string emptySpeechNotice: ""
+    property var selectedEmptySpeech: {
+        for (const issue of emptySpeechIssues) {
+            if (issue.id === emptySpeechId)
+                return issue
+        }
+        return null
+    }
     color: "#d4d9df"
 
     function toggleOutline() {
@@ -65,6 +75,29 @@ Rectangle {
         return "Ready. The current writing meets the canonical Fountain contract; later edits are not included in this snapshot."
                 + (fountainPresentationNote.length > 0 ? "\n" + fountainPresentationNote : "")
                 + (fountainJob.omissions.length > 0 ? "\n" + fountainJob.omissions : "")
+    }
+    function selectEmptySpeech(id) {
+        const position = commands.locateEmptySpeech(id)
+        emptySpeechNotice = ""
+        if (position < 0) {
+            emptySpeechNotice = "This speech changed. Choose a current cue to review."
+            return
+        }
+        emptySpeechId = id
+        editorPage.selectElement(position, selectedEmptySpeech.text.length)
+    }
+    function treatSelectedSpeechAsAction() {
+        if (!selectedEmptySpeech)
+            return
+        const length = selectedEmptySpeech.text.length
+        const position = commands.treatSpeechAsAction(emptySpeechId)
+        if (position < 0) {
+            emptySpeechNotice = "This speech changed or has a dual-dialogue relationship. Choose a current cue to review."
+            return
+        }
+        emptySpeechId = ""
+        emptySpeechNotice = ""
+        editorPage.selectElement(position, length)
     }
     Shortcut { sequence: "Ctrl+E"; onActivated: desk.exportPdf() }
     Shortcut { sequence: "Ctrl+Shift+E"; enabled: desk.fountainJob !== null && !desk.departing; onActivated: desk.openExport("fountain") }
@@ -363,6 +396,55 @@ Rectangle {
         }
     }
 
+    Popup {
+        id: emptySpeechPanel
+        objectName: "emptySpeechPanel"
+        parent: desk
+        x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
+        width: Math.min(600, desk.width - 16)
+        height: Math.min(360, desk.height - header.height - 16)
+        padding: 16; modal: true; focus: true
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
+        onClosed: editorPage.focusEditor()
+        Text {
+            id: emptySpeechTitle
+            text: desk.emptySpeechIssues.length + (desk.emptySpeechIssues.length === 1 ? " empty speech" : " empty speeches")
+            color: "#303843"; font { family: "Liberation Sans"; pixelSize: 16; weight: Font.DemiBold }
+        }
+        Text {
+            id: emptySpeechHelp
+            anchors { left: parent.left; right: parent.right; top: emptySpeechTitle.bottom; topMargin: 8 }
+            text: "Choose any cue to go to it. Nothing changes until you edit it or choose Treat speech as action."
+            wrapMode: Text.Wrap; color: "#4d5965"
+            font { family: "Liberation Sans"; pixelSize: 12 }
+        }
+        ListView {
+            objectName: "emptySpeechList"
+            anchors { left: parent.left; right: parent.right; top: emptySpeechHelp.bottom; topMargin: 12; bottom: parent.bottom }
+            clip: true; spacing: 4
+            model: desk.emptySpeechIssues
+            delegate: DeskButton {
+                required property var modelData
+                required property int index
+                objectName: "emptySpeechIssue" + index
+                width: ListView.view.width
+                text: (index + 1) + ". " + (modelData.text.length ? modelData.text : "(empty cue)")
+                ink: "#303843"; fill: modelData.id === desk.emptySpeechId ? "#d4d9df" : "white"
+                Accessible.name: "Go to empty speech " + (index + 1) + ": " + modelData.text
+                contentItem: Text {
+                    text: parent.text; font: parent.font; color: "#303843"
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
+                }
+                onClicked: {
+                    desk.selectEmptySpeech(modelData.id)
+                    emptySpeechPanel.close()
+                }
+            }
+            ScrollBar.vertical: ScrollBar {}
+        }
+    }
+
     Item {
         id: workspace
         anchors { left: outline.right; right: parent.right; top: header.bottom; bottom: footer.top }
@@ -378,10 +460,51 @@ Rectangle {
                 Text { text: "100%"; color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 } }
             }
         }
+        Rectangle {
+            id: emptySpeechBar
+            objectName: "emptySpeechBar"
+            anchors { left: parent.left; right: parent.right; top: workbar.bottom }
+            height: visible ? 78 : 0
+            visible: desk.emptySpeechIssues.length > 0
+            color: "#e9edf0"
+            DeskButton {
+                id: reviewEmptySpeech
+                objectName: "reviewEmptySpeeches"
+                x: 12; y: 4
+                text: desk.emptySpeechIssues.length + (desk.emptySpeechIssues.length === 1 ? " empty speech…" : " empty speeches…")
+                ink: "#303843"; fill: "#d4d9df"
+                Accessible.name: "Review every cue without dialogue"
+                onClicked: emptySpeechPanel.open()
+            }
+            Text {
+                anchors { left: reviewEmptySpeech.right; leftMargin: 12; right: treatSpeech.left; rightMargin: 12; verticalCenter: reviewEmptySpeech.verticalCenter }
+                text: desk.selectedEmptySpeech ? desk.selectedEmptySpeech.text : "Choose a cue to review"
+                textFormat: Text.PlainText; elide: Text.ElideRight
+                color: "#303843"; font { family: "Liberation Sans"; pixelSize: 12 }
+            }
+            DeskButton {
+                id: treatSpeech
+                objectName: "treatSpeechAsAction"
+                anchors { right: parent.right; rightMargin: 12; top: parent.top; topMargin: 4 }
+                text: "Treat speech as action"
+                ink: "#303843"; fill: "#d4d9df"
+                enabled: desk.selectedEmptySpeech !== null && desk.selectedEmptySpeech.canTreatAsAction
+                         && (!desk.autosaver || !desk.autosaver.reloadBusy) && !desk.departing
+                Accessible.name: "Treat the selected cue and its parentheticals as action; undo restores the speech"
+                onClicked: desk.treatSelectedSpeechAsAction()
+            }
+            Text {
+                anchors { left: parent.left; right: parent.right; top: reviewEmptySpeech.bottom; margins: 12; topMargin: 3 }
+                text: desk.emptySpeechNotice || (desk.selectedEmptySpeech ? desk.selectedEmptySpeech.explanation
+                      : "Saved as written. Clean Fountain export needs dialogue after every cue, or an explicit correction.")
+                textFormat: Text.PlainText; wrapMode: Text.Wrap
+                color: "#4d5965"; font { family: "Liberation Sans"; pixelSize: 11 }
+            }
+        }
         ScreenplayEditor {
             id: editorPage
             enabled: (!desk.autosaver || !desk.autosaver.reloadBusy) && !desk.departing
-            anchors { left: parent.left; right: parent.right; top: workbar.bottom; bottom: parent.bottom }
+            anchors { left: parent.left; right: parent.right; top: emptySpeechBar.bottom; bottom: parent.bottom }
             screenplayLayout: desk.screenplayLayout
             commands: desk.commands
         }

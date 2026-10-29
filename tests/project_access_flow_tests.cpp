@@ -3,6 +3,7 @@
 #include "editor/pdf_export_job.h"
 #include "editor/fountain_export_job.h"
 #include "editor/screenplay_layout.h"
+#include "editor/editor_commands.h"
 #include "source/recovery.h"
 #include "source/fountain_conversion.h"
 #include "source/fountain_working.h"
@@ -103,6 +104,96 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void scene_spacing_choice_and_empty_speech_resolution_survive_reopen_and_export() {
+    const auto input = path("scene-spacing") + ".fountain";
+    const auto original = bytes(APOLLO_IMPORT_FIXTURE_DIR "/scene-spacing.fountain");
+    replace_file(input, original);
+    auto expected = parse_screenplay(bytes(APOLLO_IMPORT_FIXTURE_DIR "/scene-spacing.expected.json"));
+    const auto state = path("scene-spacing-state");
+    const auto output = path("scene-spacing-out") + ".fountain";
+    auto exported = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/scene-spacing.fountain");
+    exported.replace("The dial stops.\n", "The dial stops.t\n");
+    QString working;
+    {
+      Window window(font_, state, {}, {}, input);
+      QTRY_VERIFY(window.flow.intake_preview()); QTRY_VERIFY(!window.flow.busy());
+      QCOMPARE(window.flow.intake_scene_spacing_count(), 2);
+      QVERIFY(!window.flow.intake_edit_supported());
+      QVERIFY(window.click("normalizeSceneSpacing"));
+      QVERIFY(window.flow.intake_edit_supported());
+      QVERIFY(window.click("normalizeSceneSpacing"));
+      QVERIFY(!window.flow.intake_edit_supported());
+      QVERIFY(window.click("normalizeSceneSpacing"));
+      window.item("intakeProjectName")->setProperty("text", "Scene spacing copy");
+      window.item("intakeProjectParent")->setProperty("text", root_.path());
+      QVERIFY(window.click("editIntake")); QTRY_VERIFY(window.flow.document());
+      working = window.flow.autosaver()->location();
+      auto* commands = window.flow.document()->findChild<EditorCommands*>();
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QVERIFY(commands && job);
+      QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);
+      QCOMPARE(commands->emptySpeeches().size(), 2);
+      replace_file(output, "Existing Fountain");
+      QVERIFY(!job->request(output));
+      QCOMPARE(bytes(output), QByteArray("Existing Fountain"));
+      QTest::qWait(30);
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/empty-speech-review.png")));
+      // Select and explicitly correct each issue through the actual controls.
+      for (int correction = 0; correction < 2; ++correction) {
+        QVERIFY(window.click("reviewEmptySpeeches"));
+        QTRY_VERIFY(find_item(window.view.contentItem(), "emptySpeechIssue0"));
+        QTest::qWait(30);
+        auto* issue = find_item(window.view.contentItem(), "emptySpeechIssue0");
+        QTest::mouseClick(&window.view, Qt::LeftButton, Qt::NoModifier,
+                         issue->mapToScene(issue->boundingRect().center()).toPoint());
+        QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+        QVERIFY(window.click("treatSpeechAsAction"));
+        const auto before = expected;
+        expected.elements[3 + correction * 2].type = expected.elements[4 + correction * 2].type = ElementType::action;
+        QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);
+        QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), before);
+        QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+        QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);
+      }
+      QVERIFY(commands->emptySpeeches().isEmpty());
+      const auto last = window.flow.document()->lastBlock();
+      window.flow.editor()->setProperty("cursorPosition", last.position() + last.length() - 1);
+      window.type("t");
+      expected.elements.back().text += "t";
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(window.item("exportEligibility")->property("text").toString().contains("2 extra empty lines before scene headings"));
+      window.item("fountainDestination")->setProperty("text", output);
+      QVERIFY(window.click("exportConfirm")); QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(output), exported);
+      QVERIFY(window.click("importedMaterial"));
+      QTRY_VERIFY(window.item("intakeSource"));
+      QCOMPARE(window.item("intakeSource")->property("text").toString().toUtf8(), original);
+      QVERIFY(window.item("intakeSummary")->property("text").toString().contains("not laid out or written"));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/scene-spacing-retained.png")));
+      QVERIFY(window.click("intakeHome"));
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+    }
+    {
+      Window window(font_, state, working);
+      QTRY_VERIFY(window.flow.document());
+      QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      window.item("fountainDestination")->setProperty("text", output);
+      QVERIFY(window.click("exportConfirm")); QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(output), exported);
+      const auto pdf = path("scene-spacing-blocked") + ".pdf";
+      replace_file(pdf, "Existing PDF");
+      QVERIFY(!qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>())->request(pdf));
+      QCOMPARE(bytes(pdf), QByteArray("Existing PDF"));
+    }
+    QCOMPARE(bytes(input), original);
+    QCOMPARE(bytes(working + "/imports/original.fountain"), original);
+  }
   void editable_import_preserves_content_and_associations_in_actual_writer_data() {
     QTest::addColumn<bool>("crlf");
     QTest::newRow("LF") << false;

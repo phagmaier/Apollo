@@ -17,8 +17,9 @@
 
 namespace apollo::editor {
 namespace {
-void check_import_subset(source::FountainIntake& intake) {
-  const auto blockers = source::fountain_edit_blockers(intake.assets);
+void check_import_subset(source::FountainIntake& intake, bool normalize_scene_spacing = false) {
+  intake.scene_spacing_count = source::fountain_scene_spacing_count(intake.assets);
+  const auto blockers = source::fountain_edit_blockers(intake.assets, source::writer_subset_contract, normalize_scene_spacing);
   intake.edit_supported = blockers.isEmpty();
   intake.edit_blockers = blockers.join('\n');
 }
@@ -156,6 +157,12 @@ void ProjectAccessFlow::show_intake() {
   if (view_.status() != QQuickView::Ready) throw std::runtime_error("cannot load imported material QML");
 }
 
+void ProjectAccessFlow::set_intake_normalize_scene_spacing(bool normalize) {
+  if (busy_ || !intake_ || document_ || intake_->working || normalize_scene_spacing_ == normalize) return;
+  normalize_scene_spacing_ = normalize;
+  check_import_subset(*intake_, normalize);
+  emit changed();
+}
 void ProjectAccessFlow::preview_import(const QString& path) {
   if (busy_ || document_ || review_session_) return;
   busy_ = true; error_.clear(); emit changed();
@@ -168,7 +175,7 @@ void ProjectAccessFlow::preview_import(const QString& path) {
     QMetaObject::invokeMethod(this, [this, intake = std::move(intake), failure]() mutable {
       busy_ = false;
       error_ = failure;
-      if (intake) { intake_ = std::move(intake); location_.clear(); candidates_.clear(); current_available_ = false; show_intake(); }
+      if (intake) { normalize_scene_spacing_ = false; intake_ = std::move(intake); location_.clear(); candidates_.clear(); current_available_ = false; show_intake(); }
       emit changed();
     }, Qt::QueuedConnection);
   });
@@ -195,7 +202,7 @@ void ProjectAccessFlow::publish_import_impl(const QString& parent, const QString
   publishing_reader_ = review_session_ != nullptr;
   auto reader = std::move(review_session_);
   busy_ = true; error_.clear(); emit changed();
-  launch([this, parent, name, mode, assets = intake_->assets, reader = std::move(reader)]() mutable {
+  launch([this, parent, name, mode, normalize = normalize_scene_spacing_, assets = intake_->assets, reader = std::move(reader)]() mutable {
     std::optional<source::Project> project;
     QString failure;
     try {
@@ -206,7 +213,7 @@ void ProjectAccessFlow::publish_import_impl(const QString& parent, const QString
       }
       source::Screenplay writing{0, {{ElementType::action, ""}}};
       if (mode == 1) assets = source::interpreted_fountain_assets(assets);
-      if (mode == 2) { assets = source::editable_fountain_assets(assets); writing = source::initial_fountain_writing(assets); }
+      if (mode == 2) { assets = source::editable_fountain_assets(assets, normalize); writing = source::initial_fountain_writing(assets); }
       project = source::create_named_project(parent, name, writing, assets);
       reader.reset(); // Release the old reader only after publication.
     }
@@ -228,6 +235,7 @@ void ProjectAccessFlow::publish_import_impl(const QString& parent, const QString
 void ProjectAccessFlow::install_intake(std::unique_ptr<source::ProjectSession> session, source::FountainIntake intake) {
   const auto project = session->opened().project;
   review_session_ = std::move(session);
+  normalize_scene_spacing_ = false;
   intake_ = std::move(intake);
   location_ = project.directory;
   show_intake();

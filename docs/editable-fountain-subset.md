@@ -2,9 +2,9 @@
 
 2026-10-28. This is task **2.6c**, a bounded continuation of 2.6b, not complete
 Fountain compatibility or completion of writing slice 3. Contract `writer-subset-1`
-(now `writer-subset-4`, below) is an engineering choice within the requested preservation work.
+(now `writer-subset-5`, below) is an engineering choice within the requested preservation work.
 
-Admission requires a verified revision-1 interpretation with no unresolved ranges,
+The original `writer-subset-1` required a verified revision-1 interpretation with no unresolved ranges,
 a nonempty screenplay, at most 64 KiB original, at most 256 elements and 256
 retained records, and a successful engine layout. Supported content is ordinary/forced headings and cues in ASCII
 uppercase (including extensions and authored CONT'D), action, dialogue,
@@ -49,6 +49,40 @@ other Unicode, size, syntax, spacing or layout gate is widened, and imported PDF
 remains blocked. New copies use this contract; `writer-subset-1` through `-3`
 keep their earlier character rules on validation/reopen. Older builds refuse
 `writer-subset-4` instead of silently widening an older copy.
+
+**`writer-subset-5` (full-length workflow)** retains revision 4's content rules,
+but admits **128 KiB original / 3,072 elements / 256 retained records**. These
+are admission limits, not a limit on preserving later writing. Earlier contracts
+keep their 64 KiB / 256-element limits. Performance evidence and its boundaries
+are in the [full-length continuation](fountain-compatibility.md#full-length-workflow-continuation).
+
+Two narrowly bounded workflow changes:
+
+- An `empty-speech` diagnostic no longer prevents editable admission when all
+  other gates pass. The exact cue and parentheticals enter the writer unfinished,
+  without invented dialogue or deletions. A visible list locates every such cue.
+  Add dialogue manually, or explicitly **Treat speech as action**: one undoable
+  type-only change to that cue and its parentheticals. Text, styles and IDs stay
+  intact. Dual-related corrections are refused; edit those manually. Uncorrected
+  empty speeches still block Fountain export. All other unresolved codes remain
+  review-only.
+- Exactly **two physically empty lines between action/dialogue and a scene
+  heading** can be admitted only after choosing **Use Apollo's normal scene
+  spacing**. This intentionally does **not** preserve spacing-equivalent output.
+  Every extra line remains in the immutable original/frozen located limitations,
+  is surfaced separately in the imported reader, and is disclosed as not laid
+  out or exported. No text is removed from the interpreted screenplay. Clear the
+  option/cancel before publication to reverse the choice; afterward the original
+  review/source remains available to create another copy. Other vertical gaps,
+  longer blank runs, removed material within a gap and whitespace-only lines
+  remain gated. LF, CRLF and CR separators are recognized without changing bytes.
+
+New copies use working metadata v2 with an explicit `normalizeSceneSpacing`
+boolean; older builds refuse it. Legacy working metadata v1 and the frozen
+revision-1 converter remain unchanged. `NEW_DIR --edit-fountain FILE
+[--normalize-scene-spacing]` is the CLI equivalent. The flag is not an implicit
+default or permission to normalize arbitrary whitespace.
+
 
 **Edit in a New Copy** creates a staged project with a fresh identity. Neither a
 review project nor the external Fountain is upgraded or rewritten. Publication
@@ -163,5 +197,8 @@ in-scope issue; no dependency/runtime pins or independent layout references chan
 The later punctuation step's independent fixtures, real flows, older-contract
 validation and final release/sanitizer/native evidence are recorded in
 [the representative-workflow assessment](fountain-compatibility.md#representative-full-length-assessment-2026-10-28).
-Its two full scripts remain blocked by other fidelity and size gates; the new
-repertoire is not evidence of full-length editable compatibility.
+At that step both full scripts remained gated. The subsequent
+[`writer-subset-5` continuation](fountain-compatibility.md#full-length-workflow-continuation)
+provides the measured owner-script workflow with explicit spacing and speech
+choices; the other reference remains gated. Neither step claims general
+Fountain compatibility or correct imported PDF.

@@ -16,15 +16,17 @@ enum class WriterSubsetGap { character, authored_case, uncapitalized_letter, mul
 // Current character repertoire; punctuation is preserved, never transliterated.
 bool writer_subset_character(char32_t codepoint);
 std::vector<WriterSubsetGap> writer_subset_gaps(const Element& element, bool typographic_punctuation = true);
-// Conservative admission contracts; see docs/editable-fountain-subset.md. New
-// copies use writer-subset-4, adding six verified typographic punctuation marks.
-// Copies made under an earlier contract are validated by its rules: -3 refused
-// these punctuation marks, -2 also refused the newer spacing, and -1 also
-// required headings and cues in ASCII capitals. The original review model is
-// immutable. Later writing may be unfinished.
-inline constexpr auto writer_subset_contract = "writer-subset-4";
-QStringList fountain_edit_blockers(const ProjectAssets& review, const QString& contract = writer_subset_contract);
-ProjectAssets editable_fountain_assets(const ProjectAssets& review);
+// Conservative admission contracts; see docs/editable-fountain-subset.md.
+// Revision 5 preserves unfinished empty speeches for explicit correction and
+// permits a separate opt-in to normal scene spacing, retaining original gaps.
+// Earlier copies are always validated under their original stricter rules.
+inline constexpr auto writer_subset_contract = "writer-subset-5";
+inline constexpr qsizetype writer_subset_maximum_bytes = 128 * 1024;
+inline constexpr std::size_t writer_subset_maximum_elements = 3072;
+int fountain_scene_spacing_count(const ProjectAssets& review);
+QStringList fountain_edit_blockers(const ProjectAssets& review, const QString& contract = writer_subset_contract,
+                                  bool normalize_scene_spacing = false);
+ProjectAssets editable_fountain_assets(const ProjectAssets& review, bool normalize_scene_spacing = false);
 bool is_fountain_working(const ProjectAssets& assets);
 void validate_fountain_working(const ProjectAssets& assets);
 Screenplay initial_fountain_writing(const ProjectAssets& assets);

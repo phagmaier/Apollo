@@ -521,7 +521,8 @@ int main(int argc, char** argv) {
              fountain_export = mode == "--export-fountain";
   if ((check || comparing || typing || creating || retaining || fountain_export) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   QGuiApplication application(argc, argv);
-  const bool usage = retaining ? argc != 4 : check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
+  const bool normalize_scene_spacing = editing_import && argc == 5 && std::string(argv[4]) == "--normalize-scene-spacing";
+  const bool usage = retaining ? (argc != 4 && !normalize_scene_spacing) : check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
       : typing ? argc < 4 || argc > 7
       : (comparing || snapshot || export_measuring || fountain_export) ? argc != 4 && argc != 5 : argc != 1 && argc != 2;
   if (usage) {
@@ -529,7 +530,7 @@ int main(int argc, char** argv) {
                  "       apollo_editor PROJECT --create [FILE.fountain]\n"
                  "       apollo_editor PROJECT --retain-fountain FILE\n"
                  "       apollo_editor NEW_PROJECT --interpret-fountain FILE\n"
-                 "       apollo_editor NEW_PROJECT --edit-fountain FILE\n"
+                 "       apollo_editor NEW_PROJECT --edit-fountain FILE [--normalize-scene-spacing]\n"
                  "       apollo_editor PROJECT --export-fountain OUTPUT.fountain [--no-title-page]\n"
                  "       apollo_editor PROJECT --autosave-typing LOG [KEYS [INTERVAL_MS [PHASE:N]]]\n";
     return 2;
@@ -537,12 +538,13 @@ int main(int argc, char** argv) {
   try {
     if (retaining) {
       const auto intake = apollo::source::read_fountain_intake(QString::fromLocal8Bit(argv[3]));
-      const auto assets = editing_import ? apollo::source::editable_fountain_assets(intake.assets)
+      const auto assets = editing_import ? apollo::source::editable_fountain_assets(intake.assets, normalize_scene_spacing)
           : interpreting ? apollo::source::interpreted_fountain_assets(intake.assets) : intake.assets;
       const auto writing = editing_import ? apollo::source::initial_fountain_writing(assets)
           : apollo::source::Screenplay{0, {{apollo::ElementType::action, ""}}};
       const auto project = apollo::source::create_project(QString::fromLocal8Bit(argv[1]), writing, assets);
       std::cout << (editing_import ? "editable copy (PDF gated; Fountain export checks each snapshot) at " : "retained for read-only review at ") << project.directory.toStdString() << '\n';
+      if (normalize_scene_spacing) std::cout << apollo::source::fountain_export_omissions(assets).toStdString() << '\n';
       return 0;
     }
     if (creating) {

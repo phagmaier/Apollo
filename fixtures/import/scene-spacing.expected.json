@@ -1,0 +1,19 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [],
+  "elements": [
+    {"id": "f1", "type": "sceneHeading", "text": "INT. SIGNAL ROOM - DAY"},
+    {"id": "f2", "type": "action", "text": "A dial turns."},
+    {"id": "f3", "type": "sceneHeading", "text": "EXT. PLATFORM - NIGHT"},
+    {"id": "f4", "type": "character", "text": "THEO"},
+    {"id": "f5", "type": "parenthetical", "text": "(quietly)"},
+    {"id": "f6", "type": "character", "text": "MIRA"},
+    {"id": "f7", "type": "parenthetical", "text": "(listening)"},
+    {"id": "f8", "type": "character", "text": "THEO"},
+    {"id": "f9", "type": "dialogue", "text": "The last train has gone."},
+    {"id": "f10", "type": "sceneHeading", "text": "INT. SIGNAL ROOM - DAWN"},
+    {"id": "f11", "type": "action", "text": "The dial stops."}
+  ]
+}

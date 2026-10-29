@@ -50,6 +50,35 @@ bool in_speech(QTextBlock block) {
   return false;
 }
 
+struct SpeechState {
+  QTextBlock end;
+  bool has_dialogue = false;
+  bool dual_related = false;
+};
+
+SpeechState speech_state(QTextBlock cue) {
+  SpeechState state{cue.next(), false, cue.blockFormat().boolProperty(dual_right_property)};
+  while (state.end.isValid()) {
+    const auto type = element_type(state.end);
+    if (type != ElementType::parenthetical && type != ElementType::dialogue) break;
+    state.has_dialogue |= type == ElementType::dialogue;
+    state.dual_related |= state.end.blockFormat().boolProperty(dual_right_property);
+    state.end = state.end.next();
+  }
+  // A following right-hand cue depends on this cue as its left-hand speech.
+  if (state.end.isValid() && element_type(state.end) == ElementType::cue)
+    state.dual_related |= state.end.blockFormat().boolProperty(dual_right_property);
+  return state;
+}
+
+QTextBlock cue_with_id(QTextDocument* document, const QString& id) {
+  if (id.isEmpty()) return {};
+  for (auto block = document->begin(); block.isValid(); block = block.next())
+    if (block.blockFormat().stringProperty(element_id_property) == id)
+      return element_type(block) == ElementType::cue ? block : QTextBlock{};
+  return {};
+}
+
 // The elements covering [start, end), each cut to the selected part. A
 // selection edge that covers none of a block's text leaves that block out.
 std::vector<Element> selected_elements(QTextDocument* document, int start, int end) {
@@ -132,7 +161,52 @@ int insert_between(QTextCursor& cursor, const std::vector<Element>& inserted) {
 }
 }
 
-EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObject(parent), document_(document) {}
+EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObject(parent), document_(document) {
+  connect(document_, &QTextDocument::contentsChanged, this, &EditorCommands::refreshEmptySpeeches);
+  refreshEmptySpeeches();
+}
+
+void EditorCommands::refreshEmptySpeeches() {
+  QVariantList issues;
+  for (auto block = document_->begin(); block.isValid();) {
+    if (element_type(block) != ElementType::cue) { block = block.next(); continue; }
+    const auto state = speech_state(block);
+    if (!state.has_dialogue) {
+      issues.push_back(QVariantMap{
+          {"id", block.blockFormat().stringProperty(element_id_property)},
+          {"position", block.position()}, {"text", block.text()},
+          {"canTreatAsAction", !state.dual_related},
+          {"explanation", state.dual_related
+              ? QStringLiteral("This speech has a dual-dialogue relationship. Treating it as action could change its pairing; edit the speech manually.")
+              : QStringLiteral("This cue has no dialogue. Add dialogue, or explicitly treat the cue and its parentheticals as action.")}});
+    }
+    block = state.end;
+  }
+  if (issues == empty_speeches_) return;
+  empty_speeches_ = std::move(issues);
+  emit emptySpeechesChanged();
+}
+
+int EditorCommands::locateEmptySpeech(const QString& id) const {
+  const auto cue = cue_with_id(document_, id);
+  return cue.isValid() && !speech_state(cue).has_dialogue ? cue.position() : -1;
+}
+
+int EditorCommands::treatSpeechAsAction(const QString& id) {
+  const auto cue = cue_with_id(document_, id);
+  if (!cue.isValid()) return -1;
+  const auto state = speech_state(cue);
+  if (state.has_dialogue || state.dual_related) return -1;
+  const int position = cue.position();
+  QTextCursor cursor(document_);
+  cursor.beginEditBlock();
+  for (auto block = cue; block != state.end; block = block.next()) {
+    cursor.setPosition(block.position());
+    set_type(cursor, ElementType::action);
+  }
+  cursor.endEditBlock();
+  return position;
+}
 
 int EditorCommands::typeText(int position, int selectionStart, int selectionEnd, const QString& text) {
   auto cursor = selection(document_, position, selectionStart, selectionEnd);

@@ -74,7 +74,7 @@ def joined(lines):
     return text, sorted(spans)
 
 
-AW_TYPES = {"scene_heading": "sceneHeading", "action": "action", "character": "character", "parenthetical": "parenthetical",
+AW_TYPES = {"scene_heading": "sceneHeading", "action": "action", "shot": "action", "character": "character", "parenthetical": "parenthetical",
             "dialogue": "dialogue", "transition": "transition", "centered": "centered", "page_break": "pageBreak"}
 
 
@@ -83,6 +83,7 @@ def aw_reading(node, parser, path):
     title = [({"draft date": "draftDate"}.get(t["type"], t["type"]), decode(t["text"])[0]) for t in reading["title_page"]]
     elements, lines, previous = [], [], None
     for token in reading["tokens"] + [{"type": "separator"}]:
+        assert token["type"] in AW_TYPES or token["type"] == "separator", f"Unhandled independent token type: {token['type']}"
         kind = AW_TYPES.get(token["type"])
         # Consecutive action or dialogue lines are one authored element.
         if lines and (kind != previous or kind not in ("action", "dialogue")):
@@ -209,6 +210,50 @@ def punctuation_subset(editor, root):
     return [(out, typed, True), (FIXTURES / "export/punctuation-subset.fountain", authored, True), (fixture, authored, True)]
 
 
+def scene_spacing_subset(editor, root):
+    """Explicit spacing choice; unfinished speech stays saveable but unexportable."""
+    fixture = FIXTURES / "import/scene-spacing.fountain"
+    project, out = root / "scene-spaced", root / "scene-spaced.fountain"
+    refused = run(editor, project, "--edit-fountain", fixture, expect=1)
+    assert "Choose normal scene spacing explicitly" in refused.stderr
+    assert not project.exists()
+    run(editor, project, "--edit-fountain", fixture, "--normalize-scene-spacing")
+    authored = json.loads((FIXTURES / "import/scene-spacing.expected.json").read_text())
+    saved = json.loads((project / "screenplay.json").read_text())
+    assert (saved["titlePage"], saved["elements"]) == (authored["titlePage"], authored["elements"])
+    out.write_bytes(b"Existing export")
+    refused = run(editor, project, "--export-fountain", out, expect=3)
+    assert "has no dialogue" in refused.stderr and out.read_bytes() == b"Existing export"
+    # Set up the independently specified corrected model. The real one-step
+    # correction/undo UI is exercised in editor and project-access flow tests.
+    corrected = json.loads(json.dumps(authored))
+    for e in corrected["elements"]:
+        if e["id"] in ("f4", "f5", "f6", "f7"):
+            e["type"] = "action"
+    (project / "screenplay.json").write_text(json.dumps(corrected))
+    assert type_at_end(editor, project, root / "typing-scene-spacing.log", 1, "f11") == len("The dial stops.")
+    exported = run(editor, project, "--export-fountain", out)
+    assert "2 extra empty lines before scene headings" in exported.stdout
+    assert "not spacing-equivalent output" in exported.stdout
+    expected = (FIXTURES / "export/scene-spacing.fountain").read_text()
+    assert out.read_text() == expected.replace("The dial stops.\n", "The dial stops.t\n")
+    assert (project / "imports/original.fountain").read_bytes() == fixture.read_bytes()
+    typed = json.loads(json.dumps(corrected))
+    typed["elements"][-1]["text"] += "t"
+    # aw-parser calls an unforced isolated uppercase action a "shot", not
+    # dialogue. Its words must not disappear from the independent comparison.
+    shot = root / "shot-action.fountain"
+    shot.write_text("A signal blinks.\n\nHOLD.\n\nThe dial turns.\n")
+    shot_model = {"titlePage": [], "elements": [{"type": "action", "text": "A signal blinks."},
+                  {"type": "action", "text": "HOLD."}, {"type": "action", "text": "The dial turns."}]}
+    run(editor, root / "shot-action", "--edit-fountain", shot)
+    shot_out = root / "shot-action-out.fountain"
+    run(editor, root / "shot-action", "--export-fountain", shot_out)
+    assert shot_out.read_text() == "A signal blinks.\n\n!HOLD.\n\nThe dial turns.\n"
+    return [(fixture, authored, True), (out, typed, True), (FIXTURES / "export/scene-spacing.fountain", corrected, True),
+            (shot, shot_model, True), (shot_out, shot_model, True)]
+
+
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--editor", required=True, type=pathlib.Path)
@@ -269,6 +314,7 @@ def main():
     case_cases = case_subset(editor, root)
     spacing_cases = spacing_subset(editor, root)
     punctuation_cases = punctuation_subset(editor, root)
+    scene_spacing_cases = scene_spacing_subset(editor, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -281,12 +327,18 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)
             got = aw_reading(options.node, options.aw_parser, path)
             assert got == want, (path, got, want)
+        # The spacing choice is deliberately non-equivalent. Check the raw
+        # oracle separators too; semantic-element comparison omits separators.
+        for path, count in [(FIXTURES / "import/scene-spacing.fountain", 2), (root / "scene-spaced.fountain", 0)]:
+            tokens = json.loads(run(options.node, ROOT / "tools/aw_tokens.cjs", options.aw_parser, path).stdout)["tokens"]
+            extra = sum(a["type"] == b["type"] == "separator" for a, b in zip(tokens, tokens[1:]))
+            assert extra == count, (path, extra, count)
         print(f"aw-parser 0.1.1 independently read {len(cases)} exports as their hand-worked semantic models")
     print("Fountain export process checks passed")
 

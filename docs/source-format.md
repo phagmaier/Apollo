@@ -955,9 +955,14 @@ stay v1; v1/v2 intake metadata and review manifests retain their meanings.
 contract `writer-subset-1`, (from task 3a) `writer-subset-2`, (from task 3b)
 `writer-subset-3`, or `writer-subset-4` (six exact Unicode punctuation marks), and
 `intake` containing the complete frozen v2 review metadata. These are exactly
-four keys. New copies record `writer-subset-4`; each copy is recomputed under
-the contract it records ([case-handling.md](case-handling.md),
-[spacing.md](spacing.md), [writer subset](editable-fountain-subset.md)).
+four keys. They remain readable under their original rules. New copies use
+**working metadata v2**, `writer-subset-5`, with a fifth required boolean key
+`normalizeSceneSpacing`; it records the explicit choice described in
+[spacing.md](spacing.md). False preserves the gate; true is valid only for
+verified, narrowly bounded scene-heading gaps. The complete original and frozen
+located limitations remain immutable. Old builds refuse v2 before writing it.
+Each copy is recomputed under its recorded contract; source-v1 screenplay and
+project-v3 manifest are unchanged.
 Earlier contracts retain their own stricter rules; earlier builds refuse
 unrecognized contracts. The original Fountain bytes, digest,
 origin, source ranges, interpreted screenplay, records and associations remain
@@ -965,9 +970,11 @@ immutable; the nested review permissions remain false. The outer preservation
 contract is independently recomputed on create/open/recovery, never trusted as a
 permission boolean. Missing, altered, unsupported or newer evidence is refused.
 
-Explicit **Edit in a New Copy** (also `NEW_DIR --edit-fountain FILE`) creates a
-fresh staged project initialized with the located interpretation's exact elements
-and IDs. Prior review projects and the external source stay untouched. Failed
+Explicit **Edit in a New Copy** (also `NEW_DIR --edit-fountain FILE
+[--normalize-scene-spacing]`) creates a fresh staged project initialized with the
+located interpretation's exact elements and IDs, including unfinished empty
+speeches under revision 5. The optional spacing choice changes presentation and
+export disclosure, not the interpreted screenplay. Prior review projects and the external source stay untouched. Failed
 publication retains the reader/lock. Activation compares the published assets
 with the reviewed snapshot before offering a writer.
 

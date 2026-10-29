@@ -56,6 +56,13 @@ QString display(const QByteArray& bytes) {
   }
   return result;
 }
+QString source_view(const QByteArray& bytes, bool utf8) {
+  if (utf8) return display(bytes.startsWith("\xef\xbb\xbf") ? bytes.mid(3) : bytes);
+  QString result;
+  for (qsizetype i = 0; i < bytes.size(); i += 32)
+    result += QStringLiteral("%1  %2\n").arg(i, 8, 16, QLatin1Char('0')).arg(QString::fromLatin1(bytes.mid(i, 32).toHex(' ')));
+  return result;
+}
 FountainIntake describe(ProjectAssets assets, const QString& origin) {
   FountainIntake result;
   result.assets = std::move(assets);
@@ -81,11 +88,7 @@ FountainIntake describe(ProjectAssets assets, const QString& origin) {
       .arg(bytes.size()).arg(display(origin.toUtf8()), utf8
         ? QStringLiteral("UTF-8 reference view; control/format characters are shown as \\u escapes. Original bytes, line endings and any BOM are retained.")
         : QStringLiteral("Invalid UTF-8 or another encoding: hexadecimal byte view. No replacement characters or encoding guesses were saved."));
-  if (utf8) result.source_view = display(body);
-  else {
-    for (qsizetype i = 0; i < bytes.size(); i += 32)
-      result.source_view += QStringLiteral("%1  %2\n").arg(i, 8, 16, QLatin1Char('0')).arg(QString::fromLatin1(bytes.mid(i, 32).toHex(' ')));
-  }
+  result.source_view = source_view(bytes, utf8);
   const auto add = [&](const QString& kind, qsizetype start, qsizetype end, const QString& message) {
     if (result.findings.size() >= 200) return;
     auto preview_end = qMin(end, start + 2000);
@@ -136,6 +139,10 @@ FountainIntake describe(ProjectAssets assets, const QString& origin) {
   if (result.findings.size() == 200) result.summary += "\nFinding list capped at 200; the complete source remains available.";
   return result;
 }
+}
+QString fountain_source_view(const QByteArray& bytes) {
+  const auto body = bytes.startsWith("\xef\xbb\xbf") ? bytes.mid(3) : bytes;
+  return source_view(bytes, QString::fromUtf8(body).toUtf8() == body);
 }
 
 bool is_fountain_intake(const ProjectAssets& assets) {

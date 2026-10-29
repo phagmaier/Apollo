@@ -22,11 +22,13 @@ projects whose current snapshot meets the [export contract](fountain-export.md);
 PDF of imported writing remains gated. See the
 [preservation contract](editable-fountain-subset.md), evidence below and the
 [compatibility table](fountain-compatibility.md).
-The representative full-length assessment adds `writer-subset-4` /
-`fountain-canonical-4` for six preserved typographic punctuation marks. Both
-local full scripts still fail other admission gates; this is not full-length
-editable import. See the measured blocker inventory in
-[fountain-compatibility.md](fountain-compatibility.md#representative-full-length-assessment-2026-10-28).
+The representative assessment added six preserved typographic punctuation
+marks in `writer-subset-4` / `fountain-canonical-4`. The subsequent
+**`writer-subset-5` full-length continuation** admits the owner's representative
+script only with explicit scene-spacing normalization and unfinished-speech
+review/correction; the original stays immutable. The independently exercised
+bound is 128 KiB / 3,072 elements, not general Fountain compatibility.
+See [the measured workflow and remaining limits](fountain-compatibility.md#full-length-workflow-continuation).
 Crash loss during copying remains unverified. The other slice 2
 flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
@@ -1028,3 +1030,31 @@ flows 36/36 plus native PDF snapshots/first paint; spacing runner smoke and
 Academy independent comparison pass. Full native typing was not rerun.
 Detailed evidence paths, measurement boundaries, review corrections and
 remaining gates are in the compatibility assessment above.
+
+### Full-length continuation — explicit spacing and empty-speech choices
+
+The subsequent [workflow continuation](fountain-compatibility.md#full-length-workflow-continuation)
+distinguishes 49 two-empty-line scene separators from two separate
+cue/parenthetical-only speeches. `writer-subset-5` retains every interpreted
+element and original byte, admits unfinished empty speeches with a visible
+diagnostic and one-step undoable type-only correction, and requires an explicit
+unchecked import choice before applying normal scene spacing. Every omitted
+extra line remains located in imported material and disclosed in Fountain
+output as non-equivalent spacing. Other spacing/syntax gates and imported PDF
+blocking stay intact.
+
+Working metadata v2 records the spacing choice; older copy contracts remain
+readable under their own rules. Admission is bounded to 128 KiB / 3,072 elements
+/ 256 retained records; the continuation records measurements and their limits.
+The current milestone is still incomplete: this does not implement arbitrary
+spacing, full Fountain grammar, the title form, general diagnostics, spelling,
+suggestions, find/replace or independently correct imported PDF.
+
+Use `tools/measure-fountain-workflow.sh --source FILE --output NEW_DIRECTORY
+[--keys N]` for the isolated disposable workflow measurement, native Wayland by
+default; `--offscreen` is runtime verification only. It deliberately applies
+measurement-only empty-speech corrections to a copy, never records author
+acceptance, verifies exact save/reopen/re-export and the unchanged input, and
+keeps potentially private screenshots/projects/logs under a mode-0700 output.
+Only aggregate JSON is printed. Measured outcomes and remaining gates are
+recorded in the continuation above.

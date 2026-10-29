@@ -128,6 +128,13 @@ struct InputMethodCommits : QObject {
     return false;
   }
 };
+
+QQuickItem* find_item(QQuickItem* root, const QString& name) {
+  if (root->objectName() == name) return root;
+  for (auto* child : root->childItems())
+    if (auto* found = find_item(child, name)) return found;
+  return nullptr;
+}
 }
 
 class EditorTests : public QObject {
@@ -711,6 +718,152 @@ private slots:
     QCOMPARE(element_type(document_->findBlock(parenthetical.position())), ElementType::parenthetical);
     press(Qt::Key_Z, Qt::ControlModifier);
     QCOMPARE(block_element(document_->findBlock(parenthetical.position())), original);
+  }
+
+  void empty_speeches_follow_real_keys() {
+    QVERIFY(open_elements({{ElementType::action, "Before."}, {ElementType::cue, "Mara"},
+                           {ElementType::parenthetical, "(quietly)"}, {ElementType::cue, "Mara"},
+                           {ElementType::action, "After."}, {ElementType::cue, "Theo"},
+                           {ElementType::dialogue, "One.\n\nTwo."}}));
+    auto* commands = document_->findChild<EditorCommands*>();
+    QVERIFY(commands);
+    auto issues = commands->emptySpeeches();
+    QCOMPARE(issues.size(), 2);
+    const auto first_id = issues[0].toMap()["id"].toString();
+    const auto second_id = issues[1].toMap()["id"].toString();
+    QVERIFY(!first_id.isEmpty() && first_id != second_id);
+    QCOMPARE(issues[0].toMap()["text"].toString(), QStringLiteral("Mara"));
+    QCOMPARE(issues[1].toMap()["text"].toString(), QStringLiteral("Mara"));
+    const int first_position = commands->locateEmptySpeech(first_id);
+    const int second_position = commands->locateEmptySpeech(second_id);
+    QVERIFY(first_position < second_position);
+
+    editor_->setProperty("cursorPosition", 0);
+    type(QStringLiteral("New "));
+    QCOMPARE(commands->emptySpeeches()[0].toMap()["position"].toInt(), first_position + 4);
+    QCOMPARE(commands->locateEmptySpeech(second_id), second_position + 4);
+    editor_->setProperty("cursorPosition", commands->locateEmptySpeech(second_id));
+    press(Qt::Key_Tab);
+    QCOMPARE(commands->emptySpeeches().size(), 1);
+    QCOMPARE(commands->locateEmptySpeech(second_id), -1);
+    press(Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(commands->emptySpeeches().size(), 2);
+    editor_->setProperty("cursorPosition", commands->locateEmptySpeech(second_id) + 4);
+    press(Qt::Key_Return);
+    QCOMPARE(element_type(block_at(cursor())), ElementType::dialogue);
+    QCOMPARE(commands->emptySpeeches().size(), 1);
+    // Empty dialogue is a distinct editing state, not a missing speech part.
+    press(Qt::Key_Return);
+    QCOMPARE(element_type(block_at(cursor())), ElementType::action);
+    QCOMPARE(commands->emptySpeeches().size(), 2);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(commands->emptySpeeches().size(), 1);
+    // The intentional blank line in Theo's dialogue never adds an issue.
+    QCOMPARE(commands->emptySpeeches()[0].toMap()["id"].toString(), first_id);
+  }
+
+  void empty_speech_correction_preserves_document_and_undo() {
+    QVERIFY(open_elements({{ElementType::cue, "Mar\xc3\xa9", false, {{0, 5, Style::bold}}},
+                           {ElementType::parenthetical, "(quietly)", false, {{1, 8, Style::italic}}},
+                           {ElementType::parenthetical, "(to Theo)", false, {{4, 8, Style::underline}}},
+                           {ElementType::action, "Every word stays."}}));
+    auto* commands = document_->findChild<EditorCommands*>();
+    QVERIFY(commands);
+    const auto original = document_elements(*document_);
+    const auto id = QString::fromStdString(original[0].id);
+    QCOMPARE(commands->emptySpeeches().size(), 1);
+    QVERIFY(commands->emptySpeeches()[0].toMap()["canTreatAsAction"].toBool());
+    QCOMPARE(commands->treatSpeechAsAction(id), 0);
+    auto corrected = original;
+    for (int i = 0; i < 3; ++i) corrected[i].type = ElementType::action;
+    QCOMPARE(document_elements(*document_), corrected);
+    QVERIFY(commands->emptySpeeches().isEmpty());
+    editor_->forceActiveFocus();
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    QCOMPARE(commands->emptySpeeches().size(), 1);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), corrected);
+    QVERIFY(commands->emptySpeeches().isEmpty());
+  }
+
+  void empty_speech_correction_rejects_stale_valid_and_dual_data() {
+    QTest::addColumn<int>("scenario");
+    QTest::newRow("missing id") << 0;
+    QTest::newRow("cue changed type") << 1;
+    QTest::newRow("dialogue added") << 2;
+    QTest::newRow("right dual cue") << 3;
+    QTest::newRow("left of dual cue") << 4;
+    QTest::newRow("flagged parenthetical") << 5;
+  }
+  void empty_speech_correction_rejects_stale_valid_and_dual() {
+    QFETCH(int, scenario);
+    std::vector<Element> elements{{ElementType::cue, "Mara"}, {ElementType::parenthetical, "(quietly)"}};
+    if (scenario == 3) elements[0].dual_right = true;
+    if (scenario == 4) {
+      elements.push_back({ElementType::cue, "Theo", true});
+      elements.push_back({ElementType::dialogue, "A reply."});
+    }
+    if (scenario == 5) elements[1].dual_right = true;
+    auto document = screenplay_document(elements, font_);
+    EditorCommands commands(document.get());
+    QString id = QString::fromStdString(document_elements(*document)[0].id);
+    if (scenario == 0) id = QStringLiteral("no-longer-present");
+    if (scenario == 1) commands.cycleType(0, true);
+    if (scenario == 2) {
+      const int end = document->lastBlock().position() + document->lastBlock().length() - 1;
+      commands.enter(end, end, end);
+    }
+    if (scenario >= 3) {
+      QCOMPARE(commands.emptySpeeches().size(), 1);
+      QVERIFY(!commands.emptySpeeches()[0].toMap()["canTreatAsAction"].toBool());
+      QVERIFY(commands.emptySpeeches()[0].toMap()["explanation"].toString().contains(QStringLiteral("dual-dialogue")));
+    }
+    const auto before = document_elements(*document);
+    const int undo_steps = document->availableUndoSteps();
+    QCOMPARE(commands.treatSpeechAsAction(id), -1);
+    QCOMPARE(document_elements(*document), before);
+    QCOMPARE(document->availableUndoSteps(), undo_steps);
+  }
+
+  void writing_desk_reviews_each_empty_speech_and_corrects_selection() {
+    QVERIFY(open_elements({{ElementType::cue, "Mara"}, {ElementType::parenthetical, "(quietly)"},
+                           {ElementType::cue, "Mara"}, {ElementType::parenthetical, "(to Theo)"},
+                           {ElementType::action, "After."}}));
+    auto* root = view_->rootObject();
+    auto* commands = document_->findChild<EditorCommands*>();
+    auto* review = root->findChild<QQuickItem*>("reviewEmptySpeeches");
+    auto* treat = root->findChild<QQuickItem*>("treatSpeechAsAction");
+    QVERIFY(commands && review && treat);
+    QVERIFY(review->isVisible());
+    QVERIFY(review->property("text").toString().startsWith(QStringLiteral("2 empty speeches")));
+    QVERIFY(!treat->isEnabled());
+    const auto original = document_elements(*document_);
+    for (int index : {0, 1}) {
+      QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                       review->mapToScene(review->boundingRect().center()).toPoint());
+      const auto name = QStringLiteral("emptySpeechIssue%1").arg(index);
+      QTRY_VERIFY(find_item(view_->contentItem(), name));
+      auto* issue = find_item(view_->contentItem(), name);
+      QTest::qWait(30); // Let the Popup and delegate geometry polish.
+      QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                       issue->mapToScene(issue->boundingRect().center()).toPoint());
+      QTRY_VERIFY(editor_->hasActiveFocus());
+      const auto diagnostic = commands->emptySpeeches()[index].toMap();
+      QCOMPARE(editor_->property("selectionStart").toInt(), diagnostic["position"].toInt());
+      QCOMPARE(editor_->property("selectedText").toString(), QStringLiteral("Mara"));
+      QVERIFY(treat->isEnabled());
+    }
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     treat->mapToScene(treat->boundingRect().center()).toPoint());
+    auto expected = original;
+    expected[2].type = expected[3].type = ElementType::action;
+    QCOMPARE(document_elements(*document_), expected);
+    QCOMPARE(commands->emptySpeeches().size(), 1);
+    QCOMPARE(commands->emptySpeeches()[0].toMap()["id"].toString(), QString::fromStdString(original[0].id));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    QCOMPARE(commands->emptySpeeches().size(), 2);
   }
 
   // Enter inside dialogue keeps one speech element and an authored break.

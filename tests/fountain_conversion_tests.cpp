@@ -53,6 +53,77 @@ QStringList codes(const std::vector<FountainIssue>& issues) {
 class FountainConversionTests : public QObject {
   Q_OBJECT
 private slots:
+  void scene_spacing_requires_explicit_normalization_and_keeps_unfinished_speeches() {
+    const auto captured = read_fountain_intake(QStringLiteral(APOLLO_FIXTURE_ROOT "/import/scene-spacing.fountain"));
+    const auto frozen = convert_fountain(captured.assets);
+    QCOMPARE(frozen.screenplay(), parse_screenplay(bytes(QStringLiteral(APOLLO_FIXTURE_ROOT "/import/scene-spacing.expected.json"))));
+    QCOMPARE(fountain_scene_spacing_count(captured.assets), 2);
+    QVERIFY(!fountain_edit_blockers(captured.assets).isEmpty());
+    QVERIFY_THROWS_EXCEPTION(SourceError, editable_fountain_assets(captured.assets));
+    QCOMPARE(fountain_edit_blockers(captured.assets, writer_subset_contract, true), QStringList{});
+    const auto assets = editable_fountain_assets(captured.assets, true);
+    QCOMPARE(*assets.original_fountain, *captured.assets.original_fountain);
+    QCOMPARE(initial_fountain_writing(assets), frozen.screenplay());
+    QVERIFY(fountain_export_omissions(assets).contains("2 extra empty lines before scene headings"));
+    const auto reader = open_working_fountain(assets);
+    QCOMPARE(std::count_if(reader.findings.begin(), reader.findings.end(), [](const QVariant& v) {
+      return v.toMap().value("kind") == "Scene spacing normalized by choice";
+    }), 2);
+    auto unchecked = assets;
+    auto root = QJsonDocument::fromJson(*unchecked.imported_material).object();
+    root.insert("normalizeSceneSpacing", false);
+    unchecked.imported_material = QJsonDocument(root).toJson();
+    QVERIFY_THROWS_EXCEPTION(SourceError, validate_fountain_working(unchecked));
+    QVERIFY(!fountain_edit_blockers(captured.assets, "writer-subset-4", true).isEmpty());
+    QTemporaryDir parent;
+    const auto project = create_project(parent.filePath("working"), initial_fountain_writing(assets), assets);
+    QCOMPARE(open_project(project.directory).assets, assets);
+    // Neither arbitrary vertical space nor a run of three blank lines is covered.
+    for (const auto& original : {QByteArray("A dial turns.\n\n\nThe dial stops.\n"),
+                                QByteArray("A dial turns.\n\n\n\nEXT. PLATFORM - NIGHT\n\nRain.\n"),
+                                QByteArray("A dial turns.\n\n[[note]]\n\nEXT. PLATFORM - NIGHT\n\nRain.\n")}) {
+      const auto unsupported = intake(original, parent.path());
+      QVERIFY(!fountain_edit_blockers(unsupported.assets, writer_subset_contract, true).isEmpty());
+      QVERIFY_THROWS_EXCEPTION(SourceError, editable_fountain_assets(unsupported.assets, true));
+    }
+    // BOM/CRLF source has the same located choice, with its own exact original.
+    auto crlf = *captured.assets.original_fountain;
+    crlf.replace("\n", "\r\n"); crlf.prepend("\xef\xbb\xbf");
+    const auto alternate = intake(crlf, parent.path());
+    QCOMPARE(fountain_scene_spacing_count(alternate.assets), 2);
+    QCOMPARE(*editable_fountain_assets(alternate.assets, true).original_fountain, crlf);
+  }
+  void full_length_element_bound_preserves_all_elements() {
+    QTemporaryDir parent;
+    auto original = QByteArray("!A dial turns and a lamp dims.\n\n").repeated(3072);
+    original.chop(1);
+    const auto captured = intake(original, parent.path());
+    const auto assets = editable_fountain_assets(captured.assets);
+    const auto writing = initial_fountain_writing(assets);
+    QCOMPARE(writing.elements.size(), std::size_t(3072));
+    for (const auto& element : writing.elements) {
+      QCOMPARE(element.type, ElementType::action);
+      QCOMPARE(element.text, std::string("A dial turns and a lamp dims."));
+    }
+    QVERIFY(!fountain_edit_blockers(captured.assets, "writer-subset-4").isEmpty());
+    QCOMPARE(*assets.original_fountain, *captured.assets.original_fountain);
+    // Otherwise supported writing at each boundary, then one unit beyond:
+    // unrelated layout/spacing refusals must not mask a missing limit.
+    const auto too_many = intake(original + "\n!One more.\n", parent.path());
+    const auto element_reasons = fountain_edit_blockers(too_many.assets);
+    QCOMPARE(element_reasons.size(), 1);
+    QVERIFY(element_reasons.front().contains("3072 elements"));
+    QByteArray sized;
+    for (int i = 0; i < 3072; ++i)
+      sized += '!' + QByteArray(10 + (i < 2049), 'x') + "A dial turns and a lamp dims.\n\n";
+    sized.chop(1);
+    QCOMPARE(sized.size(), qsizetype(131072));
+    QCOMPARE(fountain_edit_blockers(intake(sized, parent.path()).assets), QStringList{});
+    sized.insert(1, 'x');
+    const auto byte_reasons = fountain_edit_blockers(intake(sized, parent.path()).assets);
+    QCOMPARE(byte_reasons.size(), 1);
+    QVERIFY(byte_reasons.front().contains("128 KiB"));
+  }
   void writer_subset_matches_independent_screenplay_and_associations() {
     const auto root = QStringLiteral(APOLLO_FIXTURE_ROOT "/import/");
     const auto captured = read_fountain_intake(root + "writer-subset.fountain");
@@ -74,13 +145,22 @@ private slots:
     const auto project = create_project(parent.filePath("working"), expected, assets);
     QVERIFY(project.import_working && !project.import_review);
     QCOMPARE(open_project(project.directory).assets, assets);
-    // Metadata cannot grant access by flipping a boolean or contract revision.
-    for (const auto* key : {"contract", "version", "unknown"}) {
+    // Already opened evidence cannot grant access after an in-memory change,
+    // including same-length source edits or nested interpretation changes.
+    for (const auto* key : {"contract", "version", "unknown", "interpretation", "original"}) {
       auto bad = assets;
       auto json = QJsonDocument::fromJson(*bad.imported_material).object();
-      json.insert(key, 2); bad.imported_material = QJsonDocument(json).toJson();
+      if (QByteArray(key) == "original") (*bad.original_fountain)[0] = 'x';
+      else if (QByteArray(key) == "interpretation") {
+        auto intake = json.value("intake").toObject();
+        auto model = intake.value("conversion").toObject();
+        model.insert("editable", true);
+        intake.insert("conversion", model); json.insert("intake", intake);
+      } else json.insert(key, key == QByteArray("version") ? 3 : 2);
+      bad.imported_material = QJsonDocument(json).toJson();
       QVERIFY_THROWS_EXCEPTION(SourceError, validate_fountain_working(bad));
     }
+    validate_fountain_working(assets);
     ProjectSession session(project.directory);
     replace_file(project.directory + "/imports/original.fountain", "Changed evidence");
     QVERIFY_THROWS_EXCEPTION(SourceError, session.save(serialize_screenplay(expected)));
@@ -101,11 +181,11 @@ private slots:
     QCOMPARE(fountain_edit_blockers(captured.assets), QStringList{});
     QVERIFY(!fountain_edit_blockers(captured.assets, "writer-subset-1").isEmpty());
     const auto assets = editable_fountain_assets(captured.assets);
-    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-4"));
     QCOMPARE(*assets.original_fountain, bytes(root + "case-subset.fountain"));
     QCOMPARE(initial_fountain_writing(assets), expected);
     auto older = assets;
     auto json = QJsonDocument::fromJson(*older.imported_material).object();
+    json.insert("version", 1); json.remove("normalizeSceneSpacing");
     // A copy made under writer-subset-2 reopens by its rules: this has no spacing it refused.
     json.insert("contract", "writer-subset-2"); older.imported_material = QJsonDocument(json).toJson();
     validate_fountain_working(older);
@@ -115,6 +195,7 @@ private slots:
     // The writer-subset fixture made under writer-subset-1 still reopens by its rules.
     auto legacy = editable_fountain_assets(read_fountain_intake(root + "writer-subset.fountain").assets);
     json = QJsonDocument::fromJson(*legacy.imported_material).object();
+    json.insert("version", 1); json.remove("normalizeSceneSpacing");
     json.insert("contract", "writer-subset-1"); legacy.imported_material = QJsonDocument(json).toJson();
     validate_fountain_working(legacy);
   }
@@ -132,11 +213,11 @@ private slots:
              (QStringList{"f2: empty or significant spacing requires review.", "f4: empty or significant spacing requires review.",
                           "f7: empty or significant spacing requires review."}));
     const auto assets = editable_fountain_assets(captured.assets);
-    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-4"));
     QCOMPARE(*assets.original_fountain, bytes(root + "spacing-subset.fountain"));
     QCOMPARE(initial_fountain_writing(assets), expected);
     auto older = assets;
     auto json = QJsonDocument::fromJson(*older.imported_material).object();
+    json.insert("version", 1); json.remove("normalizeSceneSpacing");
     json.insert("contract", "writer-subset-2"); older.imported_material = QJsonDocument(json).toJson();
     try { validate_fountain_working(older); QFAIL("a writer-subset-2 claim admitted spacing"); }
     catch (const SourceError& error) { QVERIFY2(QString(error.what()).contains("f4: empty or significant spacing requires review."), error.what()); }
@@ -156,9 +237,14 @@ private slots:
     QCOMPARE(*assets.original_fountain, bytes(root + ".fountain"));
     auto legacy = assets;
     auto json = QJsonDocument::fromJson(*legacy.imported_material).object();
+    json.insert("version", 1); json.remove("normalizeSceneSpacing");
     json.insert("contract", "writer-subset-3");
     legacy.imported_material = QJsonDocument(json).toJson();
     QVERIFY_THROWS_EXCEPTION(SourceError, validate_fountain_working(legacy));
+    json.insert("contract", "writer-subset-4");
+    legacy.imported_material = QJsonDocument(json).toJson();
+    validate_fountain_working(legacy);
+    QCOMPARE(initial_fountain_writing(legacy), expected);
   }
   void writer_subset_explains_case_it_cannot_present() {
     QTemporaryDir parent;
@@ -173,7 +259,7 @@ private slots:
         QByteArray("!  Indented."), QByteArray("!Trailing. "), QByteArray(".INT.  ROOM"), QByteArray("@MARA  JONES\nWords."),
         QByteArray("@MARA\n\tWords."), QByteArray("!Before.\n\n\n!After."),
         QByteArray("[[bad"), QByteArray("A\n~Lyric in speech."), QByteArray("!Unsupported \xf0\x9f\x98\x80"),
-        QByteArray("A\n(beat)\n  \nFirst."), QByteArray("A\nLast.\n  "), QByteArray("!Cross *one _two* three_"), QByteArray(65537, 'x'),
+        QByteArray("A\n(beat)\n  \nFirst."), QByteArray("A\nLast.\n  "), QByteArray("!Cross *one _two* three_"),
         QByteArray("!Visible.") + QByteArray("[[n]]").repeated(257)})
       QTest::newRow(original.left(28).toHex().constData()) << original;
   }

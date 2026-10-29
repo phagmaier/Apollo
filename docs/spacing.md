@@ -115,8 +115,8 @@ separately:
    `THEO\n  \n` as a shot), and a blank last line is indistinguishable from the
    speech's end in most renderers.
 4. **Import admits only spacing whose printed meaning both readers agree on.**
-   Action indentation, vertical spacing between elements and tabs stay
-   review-only.
+   Action indentation and tabs stay review-only. The later bounded scene-gap
+   choice below is an explicit normalization, not an exception to that fidelity claim.
 
 ## Contract revisions
 
@@ -153,6 +153,42 @@ persistence/disclosure and export checks without recording owner acceptance.
 The choices above remain provisional pending the owner's feel assessment.
 `fountain-canonical-4` / `writer-subset-4` inherit revision 3's spacing unchanged.
 
+## Explicit scene-spacing choice (`writer-subset-5`)
+
+The full-length assessment's 49 vertical-spacing locations are **49 separate
+runs of exactly two empty lines before scene headings**: 37 after action,
+12 after dialogue. They are not internal dialogue blanks, and do not overlap
+the two unfinished cue/parenthetical-only speeches.
+[Fountain's syntax](https://fountain.io/syntax/) promises vertical
+whitespace preservation; aw-parser with `merge_multiple_empty_lines: false`
+retains an extra separator token. Apollo therefore must not call collapsing
+these runs equivalent output.
+
+The smallest implemented workflow is an **unchecked-by-default import choice**:
+**Use Apollo's normal scene spacing**. It covers only the exact pattern above,
+with no notes/stash/other material inside the gap. It retains the original
+bytes and frozen located limitations, surfaces each omitted extra line in
+the working imported-material reader, and discloses the count and
+non-equivalence in the Fountain panel, completion status and CLI. The writer
+uses normal profile spacing (two slots before headings, dropped at page tops);
+clean Fountain uses one separator. No invented blank action/dialogue element
+or new source-schema field is introduced.
+
+Before publication, clear the choice or cancel. After publication, the old
+review and complete original remain available to start another copy; the
+original spacing is never rewritten. New metadata v2 records the choice.
+Other vertical runs, whitespace-only lines and removed material within gaps
+stay review-only, even with the option selected. This is intentionally not
+editable arbitrary vertical spacing or spacing-equivalent Fountain export.
+
+Empty speeches are a separate structural issue. They remain exact, saveable
+unfinished writing with a visible cue list and blocked Fountain output. **Treat
+speech as action** explicitly changes only cue/parenthetical types, in one
+Undo step; no words, styles or IDs are inserted or removed. Adding dialogue
+manually is the alternative. Dual-related automatic correction is refused.
+Ordinary deliberate breaks/intentional internal dialogue blanks are not flagged.
+
+
 ## Remaining limitations
 
 - No dedicated control or advisory for blank spacing; creation controls remain
@@ -163,7 +199,8 @@ The choices above remain provisional pending the owner's feel assessment.
   export.
 - Blank lines in action, blank first or last dialogue lines, repeated spaces in
   headings, cues, parentheticals, transitions, lyrics and centered text, tabs,
-  and extra vertical space between elements remain refused or review-only.
+  and extra vertical space between elements remain refused or review-only,
+  except for the explicit, non-equivalent scene-spacing choice above.
 - Imported writing still cannot be exported as PDF; its layout needs separate
   requirements and evidence.
 - Not verified: owner comfort with invisible spaces and the caret position left

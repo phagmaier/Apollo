@@ -14,6 +14,13 @@ Rectangle {
     property real pageScale: 0.75
     color: "#d4d9df"
     function focusEditor() { editor.forceActiveFocus() }
+    function selectElement(position, length) {
+        if (position < 0)
+            return
+        editor.select(position, position + length)
+        editor.forceActiveFocus()
+        editor.revealCursor()
+    }
 
     Flickable {
         id: flick
