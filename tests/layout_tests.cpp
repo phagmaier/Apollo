@@ -562,5 +562,121 @@ int main() {
       std::cerr << "emphasis leaked from a replaced typed suffix into generated CONT'D\n"; ++failures;
     }
   }
+  {
+    // Original public input mirrored in fixtures/editing/multiline-title.screenplay.json.
+    // Expected slots, UTF-8 offsets and character counts below are hand-derived;
+    // the PDF test separately reads that saved-source fixture and its .expected.
+    const std::vector<apollo::Element> authored = {
+        {ElementType::title, "Harbor\n\nSignal", false, {{0, 14, apollo::Style::bold}}},
+        {ElementType::credit, "Written by\nfor the screen", false, {{0, 10, apollo::Style::italic}}},
+        {ElementType::author, "Ana Núñez\nBen West", false, {{0, 11, apollo::Style::underline}}},
+        {ElementType::author, "C. River\nD. Stone"},
+        {ElementType::source, "Based on a radio play\nby E. Cove", false, {{22, 32, apollo::Style::italic}}},
+        {ElementType::contact, "Harbor Office\n\n12 Beacon Lane"},
+        {ElementType::contact, "Port Example\n555-0123", false, {{13, 21, apollo::Style::bold}}},
+        {ElementType::draft_date, "Revised draft\nOctober 29, 2026"},
+        {ElementType::heading, "INT. SIGNAL ROOM - NIGHT"},
+        {ElementType::action, "The receiver hums."},
+        {ElementType::page_break, ""},
+        {ElementType::heading, "EXT. HARBOR - DAWN"},
+        {ElementType::action, "A light answers."},
+    };
+    struct ExpectedTitleLine {
+      int page, slot; ElementType type; std::string text;
+      std::size_t source, offset, bytes, columns;
+      std::vector<apollo::StyleSpan> styles = {};
+    };
+    const std::vector<ExpectedTitleLine> expected_title = {
+        {0, 4, ElementType::title, "HARBOR", 0, 0, 6, 6, {{0, 6, apollo::Style::bold}}},
+        {0, 5, ElementType::title, "", 0, 7, 0, 0},
+        {0, 6, ElementType::title, "SIGNAL", 0, 8, 6, 6, {{0, 6, apollo::Style::bold}}},
+        {0, 10, ElementType::credit, "Written by", 1, 0, 10, 10, {{0, 10, apollo::Style::italic}}},
+        {0, 11, ElementType::credit, "for the screen", 1, 11, 14, 14},
+        {0, 15, ElementType::author, "Ana Núñez", 2, 0, 11, 9, {{0, 11, apollo::Style::underline}}},
+        {0, 16, ElementType::author, "Ben West", 2, 12, 8, 8},
+        {0, 17, ElementType::author, "C. River", 3, 0, 8, 8},
+        {0, 18, ElementType::author, "D. Stone", 3, 9, 8, 8},
+        {0, 20, ElementType::source, "Based on a radio play", 4, 0, 21, 21},
+        {0, 21, ElementType::source, "by E. Cove", 4, 22, 10, 10, {{0, 10, apollo::Style::italic}}},
+        {0, 44, ElementType::contact, "Harbor Office", 5, 0, 13, 13},
+        {0, 45, ElementType::contact, "", 5, 14, 0, 0},
+        {0, 46, ElementType::contact, "12 Beacon Lane", 5, 15, 14, 14},
+        {0, 47, ElementType::contact, "Port Example", 6, 0, 12, 12},
+        {0, 48, ElementType::contact, "555-0123", 6, 13, 8, 8, {{0, 8, apollo::Style::bold}}},
+        {0, 47, ElementType::draft_date, "Revised draft", 7, 0, 13, 13},
+        {0, 48, ElementType::draft_date, "October 29, 2026", 7, 14, 16, 16},
+        {1, 1, ElementType::heading, "INT. SIGNAL ROOM - NIGHT", 8, 0, 24, 24},
+        {1, 3, ElementType::action, "The receiver hums.", 9, 0, 18, 18},
+        {2, 1, ElementType::heading, "EXT. HARBOR - DAWN", 11, 0, 18, 18},
+        {2, 3, ElementType::action, "A light answers.", 12, 0, 16, 16},
+    };
+    for (const bool include_title : {true, false}) {
+      auto input = authored;
+      if (!include_title) input.erase(input.begin(), input.begin() + 8);
+      const auto document = apollo::layout_document(input);
+      const std::size_t first = include_title ? 0 : 18;
+      if (document.lines.size() != expected_title.size() - first) {
+        std::cerr << "multiline title line count failed\n"; ++failures; continue;
+      }
+      for (std::size_t i = first; i < expected_title.size(); ++i) {
+        const auto& want = expected_title[i];
+        const auto& line = document.lines[i - first];
+        const double width = want.columns * apollo::profile::advance;
+        const double x = want.page != 0 || want.type == ElementType::draft_date ? 108 :
+                         want.type == ElementType::contact ? 374.4 : 306 - width / 2;
+        if (line.page != want.page || line.slot != want.slot || line.type != want.type || line.text != want.text ||
+            line.source != want.source - (include_title ? 0 : 8) || line.source_offset != want.offset ||
+            line.source_length != want.bytes || line.styles != want.styles ||
+            line.geometry.x != x || line.geometry.width != width || line.geometry.baseline != 81 + (want.slot - 1) * 12) {
+          std::cerr << "multiline title line " << i << " failed\n"; ++failures;
+        }
+      }
+      const std::size_t body = include_title ? 1 : 0;
+      if (document.pages.size() != body + 2 || document.pages[body].body_number != 1 || document.pages[body].number ||
+          document.pages[body + 1].body_number != 2 || !document.pages[body + 1].number ||
+          document.pages[body + 1].number->text != "2." ||
+          document.pages[body + 1].number->geometry.x != 522 - 2 * apollo::profile::advance ||
+          (include_title && (document.pages[0].body_number != 0 || document.pages[0].number))) {
+        std::cerr << "multiline title changed body page numbering\n"; ++failures;
+      }
+    }
+    // The source field follows all authored author lines even if the source
+    // entry precedes the authors in the saved title list.
+    const auto reordered = apollo::layout({{ElementType::source, "Based on\nan original play"},
+        {ElementType::author, "First\nSecond"}, {ElementType::author, "Third"}});
+    if (reordered.size() != 5 || reordered[0].slot != 19 || reordered[1].slot != 20 ||
+        reordered[2].slot != 15 || reordered.back().slot != 17) {
+      std::cerr << "source anchor ignored later authored authors\n"; ++failures;
+    }
+    // Fields stay distinct, with repeated entries continuing their own region.
+    const auto repeated = apollo::layout({{ElementType::title, "One\nTwo"}, {ElementType::title, "Three"},
+        {ElementType::credit, "Written"}, {ElementType::credit, "by"},
+        {ElementType::source, "Based"}, {ElementType::source, "on"},
+        {ElementType::draft_date, "First"}, {ElementType::draft_date, "Second\n"}});
+    const std::vector<int> slots = {4, 5, 6, 10, 11, 17, 18, 46, 47, 48};
+    if (repeated.size() != slots.size()) { std::cerr << "repeated title fields lost\n"; ++failures; }
+    else for (std::size_t i = 0; i < slots.size(); ++i) if (repeated[i].slot != slots[i]) {
+      std::cerr << "repeated title field placement failed\n"; ++failures;
+    }
+    const auto spaces = apollo::layout({{ElementType::title, "  Harbor \nSignal  \n"},
+                                        {ElementType::contact, "\n"}});
+    if (spaces.size() != 5 || spaces[0].text != "  HARBOR " || spaces[1].text != "SIGNAL  " ||
+        spaces[2].source_offset != 19 || spaces[2].source_length != 0 ||
+        spaces[0].geometry.x != 306 - 9 * apollo::profile::advance / 2 ||
+        spaces[3].slot != 47 || spaces[4].slot != 48) {
+      std::cerr << "title authored spaces or edge blank lines were normalized\n"; ++failures;
+    }
+    for (const std::vector<apollo::Element> impossible : {
+        std::vector<apollo::Element>{{ElementType::title, "1\n2\n3\n4\n5\n6\n7"}, {ElementType::credit, "Credit"}},
+        std::vector<apollo::Element>{{ElementType::contact, "Contact"}, {ElementType::draft_date, std::string(40, 'x')}},
+        std::vector<apollo::Element>{{ElementType::title, std::string(86, 'x')}},
+        std::vector<apollo::Element>{{ElementType::contact, std::string(34, 'x')}},
+        std::vector<apollo::Element>{{ElementType::author, std::string(43, '\n')}}}) {
+      try {
+        (void)apollo::layout(impossible);
+        std::cerr << "overlapping or off-page title layout accepted\n"; ++failures;
+      } catch (const std::runtime_error&) {}
+    }
+  }
   return failures ? 1 : 0;
 }
