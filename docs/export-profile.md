@@ -105,11 +105,14 @@ as follows. These are spike rules for owner review, not confirmed behavior:
 - **Case** ([case contract](case-handling.md)): headings, cues and the title
   keep their authored case in the writing and are shown in capitals by
   converting ASCII letters only; other letters, such as é, are shown as written.
-- **Spaces at the start of an authored line**, such as after Enter before a
-  space in dialogue, are kept in the writing but are not shown and do not count
-  toward width: the line starts at its column, as wrapping never begins a line
-  with a space. In the editor the caret can still reach them, just left of the
-  column. Meaningful indentation and spacing are not supported yet.
+- **Spaces at the start or end of an authored line** ([spacing contract](spacing.md)),
+  such as after Enter before a space in dialogue, are kept in the writing but
+  are not shown and do not count toward width: the line starts at its column,
+  as wrapping never begins a line with a space. In the editor the caret can
+  still reach them, just outside the text. Title fields are shown as written.
+  Authored indentation is not supported.
+- **A blank authored line**, empty or of only spaces, is one blank slot inside
+  its element, with no other spacing.
 - **A cue without speech** stands alone: one or more cue lines with a cue's
   spacing, moved whole with a preceding heading; a cue longer than one page
   is rejected like other unsplittable elements.
@@ -132,7 +135,7 @@ as follows. These are spike rules for owner review, not confirmed behavior:
 | **B6** A transition never starts a page. If it does not fit, the preceding element moves with it, re-applying that element's own split rule. | Apollo proposal |
 | **B7** Dual dialogue, centered text, and lyric groups never split; they move whole. | Apollo proposal |
 | **B8** A manual page break ends the page; the next element starts at slot 1. | Fountain `===` |
-| **B9** A sentence end is a word ending in `.`, `?`, or `!` (closing quotes or brackets allowed after it), followed by a space and further text. | Apollo definition, consistent with the observed split |
+| **B9** A sentence end is a word ending in `.`, `?`, or `!` (closing quotes or brackets allowed after it), followed by a space or a deliberate break and further text. After a break, the next page resumes at the next authored line; a split never puts an authored blank line or blank speech part beside the page break ([spacing contract](spacing.md#page-splits)). | Apollo definition, consistent with the observed split; the break and blank-line refinements are Apollo proposals (task 3b) |
 
 **Generated `(CONT’D)` after interruption (G1):** when the same character speaks again in the same scene, and only non-speech elements came between, the new cue gets `(CONT’D)` after any extension. The guide calls this "the standard" and notes that many writers drop it. It is on by default (confirmation 2). Generated text is never document text. Fountain export omits it. An imported literal `(CONT'D)` that G1 would generate anyway becomes the generated form, so it is never doubled. The exact import rule belongs to the Fountain mapping work.
 

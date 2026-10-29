@@ -904,8 +904,8 @@ break before the next engine line, so the skipped spaces start the next
 QTextLayout line before its first visible character. The spaces stay in the
 writing and are saved. The caret can reach them just left of the column
 ([profile note](export-profile.md#editor-states-provisional-spike-rules)). Whether such spaces should be
-shown, or should count toward width, is the separately scoped case and spacing
-task. Fountain export still refuses these lines.
+shown, or should count toward width, was left to the case and spacing tasks;
+task 3b below keeps them unshown and lets Fountain export write such lines.
 
 | Check | Independent expectation |
 | --- | --- |
@@ -956,3 +956,36 @@ in the editor (`typed_continuation_is_shown_once`, lowercase row) and the PDF
 no defect; removing the ASCII-apostrophe suffix match makes both fail with a
 doubled `MARA (CONT'D) (CONT’D)`. Logs:
 `build/task-case-commit-{release,debug,engine}.log`.
+
+### Task 3b — bounded spacing and deliberate breaks
+
+2026-10-28. The [spacing contract](spacing.md) defines authored versus presented
+spacing. Spaces at the edges of an authored line are kept but not shown, counted
+or written to Fountain (title fields excepted); repeated spaces inside a line are
+shown as typed; an empty or spaces-only line inside dialogue is one blank slot,
+written to Fountain as a two-space line. Profile rule B9 now treats a deliberate
+break after a sentence end as a split point, and a split never puts an authored
+blank line or blank speech part beside the page break. That fixes two defects
+found while probing: a space before a break could start a continued page with a
+printed blank line and raise the editor's QTextLayout error, and without the
+space the same sentence end was no split point at all. Clean Fountain becomes
+`fountain-canonical-3`, with a spacing disclosure; new import copies use
+`writer-subset-3`, which admits dialogue edge spaces, blank lines inside
+dialogue and repeated spaces in action and dialogue. Action indentation, blank
+first/last dialogue lines, blank action lines, tabs and vertical spacing between
+elements stay refused or review-only. No creation control or advisory for
+unusual spacing was added; that remains an owner decision. Four engineering
+choices await owner review; they and the evidence table are in the contract.
+
+The case policy's three choices were also confirmed by the owner (planning round
+24) and committed separately before this task.
+
+
+Checks: release 23/23, ASan/UBSan 23/23 with no sanitizer report, engine-only
+2/2. The native Wayland preflight passes: editor 62/62 with OpenGL and fcitx5
+input, export lifecycle 13/13, project flows 35/35, and native PDF snapshots
+including the new spacing expectations. Editor/PDF agreement on the local
+Academy transcription (0 and 50 edits) and `compare_academy.py` pass with
+unchanged results; the layout fixtures are unchanged. Each new layout check
+fails on the previous engine. Logs: `build/task-spacing-{release,debug,engine,academy,native}.log`;
+native artifacts are in `build/wayland-check-20261028-195348-YusiiS/`.

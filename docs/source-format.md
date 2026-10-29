@@ -952,11 +952,13 @@ new manifest **v3**, with the five keys `format`, `version`, `id`, `screenplay`,
 stay v1; v1/v2 intake metadata and review manifests retain their meanings.
 
 `imported-material.json` uses format `apollo-fountain-working`, version `1`,
-contract `writer-subset-1` or (from task 3a) `writer-subset-2`, and `intake`
+contract `writer-subset-1`, (from task 3a) `writer-subset-2` or (from task 3b)
+`writer-subset-3`, and `intake`
 containing the complete frozen v2 review metadata. These are exactly four keys.
-New copies record `writer-subset-2`; each copy is recomputed under the contract
-it records ([case-handling.md](case-handling.md)). Builds before task 3a refuse
-`writer-subset-2` as an unsupported contract. The original Fountain bytes, digest,
+New copies record `writer-subset-3`; each copy is recomputed under the contract
+it records ([case-handling.md](case-handling.md), [spacing.md](spacing.md)).
+Builds before task 3a refuse `writer-subset-2`, and builds before task 3b refuse
+`writer-subset-3`, as unsupported contracts. The original Fountain bytes, digest,
 origin, source ranges, interpreted screenplay, records and associations remain
 immutable; the nested review permissions remain false. The outer preservation
 contract is independently recomputed on create/open/recovery, never trusted as a
@@ -989,6 +991,6 @@ Imported documents carry a PDF export block for their lifetime. The PDF request
 checks it before staging or replacing output, including instrumentation, reopened
 copies and recovery writers, even after editing or removing all imported text.
 Clean Fountain export (task 2.6d) is separate: each request checks the current
-writing snapshot against [`fountain-canonical-2`](fountain-export.md), for these
+writing snapshot against [`fountain-canonical-3`](fountain-export.md), for these
 copies and ordinary projects alike. It writes no project file and does not change
 the stored `fountainExport: false` of the frozen review interpretation.

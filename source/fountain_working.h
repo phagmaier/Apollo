@@ -9,14 +9,18 @@ namespace apollo::source {
 // follows docs/case-handling.md: a heading or cue may be authored in any ASCII
 // case and is presented in capitals; uncapitalized_letter means presentation
 // would still show a lowercase letter, such as é. The title must be authored in
-// ASCII capitals (authored_case).
+// ASCII capitals (authored_case). spacing is the strict rule of writer-subset-1
+// and -2: an empty line, or a leading, trailing or repeated space. Newer
+// admission and the export refine it by element type (docs/spacing.md).
 enum class WriterSubsetGap { character, authored_case, uncapitalized_letter, multiline, long_title, spacing };
 std::vector<WriterSubsetGap> writer_subset_gaps(const Element& element);
 // Conservative admission contracts; see docs/editable-fountain-subset.md. New
-// copies use writer-subset-2; copies made under writer-subset-1 are validated
-// by its rules, which also required headings and cues in ASCII capitals. The
-// original review model is immutable. Later writing may be unfinished.
-inline constexpr auto writer_subset_contract = "writer-subset-2";
+// copies use writer-subset-3, which admits the spacing in docs/spacing.md.
+// Copies made under an earlier contract are validated by its rules:
+// writer-subset-2 refused that spacing, and writer-subset-1 also required
+// headings and cues in ASCII capitals. The original review model is
+// immutable. Later writing may be unfinished.
+inline constexpr auto writer_subset_contract = "writer-subset-3";
 QStringList fountain_edit_blockers(const ProjectAssets& review, const QString& contract = writer_subset_contract);
 ProjectAssets editable_fountain_assets(const ProjectAssets& review);
 bool is_fountain_working(const ProjectAssets& assets);

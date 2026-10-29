@@ -36,8 +36,8 @@ QString FountainExportJob::check(bool include_title) const {
   return source::fountain_export_blockers(document_elements(*document_), include_title).join('\n');
 }
 
-QString FountainExportJob::caseNote() const {
-  return document_ ? source::fountain_case_note(document_elements(*document_)) : QString();
+QString FountainExportJob::presentationNote() const {
+  return document_ ? source::fountain_presentation_note(document_elements(*document_)) : QString();
 }
 
 QString FountainExportJob::refusal(const QString& destination) const {
@@ -78,10 +78,10 @@ bool FountainExportJob::request(const QString& destination, bool include_title) 
   const auto captured = QTime::currentTime().toString(QStringLiteral("HH:mm:ss"));
   const bool omitted_title = !include_title && std::any_of(snapshot.begin(), snapshot.end(),
                                                             [](const Element& e) { return source::is_title_field(e.type); });
-  const auto case_note = source::fountain_case_note(snapshot);
+  const auto note = source::fountain_presentation_note(snapshot);
   status_ = QStringLiteral("Exporting Fountain snapshot from %1 to %2 — keep writing").arg(captured, target);
   emit changed();
-  worker_ = std::thread([this, snapshot = std::move(snapshot), include_title, target, captured, omitted_title, case_note, hook = hook_] {
+  worker_ = std::thread([this, snapshot = std::move(snapshot), include_title, target, captured, omitted_title, note, hook = hook_] {
     bool success = false;
     QString message;
     try {
@@ -94,7 +94,7 @@ bool FountainExportJob::request(const QString& destination, bool include_title) 
         success = true;
         message = QStringLiteral("Fountain snapshot from %1 exported to %2.").arg(captured, target);
         if (omitted_title) message += QStringLiteral(" Title page left out by choice.");
-        if (!case_note.isEmpty()) message += QLatin1Char(' ') + case_note;
+        if (!note.isEmpty()) message += QLatin1Char(' ') + note;
         if (!omissions_.isEmpty()) message += QLatin1Char(' ') + omissions_;
       }
     } catch (const std::exception& error) {

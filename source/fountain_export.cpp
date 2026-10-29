@@ -41,9 +41,11 @@ const char* title_key(ElementType type) {
   }
 }
 // "Element 12, Character cue “mara”": numbered in saved order, title page
-// first, quoting the authored text.
+// first, quoting the first authored line with visible text.
 QString describe(const Element& e, std::size_t index) {
-  auto first = QString::fromUtf8(e.text).section('\n', 0, 0);
+  const auto lines = QString::fromUtf8(e.text).split('\n');
+  const auto visible = std::find_if(lines.begin(), lines.end(), [](const QString& line) { return !line.trimmed().isEmpty(); });
+  auto first = visible == lines.end() ? QString() : *visible;
   if (first.size() > 40) first = first.left(40) + QStringLiteral("…");
   const auto quoted = e.type == ElementType::page_break ? QString() : first.isEmpty() ? QStringLiteral(" (empty)") : " “" + first + "”";
   return QString("Element %1, %2%3").arg(index + 1).arg(label(e.type), quoted);
@@ -138,6 +140,48 @@ QString inner_line_problem(const QByteArray& line, bool dialogue) {
   return {};
 }
 
+// Spacing presentation (docs/spacing.md), as the engine's wrap() shows text:
+// spaces at the start or end of an authored line are kept in the writing but
+// not shown, so a line of only spaces is a blank line. Emphasis keeps its
+// visible characters. Title fields are shown as written and keep theirs.
+bool presents_spacing(ElementType type) { return !is_title_field(type) && type != ElementType::page_break; }
+Element presented_spacing(Element e) {
+  if (!presents_spacing(e.type)) return e;
+  std::string text;
+  std::vector<StyleSpan> styles;
+  for (std::size_t from = 0;;) {
+    const auto to = std::min(e.text.find('\n', from), e.text.size());
+    auto a = from, b = to;
+    while (a < b && e.text[a] == ' ') ++a;
+    while (b > a && e.text[b - 1] == ' ') --b;
+    const auto base = text.size();
+    text.append(e.text, a, b - a);
+    for (const auto& span : e.styles) {
+      const auto lo = std::max(span.start, a), hi = std::min(span.end, b);
+      if (lo < hi) styles.push_back({base + lo - a, base + hi - a, span.style});
+    }
+    if (to == e.text.size()) break;
+    text += '\n';
+    from = to + 1;
+  }
+  e.text = std::move(text);
+  e.styles = std::move(styles);
+  return e;
+}
+// Why the presented spacing cannot be written faithfully, or empty.
+QString spacing_problem(const Element& e) {
+  const auto shown = presented_spacing(e).text;
+  if (shown.find_first_not_of('\n') == std::string::npos) return "is empty; type its text or delete it";
+  const auto lines = QString::fromStdString(shown).split('\n');
+  if (e.type == ElementType::action && lines.contains(QString()))
+    return "has a blank line, which Fountain reads as the end of the action";
+  if (e.type == ElementType::dialogue && (lines.front().isEmpty() || lines.back().isEmpty()))
+    return "begins or ends with a blank line, which Fountain cannot keep in the speech";
+  if (e.type != ElementType::action && e.type != ElementType::dialogue && shown.find("  ") != std::string::npos)
+    return "has repeated spaces, which this export keeps only in action and dialogue";
+  return {};
+}
+
 class Writer {
 public:
   Writer(const std::vector<Element>& snapshot, bool include_title);
@@ -151,14 +195,15 @@ private:
   std::vector<QByteArray> lines(std::size_t i, bool& ok);
 };
 
-// The presented lines: headings and cues are written in capitals as shown.
+// The presented lines: headings and cues in capitals and no spaces at line
+// edges, as shown. A blank dialogue line is written as two spaces.
 std::vector<QByteArray> Writer::lines(std::size_t i, bool& ok) {
-  const auto& e = written[i];
-  const auto text = presented_text(e.type, e.text);
-  for (const auto& span : e.styles)
-    if (text.substr(span.start, span.end - span.start).find('\n') != std::string::npos) {
+  for (const auto& span : written[i].styles)
+    if (written[i].text.substr(span.start, span.end - span.start).find('\n') != std::string::npos) {
       block(i, "has emphasis that includes a line break"); ok = false; return {};
     }
+  const auto e = presented_spacing(written[i]);
+  const auto text = presented_text(e.type, e.text);
   std::vector<QByteArray> result;
   std::size_t from = 0;
   while (true) {
@@ -184,7 +229,11 @@ Writer::Writer(const std::vector<Element>& snapshot, bool include_title) {
       if (!e.text.empty()) { block(i, "contains text"); usable[i] = false; }
       continue;
     }
+    // Spacing follows the presentation rules below, except in title fields.
+    if (presents_spacing(e.type))
+      if (const auto problem = spacing_problem(e); !problem.isEmpty()) { block(i, problem); usable[i] = false; }
     for (const auto gap : writer_subset_gaps(e)) {
+      if (gap == WriterSubsetGap::spacing && presents_spacing(e.type)) continue;
       usable[i] = false;
       switch (gap) {
         case WriterSubsetGap::character:
@@ -206,7 +255,7 @@ Writer::Writer(const std::vector<Element>& snapshot, bool include_title) {
         case WriterSubsetGap::long_title: block(i, "is longer than 48 characters"); break;
         case WriterSubsetGap::spacing:
           block(i, e.text.empty() ? QString("is empty; type its text or delete it")
-                                  : QString("has an empty line or leading, trailing or repeated spaces"));
+                                  : QString("has leading, trailing or repeated spaces, which the title page shows as written"));
           break;
       }
     }
@@ -310,7 +359,7 @@ Writer::Writer(const std::vector<Element>& snapshot, bool include_title) {
         QString problem;
         for (std::size_t line = 0; line < text.size() && problem.isEmpty(); ++line) problem = inner_line_problem(text[line], true);
         if (!problem.isEmpty()) { block(i, problem); break; }
-        for (const auto& line : text) add(line);
+        for (const auto& line : text) add(line.isEmpty() ? QByteArray("  ") : line);
         break;
       }
       case ElementType::lyric:
@@ -364,7 +413,7 @@ FountainExport export_fountain(const std::vector<Element>& snapshot, bool includ
     if (gap.code != "authored-case" && gap.code != "deliberate-break-layout") problems << at(gap.range.start) + ": Fountain verification: " + gap.message;
   for (const auto& record : read.records) problems << at(record.range.start) + ": Fountain verification: would be read as " + record.kind + ".";
   auto plain = [](std::vector<Element> elements) {
-    for (auto& e : elements) { e.id.clear(); e.text = presented_text(e.type, std::move(e.text)); }
+    for (auto& e : elements) { e.id.clear(); e = presented_spacing(std::move(e)); e.text = presented_text(e.type, std::move(e.text)); }
     return canonical(Screenplay{0, std::move(elements)}).elements;
   };
   const auto expected = plain(writer.written), actual = plain(read.screenplay().elements);
@@ -389,5 +438,22 @@ QString fountain_case_note(const std::vector<Element>& snapshot) {
   if (parts.isEmpty()) return {};
   return "Written in capitals, as Apollo shows and prints them: " + parts.join(" and ") +
          " typed in lowercase. The project keeps the case as typed.";
+}
+
+QString fountain_spacing_note(const std::vector<Element>& snapshot) {
+  qsizetype lines = 0;
+  for (const auto& e : snapshot)
+    if (presents_spacing(e.type))
+      for (const auto& line : QString::fromStdString(e.text).split('\n'))
+        lines += !line.trimmed().isEmpty() && (line.startsWith(' ') || line.endsWith(' '));
+  if (!lines) return {};
+  return QString("Written without the spaces at the start or end of %1 line%2, which Apollo does not show or print. "
+                 "The project keeps them as typed.").arg(lines).arg(lines == 1 ? "" : "s");
+}
+
+QString fountain_presentation_note(const std::vector<Element>& snapshot) {
+  QStringList notes{fountain_case_note(snapshot), fountain_spacing_note(snapshot)};
+  notes.removeAll(QString());
+  return notes.join(' ');
 }
 }

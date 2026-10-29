@@ -1,4 +1,4 @@
-# Canonical Fountain export (`fountain-canonical-2`)
+# Canonical Fountain export (`fountain-canonical-3`)
 
 2026-10-28. This is task **2.6d**, a bounded first step of the slice 3/5
 Fountain export gate. It exports clean Fountain for **editable projects** —
@@ -11,7 +11,10 @@ delegated compatibility work; the owner-confirmed requirements are those in the
 [build plan](writing-build-plan.md#import-and-export-compatibility-gate).
 Revision 2 (task 3a) writes scene headings and character cues as presented, in
 capitals, under the [case contract](case-handling.md); revision 1 refused them
-unless authored in capitals.
+unless authored in capitals. Revision 3 (task 3b) writes spacing as presented
+under the [spacing contract](spacing.md): no spaces at line edges, a blank
+dialogue line as two spaces, and repeated spaces in action and dialogue as
+typed. Revision 2 refused every leading, trailing or repeated space.
 
 ## Eligibility: checked on every snapshot
 
@@ -24,9 +27,12 @@ snapshot (title fields only when the title page is included) must satisfy:
   (`writer_subset_gaps`): printable ASCII and é only; scene headings and
   character cues in any ASCII case but with no letter that presentation leaves
   lowercase (é); the title in ASCII capitals; line breaks only in action and dialogue;
-  title fields of at most 48 characters; no empty element/line and no leading,
-  trailing or repeated spaces. A page break carries no text. The generated
-  `(MORE)` type is refused.
+  title fields of at most 48 characters. A page break carries no text. The
+  generated `(MORE)` type is refused.
+- **Spacing** ([spacing contract](spacing.md)): no element whose presented text
+  is empty; no blank line in action; no blank first or last dialogue line;
+  repeated spaces only in action and dialogue; title fields without leading,
+  trailing or repeated spaces.
 - **Speech structure:** a character cue is followed by parentheticals and
   dialogue with at least one dialogue element; dialogue/parentheticals never
   stand outside a speech; two adjacent dialogue elements would merge, so they are
@@ -61,7 +67,7 @@ marker spelling are not byte-identical to an imported original.
 | Scene heading | Presented text (ASCII capitals). Unforced with a standard prefix (`INT`, `EXT`, `EST`, `INT./EXT`, `INT/EXT`, `I/E`, then `.` or space), otherwise `.`-forced when it starts with a letter/digit |
 | Action | Unforced when the first line starts with a letter/digit, has lowercase before any `(`, and is neither heading-like nor an opening `Key:`; otherwise `!`-forced. Authored breaks are lines |
 | Character cue | Presented text (ASCII capitals, extensions included); `@`-forced when it starts with punctuation or would open a title page; ` ^` marks the second speech of a dual pair |
-| Parenthetical / dialogue | Lines directly after the cue; authored breaks are lines |
+| Parenthetical / dialogue | Lines directly after the cue; authored breaks are lines; a blank dialogue line is two spaces |
 | Lyric | `~text` |
 | Transition | `>text` |
 | Centered | `> text <` |
@@ -99,6 +105,9 @@ When a heading or cue was authored in lowercase, the same places say that it is
 written in capitals and that the project keeps the typed case, for example
 `Written in capitals, as Apollo shows and prints them: 1 scene heading and 2
 character cues typed in lowercase. The project keeps the case as typed.`
+When lines with text had spaces at an edge, they say `Written without the
+spaces at the start or end of 2 lines, which Apollo does not show or print. The
+project keeps them as typed.`
 
 ## Snapshot, files and departure
 
@@ -129,10 +138,10 @@ Independent expectations are in [fixtures/export](../fixtures/export/README.md).
 
 | Check | What it establishes |
 | --- | --- |
-| `fountain_export_tests` | Hand-written canonical text for the whole writer-subset model, with and without title page, and of the lowercase case model; 29 hand-written spelling cases (forcing, prefixes, cues, dual, nested emphasis, escapes, multi-value title fields, lowercase headings and cues); 31 refusal cases with located reasons; case disclosure counts; per-snapshot eligibility changes; omission counts; size bound; explanation coverage |
-| `project_access_flow_tests` | Real QML controls: import → Edit in a New Copy → panel disclosure → export equal to hand-written text; real-key edits that block (leading space after a break, empty element) and recover; a cue typed in mixed case exported in capitals with the case disclosure; a separate ordinary-project flow types, edits, undoes, saves and reopens lowercase headings/cues and exports hand-written capitals; export while the worker is held and typing continues, autosaved later words excluded; PDF still blocked; reopen and export without title page; failed write and refused destinations keep files; ordinary project export and Home waiting for it |
-| `fountain_export_process_tests` | Executables: `--edit-fountain`, real typing with autosave that blocks then permits export in a new process, exact bytes, disclosure, no-title body, refusals of project/original/review-only; the lowercase case fixture imported, typed into and exported as hand-written capitals with disclosure, original bytes and authored source unchanged, `@McKay` refused |
-| `fountain_export_oracle_tests` | aw-parser 0.1.1 (afterwriting's MIT parser, via the pinned afterwriting 1.17.3) reads the process exports and the hand-written expected files, including the case fixture, as the hand-worked semantic models: types, text, decoded emphasis, dual pairing, title fields and breaks. Its one representation difference is explicit: it reads a lyric as italic action. Mutating a dual marker or emphasis makes the comparison fail |
+| `fountain_export_tests` | Hand-written canonical text for the whole writer-subset model, with and without title page, and of the lowercase case and spacing models; 35 hand-written spelling cases (forcing, prefixes, cues, dual, nested emphasis, escapes, multi-value title fields, lowercase headings and cues, line-edge spaces, blank dialogue lines, repeated spaces); 36 refusal cases with located reasons; case and spacing disclosure counts; per-snapshot eligibility changes; omission counts; size bound; explanation coverage |
+| `project_access_flow_tests` | Real QML controls: import → Edit in a New Copy → panel disclosure → export equal to hand-written text; real-key edits: a space left after a break is eligible and disclosed, a speech beginning with a blank line and an empty element block and recover; a separate flow types a space before a break and a blank dialogue line, undoes, redoes, saves, reopens and exports hand-written text with the spacing disclosure; a cue typed in mixed case exported in capitals with the case disclosure; a separate ordinary-project flow types, edits, undoes, saves and reopens lowercase headings/cues and exports hand-written capitals; export while the worker is held and typing continues, autosaved later words excluded; PDF still blocked; reopen and export without title page; failed write and refused destinations keep files; ordinary project export and Home waiting for it |
+| `fountain_export_process_tests` | Executables: `--edit-fountain`, real typing with autosave ending in a space that a new process exports without it and discloses, then one more key; a refused ordinary project leaving an existing file intact; exact bytes, disclosure, no-title body, refusals of project/original/review-only; the lowercase case fixture imported, typed into and exported as hand-written capitals with disclosure, original bytes and authored source unchanged, `@McKay` refused; the spacing fixture imported, typed into and exported as hand-written text, authored spaces and original bytes kept, indented action refused |
+| `fountain_export_oracle_tests` | aw-parser 0.1.1 (afterwriting's MIT parser, via the pinned afterwriting 1.17.3) reads the process exports and the hand-written expected files, including the case and spacing fixtures and the original spacing fixture itself, as the hand-worked semantic models: types, text, decoded emphasis, dual pairing, title fields and breaks. Its one representation difference is explicit: it reads a lyric as italic action. Mutating a dual marker or emphasis makes the comparison fail |
 
 The oracle test is configured only when aw-parser and node are present; run
 `tools/afterwriting-oracle.sh` once (it needs network, node and pnpm), then
@@ -147,7 +156,8 @@ is not a representative-workload measurement.
 ## Remaining gates
 
 - Headings/cues with letters not shown in capitals (é), titles not in
-  capitals, other Unicode, meaningful spacing, empty elements, multiline
+  capitals, other Unicode, the spacing listed as refused in
+  [spacing.md](spacing.md), empty elements, multiline
   title/lyric/centered text, lyric within speech, adjacent dialogue elements and
   complex emphasis remain refused, not exported lossily. See
   [case-handling.md](case-handling.md) for the remaining case limitations.
@@ -160,6 +170,6 @@ is not a representative-workload measurement.
   evidence. The editor/engine layout warning seen when a dialogue line starts
   with a space after a deliberate break was an editor placement bug, since
   fixed; see the [build plan](writing-build-plan.md#layout-fix--spaces-after-a-deliberate-break).
-  Such a line is still refused here, as unverified spacing.
+  Since revision 3 such a line is written without the space, with the disclosure.
 - Not verified: power-loss durability of the replaced file, very large scripts
   near 1 MiB in the UI, a watchdog/cancel for a stuck worker, and owner comfort.

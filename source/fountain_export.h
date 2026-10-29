@@ -5,9 +5,9 @@
 #include <QStringList>
 
 namespace apollo::source {
-// Contract fountain-canonical-2; see docs/fountain-export.md. These functions
+// Contract fountain-canonical-3; see docs/fountain-export.md. These functions
 // read only their arguments, so an export can run them on a worker thread.
-inline constexpr auto fountain_export_contract = "fountain-canonical-2";
+inline constexpr auto fountain_export_contract = "fountain-canonical-3";
 // The frozen revision-1 reader that verifies each export is bounded to 1 MiB.
 inline constexpr qsizetype maximum_fountain_export_bytes = 1024 * 1024;
 
@@ -26,4 +26,10 @@ FountainExport export_fountain(const std::vector<Element>& snapshot, bool includ
 // (docs/case-handling.md). Says how many were authored otherwise, for the
 // export disclosure; empty when none were.
 QString fountain_case_note(const std::vector<Element>& snapshot);
+// Spaces at the start or end of a line, which Apollo does not show, are not
+// written (docs/spacing.md). Says on how many lines with text that happened;
+// empty when none.
+QString fountain_spacing_note(const std::vector<Element>& snapshot);
+// Both notes, for the export disclosure; may be empty.
+QString fountain_presentation_note(const std::vector<Element>& snapshot);
 }

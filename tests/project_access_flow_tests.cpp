@@ -355,23 +355,37 @@ private slots:
       QCOMPARE(bytes(exported), expected("writer-subset.fountain"));
       QVERIFY(job->status().contains("exported to " + exported));
       QVERIFY(job->status().contains("2 synopses, 1 production scene number"));
-      // A deliberate break typed after a space leaves one; the explanation
-      // names the element, the button stays disabled and nothing is written.
+      // A deliberate break typed before a space leaves it at the start of the
+      // new line, where it is not shown; the export leaves it out and says
+      // so (docs/spacing.md). Delete removes it.
       auto speech = window.flow.document()->findBlockByNumber(12);
       QCOMPARE(block_element(speech).text, std::string("At the same time."));
       window.flow.editor()->setProperty("cursorPosition", speech.position() + 6);
       QTest::keyClick(&window.view, Qt::Key_Return);
       QVERIFY(static_cast<const ScreenplayLayout*>(window.flow.document()->documentLayout())->error().isEmpty());
+      QVERIFY(job->check(true).isEmpty());
+      QVERIFY2(job->presentationNote().contains("Written without the spaces at the start or end of 1 line"), qPrintable(job->presentationNote()));
+      QTest::keyClick(&window.view, Qt::Key_Delete);
+      QCOMPARE(block_element(speech).text, std::string("At the\nsame time."));
+      QVERIFY(job->presentationNote().isEmpty());
+      // A speech that begins with a blank line cannot be written in Fountain:
+      // the explanation names the element, the button stays disabled and
+      // nothing is written. Backspace corrects it.
+      window.flow.editor()->setProperty("cursorPosition", speech.position());
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QCOMPARE(block_element(speech).text, std::string("\nAt the\nsame time."));
       QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
       QTRY_VERIFY(window.popup_open("exportPanel"));
-      QVERIFY2(eligibility().contains("Element 13, Dialogue “At the”: has an empty line or leading, trailing or repeated spaces."), qPrintable(eligibility()));
+      QVERIFY2(eligibility().contains("Element 13, Dialogue “At the”: begins or ends with a blank line, which Fountain cannot keep in the speech."),
+               qPrintable(eligibility()));
       QVERIFY(!window.click("exportConfirm"));
       QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/fountain-export-blocked.png")));
       close_panel();
       QVERIFY(!job->request(exported));
       QVERIFY(job->status().startsWith("Fountain export blocked: Element 13"));
       QCOMPARE(bytes(exported), expected("writer-subset.fountain"));
-      QTest::keyClick(&window.view, Qt::Key_Delete);
+      QTest::keyClick(&window.view, Qt::Key_Backspace);
+      QCOMPARE(block_element(speech).text, std::string("At the\nsame time."));
       QVERIFY(job->check(true).isEmpty());
       // New writing: an empty element is explained until corrected with
       // ordinary keys. A cue typed in mixed case is presented, and exported, in
@@ -391,7 +405,7 @@ private slots:
       window.type("Here.");
       QVERIFY(job->check(true).isEmpty());
       QCOMPARE(block_element(window.flow.document()->findBlockByNumber(23)).text, std::string("Mara"));
-      QCOMPARE(job->caseNote(), QString("Written in capitals, as Apollo shows and prints them: 1 character cue typed in lowercase. "
+      QCOMPARE(job->presentationNote(), QString("Written in capitals, as Apollo shows and prints them: 1 character cue typed in lowercase. "
                                         "The project keeps the case as typed."));
       // The accepted snapshot is fixed: typing continues while the worker is
       // held, and the later words are saved but not exported.
@@ -600,6 +614,81 @@ private slots:
     QCOMPARE(block_element(block(reopened, 1)).text, std::string("int. depot - day"));
     QVERIFY(draws(font_, block(reopened, 1), "INT. DEPOT - DAY"));
     QVERIFY(draws(font_, block(reopened, 3), "MARA (V.O.)"));
+    auto* job = qobject_cast<FountainExportJob*>(reopened.view.rootObject()->property("fountainJob").value<QObject*>());
+    QVERIFY(job->request(output));
+    QTRY_VERIFY(!job->busy());
+    QCOMPARE(bytes(output), expected);
+  }
+
+  // docs/spacing.md with real keys in the Writing desk. Enter after a space,
+  // then again on the new line, gives one speech with a space before the
+  // break and a blank line. Undo/redo, autosave and reopen keep the writing
+  // exactly; the export writes it as presented and says so. A speech that
+  // begins with a blank line is explained and refused until corrected.
+  void typed_spacing_is_kept_and_exported_as_presented() {
+    const auto p = create_project(path("project"), {1, {{ElementType::action, "Rain.", false, {}, "first"}}});
+    const auto output = path("spaced") + ".fountain";
+    // Hand-written: no space at a line edge; the blank line as two spaces.
+    const QByteArray expected("Rain.\n\nMARA\nAt the\n  \nsame time.\n");
+    const std::string authored = "At the \n\nsame time.";
+    auto block = [](Window& window, int n) { return window.flow.document()->findBlockByNumber(n); };
+    auto layout_error = [](Window& window) {
+      return static_cast<const ScreenplayLayout*>(window.flow.document()->documentLayout())->error();
+    };
+    {
+      Window window(font_, path("session"), p.directory);
+      QTRY_VERIFY(window.flow.document());
+      window.flow.editor()->setProperty("cursorPosition", 5);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_Tab);
+      window.type("MARA");
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      window.type("At the same time.");
+      QCOMPARE(element_type(block(window, 2)), ElementType::dialogue);
+      window.flow.editor()->setProperty("cursorPosition", block(window, 2).position() + 7);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QCOMPARE(window.flow.document()->blockCount(), 3);
+      QCOMPARE(block_element(block(window, 2)).text, authored);
+      QVERIFY2(layout_error(window).isEmpty(), qPrintable(layout_error(window)));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(block_element(block(window, 2)).text, std::string("At the \nsame time."));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(block_element(block(window, 2)).text, authored);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(open_project(p.directory).screenplay.elements.at(2).text, authored);
+      QVERIFY(window.click("exportButton"));
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(window.click("exportFormatFountain"));
+      const auto eligibility = window.item("exportEligibility")->property("text").toString();
+      QVERIFY2(eligibility.startsWith("Ready.") && eligibility.contains(
+                   "Written without the spaces at the start or end of 1 line, which Apollo does not show or print. The project keeps them as typed."),
+               qPrintable(eligibility));
+      window.item("fountainDestination")->setProperty("text", output);
+      QVERIFY(window.click("exportConfirm"));
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(output), expected);
+      QVERIFY(job->status().contains("The project keeps them as typed."));
+      QTest::keyClick(&window.view, Qt::Key_Escape);
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+      window.flow.editor()->setProperty("cursorPosition", block(window, 2).position());
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QCOMPARE(block_element(block(window, 2)).text, "\n" + authored);
+      QCOMPARE(job->check(true),
+               QString("Element 3, Dialogue “At the ”: begins or ends with a blank line, which Fountain cannot keep in the speech."));
+      QVERIFY(!job->request(output));
+      QCOMPARE(bytes(output), expected);
+      QTest::keyClick(&window.view, Qt::Key_Backspace);
+      QCOMPARE(block_element(block(window, 2)).text, authored);
+      QVERIFY(job->check(true).isEmpty());
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+    }
+    QFile::remove(output);
+    Window reopened(font_, path("session"), p.directory);
+    QTRY_VERIFY(reopened.flow.document());
+    QCOMPARE(block_element(block(reopened, 2)).text, authored);
+    QVERIFY2(layout_error(reopened).isEmpty(), qPrintable(layout_error(reopened)));
     auto* job = qobject_cast<FountainExportJob*>(reopened.view.rootObject()->property("fountainJob").value<QObject*>());
     QVERIFY(job->request(output));
     QTRY_VERIFY(!job->busy());

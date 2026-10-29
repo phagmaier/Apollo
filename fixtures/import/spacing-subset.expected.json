@@ -1,0 +1,16 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [],
+  "elements": [
+    {"id":"f1","type":"sceneHeading","text":"INT. LIGHTHOUSE KITCHEN - NIGHT"},
+    {"id":"f2","type":"action","text":"Mara sets two cups down.  Neither of them sits."},
+    {"id":"f3","type":"character","text":"MARA"},
+    {"id":"f4","type":"dialogue","text":"I kept the kettle warm. \nI always do.\n  \nThat is the whole  of it."},
+    {"id":"f5","type":"character","text":"THEO"},
+    {"id":"f6","type":"parenthetical","text":"(quietly)"},
+    {"id":"f7","type":"dialogue","text":"Thank you.  Truly."},
+    {"id":"f8","type":"action","text":"The lamp turns."}
+  ]
+}

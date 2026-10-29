@@ -54,7 +54,7 @@ recovery and Save a Copy, with independent expected content and associations.
 Unsupported cases remain in review. PDF export stays blocked for every imported
 working project; complete Fountain compatibility is pending.
 **2.6d adds bounded canonical Fountain export** for editable projects, ordinary
-and imported, under [`fountain-canonical-2`](fountain-export.md). Each request
+and imported, under [`fountain-canonical-3`](fountain-export.md). Each request
 checks the current snapshot, including edits after import, against the writer
 subset's content rules, speech structure, unambiguous spelling and emphasis
 rules; refusals name the element and reason. Output is verified by reading it
@@ -142,9 +142,9 @@ screenplay, not a PDF of the source reader.
 | Construct / evidence | Required editable conversion and Fountain re-export | PDF treatment / current gap |
 | --- | --- | --- |
 | Scene headings: SceneHeaders | Recognize boundary/context, all official prefixes and case, forced single dot; preserve ellipsis as action; force headings on canonical export when needed | Task 3a: authored case kept, presented in capitals in editor/PDF/export ([case contract](case-handling.md)); letters outside ASCII not capitalized |
-| Action: MultilineAction, Indenting | Preserve authored breaks, action indentation, tab intent and extra vertical spacing; explicit `!` where ambiguous | Whitespace/layout fidelity not established |
+| Action: MultilineAction, Indenting | Preserve authored breaks, action indentation, tab intent and extra vertical spacing; explicit `!` where ambiguous | Task 3b: repeated spaces inside lines admitted and shown; indentation, tabs and vertical spacing stay review-only ([spacing contract](spacing.md)) |
 | Cues/extensions: Dialogue, ForcedElements | Context-sensitive cues; mixed-case `@`; letters outside extensions; preserve authored extensions and continuation labels; force mixed case on output | Task 3a: lowercase extensions admitted and presented in capitals; forced mixed-case names stay review-only pending an owner exception rule; generated CONT'D unchanged |
-| Dialogue/parenthetical: Dialogue | Preserve single speech with deliberate breaks and whitespace-only dialogue lines, including style boundaries; distinguish separator from empty speech line | Source storage supports breaks; layout/keyboard contract still incomplete |
+| Dialogue/parenthetical: Dialogue | Preserve single speech with deliberate breaks and whitespace-only dialogue lines, including style boundaries; distinguish separator from empty speech line | Task 3b: line-edge spaces not shown or written; a line of spaces inside dialogue is one blank slot, written as two spaces; breaks are page-split points; blank first/last lines stay refused ([spacing contract](spacing.md)) |
 | Dual: DualDialogue, Dialogue | Preserve paired speeches and second-cue caret, including valid zero/multiple-space markers; reject/surface unpaired or ambiguous relationships | Existing fixture is narrower than complete authoring/import contract |
 | Lyrics: ForcedElements | Explicit tilde per lyric line; preserve lyric-in-speech intent for review | Current parser treats a tilde inside dialogue as text |
 | Transitions: Transitions, Indenting, Simple | Honor blank boundaries and trailing-space disambiguation; use forced `>` for canonical transitions | Existing trim-based parser loses distinctions |
@@ -211,8 +211,12 @@ These are intake assertions, not layout or complete parser acceptance.
 - **Task 3a bounded case step implemented:** headings and cues keep authored
   case and are presented, printed and exported in capitals; `writer-subset-2`
   admits lowercase headings and cue extensions ([case-handling.md](case-handling.md)).
+- **Task 3b bounded spacing step implemented:** line-edge spaces are kept but
+  not shown or written, blank dialogue lines and repeated spaces in action and
+  dialogue are laid out, exported and (`writer-subset-3`) imported, and speeches
+  split at deliberate breaks ([spacing.md](spacing.md)).
 - **Slice 3/5 compatibility gate, remaining:** widen export with each authoring
-  contract (forced mixed-case names, title case, Unicode, spacing, multiline title/lyric/centered,
+  contract (forced mixed-case names, title case, Unicode, action indentation and other spacing in spacing.md's limits, multiline title/lyric/centered,
   lyric within speech, complex emphasis) and independent examples for each;
   correct PDF still needs independent layout references, not just agreement
   with Apollo's engine.

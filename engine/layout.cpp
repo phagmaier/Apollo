@@ -2,6 +2,7 @@
 #include "engine/wrap.h"
 
 #include <algorithm>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -58,20 +59,44 @@ bool sentence_end(std::string_view before_space) {
   return !before_space.empty() && (before_space.back() == '.' || before_space.back() == '?' || before_space.back() == '!');
 }
 
-// Return the last allowed sentence break; each fragment is rewrapped separately.
-std::size_t action_split(std::string_view text, int available) {
-  if (available < 2) return std::string_view::npos;
-  auto pos = text.size();
-  while (pos > 0) {
-    pos = text.rfind(' ', pos - 1);
-    if (pos == std::string_view::npos) break;
-    if (pos == 0 || pos + 1 == text.size()) continue;
-    if (!sentence_end(text.substr(0, pos))) continue;
-    const auto before = wrap(text.substr(0, pos), 61);
-    const auto after = wrap(text.substr(pos + 1), 61);
-    if (before.size() >= 2 && before.size() <= static_cast<std::size_t>(available) && after.size() >= 2) return pos;
+// Whether text's first authored line has nothing but spaces.
+bool starts_blank(std::string_view text) {
+  const auto visible = text.find_first_not_of(' ');
+  return visible == std::string_view::npos || text[visible] == '\n';
+}
+
+// A page split: the first page shows text before cut; the next continues
+// from rest. Both fragments are rewrapped.
+struct Split { std::size_t cut, rest; };
+
+// B9 candidates in text order: a sentence end followed by a space or a
+// deliberate break. Spaces at an authored line's edges are not shown, so a
+// sentence that ends its line continues at the next authored line whatever
+// spaces surround the break. A split never puts an authored blank line on
+// either side of the page break. rest == text.size() when only spaces follow.
+std::vector<Split> sentence_splits(std::string_view text) {
+  std::vector<Split> result;
+  for (auto cut = text.find_first_of(" \n"); cut != std::string_view::npos; cut = text.find_first_of(" \n", cut + 1)) {
+    if (cut == 0 || text[cut - 1] == ' ' || text[cut - 1] == '\n' || !sentence_end(text.substr(0, cut))) continue;
+    auto after = text.find_first_not_of(' ', cut);
+    if (after == std::string_view::npos) { result.push_back({cut, text.size()}); continue; }
+    if (text[after] != '\n') { result.push_back({cut, cut + 1}); continue; }
+    if (!starts_blank(text.substr(after + 1))) result.push_back({cut, after + 1});
   }
-  return std::string_view::npos;
+  return result;
+}
+
+// Return the last allowed sentence break.
+std::optional<Split> action_split(std::string_view text, int available) {
+  if (available < 2) return std::nullopt;
+  const auto candidates = sentence_splits(text);
+  for (auto split = candidates.rbegin(); split != candidates.rend(); ++split) {
+    if (split->rest == text.size()) continue;
+    const auto before = wrap(text.substr(0, split->cut), 61);
+    const auto after = wrap(text.substr(split->rest), 61);
+    if (before.size() >= 2 && before.size() <= static_cast<std::size_t>(available) && after.size() >= 2) return *split;
+  }
+  return std::nullopt;
 }
 
 // An element with no text but spaces keeps one blank line.
@@ -90,7 +115,9 @@ std::vector<std::string> speech_lines(const Element& element, std::size_t dialog
   return lines;
 }
 
-struct SpeechBreak { std::size_t part; std::size_t offset; };
+// split.rest == the part's size when the rest of the speech starts with the
+// next part.
+struct SpeechBreak { std::size_t part; Split split; };
 
 // Pick the latest sentence boundary that leaves two dialogue lines on both
 // sides, while reserving a slot for (MORE). The fragments are rewrapped.
@@ -100,21 +127,25 @@ bool split_speech(const std::vector<Element>& parts, int available, SpeechBreak&
   for (std::size_t i = 0; i < parts.size(); ++i) {
     const auto& part = parts[i];
     if (part.type == ElementType::dialogue) {
-      auto consider = [&](std::size_t offset, bool whole) {
-        const auto prefix = wrap(std::string_view(part.text).substr(0, offset), 35);
-        int after_dialogue = whole ? 0 : static_cast<int>(wrap(std::string_view(part.text).substr(offset + 1), 35).size());
+      const std::string_view text = part.text;
+      auto consider = [&](Split split) {
+        const bool whole = split.rest == text.size();
+        // The next page continues with the next part; it must not start blank.
+        if (whole && (i + 1 == parts.size() || starts_blank(parts[i + 1].text))) return;
+        const auto prefix = wrap(text.substr(0, split.cut), 35);
+        int after_dialogue = whole ? 0 : static_cast<int>(wrap(text.substr(split.rest), 35).size());
         for (std::size_t j = i + 1; j < parts.size(); ++j)
           if (parts[j].type == ElementType::dialogue) after_dialogue += static_cast<int>(speech_lines(parts[j]).size());
         const int prior = before_dialogue + static_cast<int>(prefix.size());
         if (prior >= 2 && after_dialogue >= 2 && before_slots + static_cast<int>(prefix.size()) + 1 <= available) {
-          chosen = {i, offset}; found = true;
+          chosen = {i, split}; found = true;
         }
       };
-      for (std::size_t pos = part.text.find(' '); pos != std::string::npos; pos = part.text.find(' ', pos + 1)) {
-        if (pos && pos + 1 < part.text.size() && sentence_end(std::string_view(part.text).substr(0, pos)))
-          consider(pos, false);
-      }
-      if (i + 1 < parts.size() && sentence_end(part.text)) consider(part.text.size(), true);
+      auto candidates = sentence_splits(text);
+      // The part's own end is a boundary too; sentence_splits finds it only
+      // when spaces follow it.
+      if (sentence_end(text)) candidates.push_back({text.size(), text.size()});
+      for (const auto split : candidates) consider(split);
       before_dialogue += static_cast<int>(speech_lines(part).size());
     }
     before_slots += static_cast<int>(speech_lines(part).size());
@@ -391,11 +422,11 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
           for (std::size_t i = 0; i < split.part; ++i)
             emit_styled(parts[i], speech_lines(parts[i]), part_sources[i], 0, part_bases[i]);
           auto& part = parts[split.part];
-          emit_styled(part, wrap(std::string_view(part.text).substr(0, split.offset), 35),
+          emit_styled(part, wrap(std::string_view(part.text).substr(0, split.split.cut), 35),
                       part_sources[split.part], 0, part_bases[split.part]);
           emit(ElementType::more, {"(MORE)"});
-          const bool whole = split.offset == part.text.size();
-          if (!whole) { discard_prefix(part, split.offset + 1); part_bases[split.part] += split.offset + 1; }
+          const bool whole = split.split.rest == part.text.size();
+          if (!whole) { discard_prefix(part, split.split.rest); part_bases[split.part] += split.split.rest; }
           const auto consumed = static_cast<std::ptrdiff_t>(split.part + (whole ? 1 : 0));
           parts.erase(parts.begin(), parts.begin() + consumed);
           part_sources.erase(part_sources.begin(), part_sources.begin() + consumed);
@@ -418,8 +449,7 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
         if (index + 1 == elements.size()) return true;
         const auto& next = elements[index + 1];
         if (next.type == ElementType::action)
-          return static_cast<int>(wrap(next.text, 61).size()) <= available ||
-                 action_split(next.text, available) != std::string_view::npos;
+          return static_cast<int>(wrap(next.text, 61).size()) <= available || action_split(next.text, available);
         if (next.type == ElementType::cue) return following_speech_fits(elements, index + 1, available);
         if (next.type == ElementType::centered || next.type == ElementType::lyric)
           return static_cast<int>(wrap(next.text, next.type == ElementType::centered ? 60 : 35).size()) <= available;
@@ -460,9 +490,9 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
           slot += gap; emit_styled(element, lines, index, static_cast<std::size_t>(remaining.data() - element.text.data())); break;
         }
         const auto split = action_split(remaining, available);
-        if (split != std::string_view::npos) {
-          slot += gap; emit_styled(element, wrap(remaining.substr(0, split), 61), index, static_cast<std::size_t>(remaining.data() - element.text.data()));
-          remaining.remove_prefix(split + 1);
+        if (split) {
+          slot += gap; emit_styled(element, wrap(remaining.substr(0, split->cut), 61), index, static_cast<std::size_t>(remaining.data() - element.text.data()));
+          remaining.remove_prefix(split->rest);
           continuation = true;
           next_page();
         } else {

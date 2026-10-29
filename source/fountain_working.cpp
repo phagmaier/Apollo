@@ -21,7 +21,8 @@ Review review_of(const ProjectAssets& assets) {
   if (root.value("version").toDouble() > 1) fail("needs a newer Apollo", SourceError::Kind::newer_version);
   if (error.error != QJsonParseError::NoError || !json.isObject() || root.size() != 4 ||
       root.value("format") != "apollo-fountain-working" || root.value("version") != 1 ||
-      (root.value("contract") != "writer-subset-1" && root.value("contract") != writer_subset_contract) ||
+      (root.value("contract") != "writer-subset-1" && root.value("contract") != "writer-subset-2" &&
+       root.value("contract") != writer_subset_contract) ||
       !root.value("intake").isObject() || root.value("intake").toObject().value("version") != 2)
     fail("unsupported preservation contract");
   ProjectAssets review{QJsonDocument(root.value("intake").toObject()).toJson(), assets.original_fountain};
@@ -41,6 +42,20 @@ bool mixed_case_name(const Element& e) {
 bool ascii_capitals(const Element& e) {
   return std::none_of(e.text.begin(), e.text.end(), [](char c) { return (c >= 'a' && c <= 'z') || uchar(c) >= 0x80; });
 }
+// writer-subset-3 spacing (docs/spacing.md). Fountain ignores spaces at the
+// edges of a dialogue line and reads a line of spaces inside dialogue as a
+// blank line; Apollo shows neither edge spaces nor more than a blank slot, so
+// both keep their meaning. Repeated spaces inside action and dialogue lines
+// are shown and read as written. Action indentation is meaningful in Fountain
+// but not shown by Apollo, so it stays review-only, as does any other spacing.
+bool admitted_spacing(const Element& e) {
+  const auto lines = QString::fromUtf8(e.text).split('\n');
+  if (e.type == ElementType::dialogue)
+    return !lines.front().trimmed().isEmpty() && !lines.back().trimmed().isEmpty();
+  if (e.type == ElementType::action)
+    return std::none_of(lines.begin(), lines.end(), [](const QString& line) { return line.isEmpty() || line != line.trimmed(); });
+  return false;
+}
 QStringList blockers(const FountainConversion& c, qsizetype size, const QString& contract) {
   QStringList result;
   if (size > 64 * 1024 || c.elements.empty() || c.elements.size() > 256) result << "Writer subset is bounded to 64 KiB and 1–256 elements.";
@@ -55,8 +70,10 @@ QStringList blockers(const FountainConversion& c, qsizetype size, const QString&
     const bool legacy_case = contract == "writer-subset-1" && (e.type == ElementType::heading || e.type == ElementType::cue) && !ascii_capitals(e);
     if (legacy_case) result << id + ": authored case requires review.";
     else if (mixed_case_name(e)) result << id + ": forced mixed-case character name requires review; Apollo presents cues in capitals.";
+    // writer-subset-1 and -2 admitted no empty line and no leading, trailing or repeated space.
+    const bool spacing = contract == writer_subset_contract && admitted_spacing(e);
     for (const auto gap : writer_subset_gaps(e))
-      if (!(legacy_case && gap == WriterSubsetGap::uncapitalized_letter)) switch (gap) {
+      if (!(legacy_case && gap == WriterSubsetGap::uncapitalized_letter) && !(spacing && gap == WriterSubsetGap::spacing)) switch (gap) {
         case WriterSubsetGap::character: result << id + ": character outside the verified writer subset."; break;
         case WriterSubsetGap::authored_case: result << id + ": authored case requires review."; break;
         case WriterSubsetGap::uncapitalized_letter: result << id + ": a letter that is not presented in capitals requires review."; break;

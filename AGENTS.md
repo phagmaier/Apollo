@@ -16,6 +16,8 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   export contract, its per-snapshot eligibility, evidence and remaining gates.
 - [Case handling](docs/case-handling.md): authored text versus capitals shown
   and printed for headings and cues, import/export rules and the owner's case policy.
+- [Spacing](docs/spacing.md): authored versus presented spaces, deliberate
+  breaks and blank dialogue lines in layout, page splits, import and export.
 - [Export profile](docs/export-profile.md) and [fixture guide](fixtures/README.md):
   layout rules, independent expectations, and verification procedures.
 - [Stack recommendation](docs/stack-recommendation.md): technical

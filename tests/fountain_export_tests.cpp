@@ -48,6 +48,14 @@ private slots:
     QCOMPARE(fountain_case_note(cased.elements),
              QString("Written in capitals, as Apollo shows and prints them: 3 scene headings and 3 character cues typed in lowercase. "
                      "The project keeps the case as typed."));
+    // Spacing is written as presented: no line-edge spaces, two spaces for a
+    // blank dialogue line, repeated spaces kept in action and dialogue.
+    const auto spaced = parse_screenplay(bytes(APOLLO_FIXTURE_ROOT "/import/spacing-subset.expected.json"));
+    const auto presented = export_fountain(spaced.elements, true);
+    QVERIFY2(presented.blockers.isEmpty(), qPrintable(presented.blockers.join('\n')));
+    QCOMPARE(presented.bytes, bytes(APOLLO_FIXTURE_ROOT "/export/spacing-subset.fountain"));
+    QCOMPARE(fountain_spacing_note(spaced.elements),
+             QString("Written without the spaces at the start or end of 1 line, which Apollo does not show or print. The project keeps them as typed."));
   }
 
   // Action is unforced only when its first line begins with a letter or digit,
@@ -97,6 +105,20 @@ private slots:
     QTest::newRow("lowercase opening heading key") << Elements{e(H, "ext: roof")} << false << QByteArray(".EXT: ROOF\n");
     QTest::newRow("lowercase cues and extensions") << Elements{e(C, "mara (v.o.)"), e(D, "One."), e(C, "Bo (cont'd)", {}, true), e(D, "Two.")} << true
         << QByteArray("MARA (V.O.)\nOne.\n\nBO (CONT'D) ^\nTwo.\n");
+    // Spacing is written as presented (docs/spacing.md): no spaces at line
+    // edges, a blank dialogue line as two spaces, repeated spaces kept in
+    // action and dialogue.
+    QTest::newRow("line-edge spaces in dialogue") << Elements{e(C, "MARA"), e(D, "At the \n  same time.  ")} << true
+        << QByteArray("MARA\nAt the\nsame time.\n");
+    QTest::newRow("blank dialogue line") << Elements{e(C, "MARA"), e(D, "One.\n\nTwo.")} << true << QByteArray("MARA\nOne.\n  \nTwo.\n");
+    QTest::newRow("lines of spaces are blank lines") << Elements{e(C, "MARA"), e(D, "One.\n   \n\nTwo."), e(P, "(beat)"), e(D, "Three.")} << true
+        << QByteArray("MARA\nOne.\n  \n  \nTwo.\n(beat)\nThree.\n");
+    QTest::newRow("repeated spaces in action and dialogue") << Elements{e(A, "Wheel.  They pause."), e(C, "MARA"), e(D, "So.  Now.")} << true
+        << QByteArray("Wheel.  They pause.\n\nMARA\nSo.  Now.\n");
+    QTest::newRow("line-edge spaces in other elements") << Elements{e(H, " int. a "), e(A, "  Rain."), e(C, " mara "), e(D, "Hi."), e(T, " CUT TO: ")}
+        << true << QByteArray("INT. A\n\nRain.\n\nMARA\nHi.\n\n>CUT TO:\n");
+    QTest::newRow("emphasis after leading spaces") << Elements{e(A, "  Rain falls.", {{2, 6, Style::italic}})} << true
+        << QByteArray("!*Rain* falls.\n");
     QTest::newRow("emphasized lowercase heading") << Elements{e(H, "int. hall", {{5, 9, Style::underline}})} << true << QByteArray("INT. _HALL_\n");
     QTest::newRow("lowercase cue punctuation first") << Elements{e(C, "'nick'"), e(D, "Hi.")} << true << QByteArray("@'NICK'\nHi.\n");
     QTest::newRow("action and dialogue keep their case") << Elements{e(H, "int. a"), e(A, "Mara waits."), e(C, "mara"), e(D, "Here, mara.")} << true
@@ -120,7 +142,16 @@ private slots:
     QTest::newRow("heading letter not shown in capitals") << Elements{e(H, "INT. CAF\xc3\xa9")} << QString("Element 1, Scene heading “INT. CAFé”: contains “é”");
     QTest::newRow("unverified character") << Elements{e(A, "Wait—now.")} << QString("Element 1, Action “Wait—now.”: contains “—” (U+2014)");
     QTest::newRow("empty element") << Elements{e(A, "Done."), e(A, "")} << QString("Element 2, Action (empty): is empty; type its text or delete it.");
-    QTest::newRow("repeated spaces") << Elements{e(A, "Two  spaces.")} << QString("leading, trailing or repeated spaces");
+    QTest::newRow("only spaces") << Elements{e(A, "Done."), e(A, "   ")} << QString("Element 2, Action (empty): is empty; type its text or delete it.");
+    QTest::newRow("repeated spaces in a heading") << Elements{e(H, "INT.  A")}
+        << QString("Element 1, Scene heading “INT.  A”: has repeated spaces, which this export keeps only in action and dialogue.");
+    QTest::newRow("blank line in action") << Elements{e(A, "One.\n  \nTwo.")}
+        << QString("Element 1, Action “One.”: has a blank line, which Fountain reads as the end of the action.");
+    QTest::newRow("dialogue starting blank") << Elements{e(C, "MAX"), e(D, "\nYes.")}
+        << QString("Element 2, Dialogue “Yes.”: begins or ends with a blank line, which Fountain cannot keep in the speech.");
+    QTest::newRow("dialogue ending blank") << Elements{e(C, "MAX"), e(D, "Yes.\n  ")} << QString("Element 2, Dialogue “Yes.”: begins or ends with a blank line");
+    QTest::newRow("spaces in a title field") << Elements{e(ElementType::title, " X")}
+        << QString("Element 1, Title “ X”: has leading, trailing or repeated spaces, which the title page shows as written.");
     QTest::newRow("long title") << Elements{e(ElementType::title, "A TITLE THAT IS MUCH LONGER THAN FORTY EIGHT CHARACTERS")} << QString("longer than 48");
     QTest::newRow("multiline lyric") << Elements{e(ElementType::lyric, "La.\nLa.")} << QString("Lyric “La.”: contains a line break");
     QTest::newRow("orphan dialogue") << Elements{e(A, "Rain."), e(D, "Hello.")} << QString("Element 2, Dialogue “Hello.”: is not part of a speech");
@@ -185,9 +216,9 @@ private slots:
     QCOMPARE(fountain_export_blockers(model, true),
              QStringList{"Element 12, Character cue “Juné”: contains “é”, which Apollo does not yet show in capitals in scene headings and character cues."});
     model[11].text = "JUNE";
+    model[12].text = "At the\nsame time.\n";
+    QVERIFY(fountain_export_blockers(model, true).join('\n').contains("Element 13, Dialogue “At the”: begins or ends with a blank line"));
     model[12].text = "At the \nsame time.";
-    QVERIFY(fountain_export_blockers(model, true).join('\n').contains("Element 13, Dialogue “At the ”"));
-    model[12].text = "At the\nsame time.";
     const auto result = export_fountain(model, true);
     QVERIFY(result.blockers.isEmpty());
     QVERIFY(result.bytes.contains("JUNE ^\nAt the\nsame time.\n\n~A distant song."));
@@ -202,6 +233,18 @@ private slots:
                      "The project keeps the case as typed."));
     QCOMPARE(fountain_case_note({e(H, "int. a"), e(H, "ext. b")}),
              QString("Written in capitals, as Apollo shows and prints them: 2 scene headings typed in lowercase. The project keeps the case as typed."));
+  }
+
+  // The disclosure counts lines with text that had spaces at an edge; a line
+  // of only spaces is a blank line, written as one. Title fields keep theirs.
+  void spacing_presentation_is_disclosed() {
+    QVERIFY(fountain_spacing_note({e(C, "MARA"), e(D, "One.\n   \nTwo."), e(ElementType::title, " X")}).isEmpty());
+    QCOMPARE(fountain_spacing_note({e(A, " Rain."), e(C, "MARA"), e(D, "At the \n same time.\n  \nEnd.")}),
+             QString("Written without the spaces at the start or end of 3 lines, which Apollo does not show or print. "
+                     "The project keeps them as typed."));
+    QCOMPARE(fountain_presentation_note({e(H, "int. a"), e(C, "MARA "), e(D, "Hi.")}),
+             QString("Written in capitals, as Apollo shows and prints them: 1 scene heading typed in lowercase. The project keeps the case as typed. "
+                     "Written without the spaces at the start or end of 1 line, which Apollo does not show or print. The project keeps them as typed."));
   }
 
   // Imported retained material is summarized for the disclosure; ordinary
@@ -223,7 +266,8 @@ private slots:
   void explicit_checks_explain_every_refusal() {
     std::mt19937 random(11);
     const char* pieces[] = {"a", "B", "x", " ", ".", "!", "#", "=", ">", "<", "@", "~", "(", ")", "*", "_", "\\", "/", "[", "]",
-                            ":", "^", "TO:", "INT. ", "\xc3\xa9", "1", "\n", "-", "'", "Note:", "I/E ", "EXT"};
+                            ":", "^", "TO:", "INT. ", "\xc3\xa9", "1", "\n", "-", "'", "Note:", "I/E ", "EXT",
+                            "  ", " \n", "\n\n"};
     const ElementType types[] = {H, A, C, P, D, ElementType::lyric, T, ElementType::centered, ElementType::page_break,
                                  ElementType::title, ElementType::author};
     int eligible = 0;

@@ -339,6 +339,86 @@ int main() {
     expected.push_back({2, 1, "THEO", 1});
     check_placed("lone cue moves to next page", {{ElementType::action, std::string(61 * 55, 'x')}, {ElementType::cue, "THEO"}}, expected);
   }
+  {
+    // Deliberate breaks and page splits (docs/spacing.md). 49 action lines
+    // fill slots 1-49, so the cue is at 51 and five speech slots remain:
+    // up to four lines and (MORE). The first authored line wraps to three
+    // lines ending "thirteen."; the next sentence end would need five. The
+    // rest wraps to four lines at 35 columns.
+    const std::string first = "One two three four five six seven. Eight nine ten eleven twelve thirteen.";
+    const std::string rest = "Fourteen fifteen sixteen seventeen eighteen. Nineteen twenty twenty-one twenty-two twenty-three. Done now here.";
+    auto speech = [&](const std::string& dialogue) {
+      return std::vector<apollo::Element>{{ElementType::action, std::string(61 * 49, 'x')}, {ElementType::cue, "MARA"},
+                                          {ElementType::dialogue, dialogue}};
+    };
+    std::vector<Placed> expected;
+    for (int slot = 1; slot <= 49; ++slot) expected.push_back({1, slot, std::string(61, 'x'), 0});
+    for (const Placed line : std::initializer_list<Placed>{
+             {1, 51, "MARA", 1}, {1, 52, "One two three four five six seven.", 2}, {1, 53, "Eight nine ten eleven twelve", 2},
+             {1, 54, "thirteen.", 2}, {1, 55, "(MORE)", apollo::no_source}, {2, 1, "MARA (CONT’D)", apollo::no_source},
+             {2, 2, "Fourteen fifteen sixteen seventeen", 2}, {2, 3, "eighteen. Nineteen twenty", 2},
+             {2, 4, "twenty-one twenty-two twenty-three.", 2}, {2, 5, "Done now here.", 2}})
+      expected.push_back(line);
+    // A sentence that ends its authored line is a split point, and the
+    // spaces at the break's edges are not shown: each spelling paginates the
+    // same, and the continued page never starts with a blank line.
+    for (const std::string dialogue : {first + "\n" + rest, first + " \n" + rest, first + "  \n   " + rest}) {
+      check_placed("speech splits at a deliberate break", speech(dialogue), expected);
+      const auto lines = apollo::layout(speech(dialogue));
+      if (lines[55].source_offset != dialogue.size() - rest.size()) {
+        std::cerr << "continued speech should map to its first visible byte\n"; ++failures;
+      }
+    }
+    // A split never leaves an authored blank line beside the page break.
+    expected.resize(49);
+    for (const Placed line : std::initializer_list<Placed>{
+             {1, 51, "MARA", 1}, {1, 52, "One two three four five six seven.", 2}, {1, 53, "Eight nine.", 2},
+             {1, 54, "(MORE)", apollo::no_source}, {2, 1, "MARA (CONT’D)", apollo::no_source}, {2, 2, "Ten eleven.", 2},
+             {2, 3, "", 2}, {2, 4, "Twelve thirteen.", 2}, {2, 5, "Fourteen.", 2}, {2, 6, "Fifteen.", 2}, {2, 7, "Sixteen.", 2}})
+      expected.push_back(line);
+    check_placed("speech split keeps an authored blank line inside a page",
+                 speech("One two three four five six seven.\nEight nine.\nTen eleven.\n\nTwelve thirteen.\nFourteen.\nFifteen.\nSixteen."),
+                 expected);
+    // Nor a blank speech part. The only split point is after "six.", which
+    // would start the next page with the empty parenthetical, so the
+    // seven-slot speech moves whole.
+    const std::string long_line = "Seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty.";
+    expected.resize(49);
+    for (const Placed line : std::initializer_list<Placed>{
+             {2, 1, "MARA", 1}, {2, 2, "One two three.", 2}, {2, 3, "Four five six.", 2}, {2, 4, "", 3},
+             {2, 5, "Seven eight nine ten eleven twelve", 4}, {2, 6, "thirteen fourteen fifteen sixteen", 4},
+             {2, 7, "seventeen eighteen nineteen twenty.", 4}})
+      expected.push_back(line);
+    check_placed("speech split keeps a blank part inside a page",
+                 {{ElementType::action, std::string(61 * 49, 'x')}, {ElementType::cue, "MARA"},
+                  {ElementType::dialogue, "One two three.\nFour five six."}, {ElementType::parenthetical, ""},
+                  {ElementType::dialogue, long_line}},
+                 expected);
+  }
+  {
+    // A heading at slot 1 and 25 fillers at 3-51 leave four slots, 53-56,
+    // for a five-line action paragraph; B5 splits after the third line.
+    std::vector<apollo::Element> elements{{ElementType::heading, "INT. ROOM - NIGHT"}};
+    std::vector<Placed> expected{{1, 1, "INT. ROOM - NIGHT", 0}};
+    for (int i = 0; i < 25; ++i) {
+      elements.push_back({ElementType::action, "Filler."});
+      expected.push_back({1, 3 + 2 * i, "Filler.", static_cast<std::size_t>(i + 1)});
+    }
+    auto split = elements;
+    split.push_back({ElementType::action, "Line one is here.\nLine two is here.\nLine three. \nLine four.\nLine five."});
+    auto split_expected = expected;
+    for (const Placed line : std::initializer_list<Placed>{{1, 53, "Line one is here.", 26}, {1, 54, "Line two is here.", 26},
+                                                           {1, 55, "Line three.", 26}, {2, 1, "Line four.", 26}, {2, 2, "Line five.", 26}})
+      split_expected.push_back(line);
+    check_placed("action splits at a deliberate break", split, split_expected);
+    split.back().text = "Line one is here.\nLine two is here.\nLine three.\n\nLine four.\nLine five.";
+    split_expected.resize(26);
+    for (const Placed line : std::initializer_list<Placed>{{1, 53, "Line one is here.", 26}, {1, 54, "Line two is here.", 26},
+                                                           {2, 1, "Line three.", 26}, {2, 2, "", 26}, {2, 3, "Line four.", 26},
+                                                           {2, 4, "Line five.", 26}})
+      split_expected.push_back(line);
+    check_placed("action split keeps an authored blank line inside a page", split, split_expected);
+  }
   check_placed("right cue without left speech", {{ElementType::action, "A lamp."}, {ElementType::cue, "THEO", true},
                                                  {ElementType::dialogue, "Hi."}},
                {{1, 1, "A lamp.", 0}, {1, 3, "THEO", 1}, {1, 4, "Hi.", 2}});

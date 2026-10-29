@@ -91,6 +91,24 @@ def break_before_space(editor, output):
     print("PASS deliberate break before spaces: editor/PDF agreement and independent expectation")
 
 
+def blank_dialogue_line(editor, output):
+    """Line-edge spaces and a blank authored line: fixtures/editing/blank-dialogue-line."""
+    edited_fixture(editor, output, "blank-dialogue-line", {
+        "I left the lights on for you. I always leave the lights on.":
+            "I left the lights on for you. \n   \nI always leave the lights on, even when nobody comes.  "},
+        ROOT / "fixtures/editing/blank-dialogue-line.expected")
+    print("PASS blank dialogue line and line-edge spaces: editor/PDF agreement and independent expectation")
+
+
+def break_at_page_split(editor, output):
+    """A deliberate break where a speech splits: fixtures/editing/break-at-page-split."""
+    edited_fixture(editor, output, "break-at-page-split", {
+        "We should have left before the tide turned. Now the road is under water and the radio is dead. Nobody is coming tonight.":
+            "We should have left before the tide turned. \n  Now the road is under water and the radio is dead.\nNobody is coming tonight."},
+        ROOT / "fixtures/editing/break-at-page-split.expected", "02-dialogue-split")
+    print("PASS deliberate break at a speech split: editor/PDF agreement and independent expectation")
+
+
 def authored_lowercase(editor, output):
     """Headings and cues authored in lowercase print exactly as fixture 01."""
     edited_fixture(editor, output, "authored-lowercase", {
@@ -128,6 +146,8 @@ def main():
     command(args.editor, title, "--snapshot", no_title, "--no-title-page")
     check_pdf(no_title / "editor.pdf", fixture_pages(title.with_suffix(".expected"))[1:])
     break_before_space(args.editor, args.output)
+    blank_dialogue_line(args.editor, args.output)
+    break_at_page_split(args.editor, args.output)
     authored_lowercase(args.editor, args.output)
     sources = []
     for scenes in (175, 444):

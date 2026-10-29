@@ -117,6 +117,48 @@ def presented(screenplay):
     return result
 
 
+SPACING_NOTE = ("Written without the spaces at the start or end of %s, which Apollo does not show or print. "
+                "The project keeps them as typed.")
+
+
+def presented_spacing(screenplay):
+    """No spaces at an authored line's edges (docs/spacing.md); for unstyled fixtures."""
+    result = json.loads(json.dumps(screenplay))
+    for e in result["elements"]:
+        e["text"] = "\n".join(line.strip(" ") for line in e["text"].split("\n"))
+    return result
+
+
+def spacing_subset(editor, root):
+    """Spacing whose meaning is kept: import, type, export as presented."""
+    fixture = FIXTURES / "import/spacing-subset.fountain"
+    original, project, out = root / "spacing-subset.fountain", root / "spaced", root / "spaced.fountain"
+    shutil.copyfile(fixture, original)
+    run(editor, project, "--edit-fountain", original)
+    assert type_at_end(editor, project, root / "typing-spacing.log", len(TYPED), "f8") == len("The lamp turns.")
+    exported = run(editor, project, "--export-fountain", out)
+    assert (SPACING_NOTE % "2 lines") in exported.stdout, exported.stdout
+    expected = (FIXTURES / "export/spacing-subset.fountain").read_text()
+    assert out.read_text() == expected.replace("The lamp turns.\n", "The lamp turns." + TYPED.rstrip() + "\n"), out.read_text()
+    # The writing keeps every authored space; the imported original is untouched.
+    model = json.loads((FIXTURES / "import/spacing-subset.expected.json").read_text())
+    typed = json.loads(json.dumps(model))
+    typed["elements"][-1]["text"] = "The lamp turns." + TYPED
+    writing = json.loads((project / "screenplay.json").read_text())
+    assert [(e["type"], e["text"]) for e in writing["elements"]] == [(e["type"], e["text"]) for e in typed["elements"]], writing
+    assert (project / "imports/original.fountain").read_bytes() == fixture.read_bytes()
+    assert original.read_bytes() == fixture.read_bytes()
+    # Action indentation, which Fountain prints and Apollo does not show, stays review-only.
+    indented = root / "indented.fountain"
+    indented.write_text("Rain.\n\n    Indented.\n")
+    refused = run(editor, root / "indented", "--edit-fountain", indented, expect=1)
+    assert "action-whitespace" in refused.stderr, refused.stderr
+    assert not (root / "indented").exists()
+    # aw-parser reads the original itself as Apollo presents it, too.
+    return [(out, presented_spacing(typed), True), (FIXTURES / "export/spacing-subset.fountain", presented_spacing(model), True),
+            (fixture, presented_spacing(model), True)]
+
+
 def case_subset(editor, root):
     """Lowercase headings and cue extensions: import, type, export in capitals."""
     fixture = FIXTURES / "import/case-subset.fountain"
@@ -165,20 +207,29 @@ def main():
     expected = (FIXTURES / "export/writer-subset.fountain").read_text()
     run(editor, project, "--edit-fountain", original)
 
-    # Typing that ends in a space is saved but blocks export; the existing
-    # file stays as it was.
+    # Typing that ends in a space is saved as typed. A new process exports it
+    # without the space, which Apollo does not show, and says so.
     assert type_at_end(editor, project, root / "typing-1.log", len(TYPED)) == len("The train leaves.")
+    assert json.loads((project / "screenplay.json").read_text())["elements"][-1]["text"] == "The train leaves." + TYPED
+    spaced = run(editor, project, "--export-fountain", out)
+    assert (SPACING_NOTE % "1 line") in spaced.stdout, spaced.stdout
+    assert out.read_text() == expected.replace("The train leaves.\n", "The train leaves." + TYPED.rstrip() + "\n"), out.read_text()
+
+    # A refused snapshot leaves an existing file as it was.
+    dashed = root / "dashed.fountain"
+    dashed.write_text("Wait\u2014now.\n")
+    run(editor, root / "dashed", "--create", dashed)
     out.write_bytes(b"Existing export")
-    blocked = run(editor, project, "--export-fountain", out, expect=3)
-    assert ("Fountain export blocked: Element 21, Action “The train leaves.the lamp turns and ”: "
-            "has an empty line or leading, trailing or repeated spaces.") in blocked.stderr, blocked.stderr
+    blocked = run(editor, root / "dashed", "--export-fountain", out, expect=3)
+    assert "Fountain export blocked: Element 1, Action “Wait—now.”: contains “—” (U+2014)" in blocked.stderr, blocked.stderr
     assert out.read_bytes() == b"Existing export"
 
-    # One more typed letter makes the reopened snapshot eligible.
+    # One more typed letter: nothing is left out.
     assert type_at_end(editor, project, root / "typing-2.log", 1) == len("The train leaves." + TYPED)
     final = "The train leaves." + TYPED + "t"
     exported = run(editor, project, "--export-fountain", out)
     assert "exported to" in exported.stdout and "Not included in clean Fountain: 1 imported note" in exported.stdout, exported.stdout
+    assert "Written without the spaces" not in exported.stdout, exported.stdout
     assert out.read_text() == expected.replace("The train leaves.\n", final + "\n"), out.read_text()
     body = root / "body.fountain"
     run(editor, project, "--export-fountain", body, "--no-title-page")
@@ -196,6 +247,7 @@ def main():
     assert "review-only" in refused.stderr and not (root / "review.fountain").exists()
 
     case_cases = case_subset(editor, root)
+    spacing_cases = spacing_subset(editor, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -208,7 +260,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

@@ -5,6 +5,14 @@ lowercase and forced lowercase headings and lowercase cue extensions, as the
 official syntax and Dialogue sample allow. `case-subset.expected.json` is its
 hand-written authored model: types, dual pairing and text in the case written.
 
+`spacing-subset.fountain` (2026-10-28, task 3b) is original test writing with a
+trailing space and an indented line in dialogue, a line of two spaces inside the
+speech, and two spaces between words in action and dialogue, as the official
+Dialogue and Indenting samples allow. `spacing-subset.expected.json` is its
+hand-written authored model under the [spacing contract](../../docs/spacing.md):
+dialogue indentation is not retained, the trailing space and the line of spaces
+are.
+
 `independent.fountain` is original Apollo test material (2026-10-28), written
 from the owner requirements and the official syntax, independently of the
 implementation. It deliberately combines valid syntax and malformed material.

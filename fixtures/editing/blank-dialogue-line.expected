@@ -1,0 +1,27 @@
+# Expected layout of fixture 01 after one edit to MARA's dialogue, which becomes
+# "I left the lights on for you. \n   \nI always leave the lights on, even when nobody comes.  "
+# (a space before a deliberate break, a line of only spaces, and spaces at the
+# end). Hand-derived from the profile rules (docs/export-profile.md,
+# docs/spacing.md) and 01-element-geometry.expected: spaces at an authored
+# line's edges are not shown and do not count toward width, and a blank
+# authored line is one blank slot in the speech (slot 10, omitted below). The
+# third line wraps at 35 as in break-before-space.expected. The speech gains
+# two lines, so every later element moves down two slots.
+# Same format as fixtures/layout/*.expected.
+page 1 number=none
+1	heading	INT. LIGHTHOUSE KITCHEN - NIGHT
+3	action	Mara crosses the room, unlatches the tall window, and leans
+4	action	out into the cold.
+6	cue	MARA
+7	paren	(quietly, without
+8	paren+	turning around)
+9	dialogue	I left the lights on for you.
+11	dialogue	I always leave the lights on, even
+12	dialogue	when nobody comes.
+14	cue	THEO (V.O.)
+15	dialogue	I really never wanted this to be	italic=really bold=this
+16	dialogue	our ending.	underline=our
+18	lyric	Row the boat and sing along	italic=all
+20	transition	CUT TO:
+23	heading	EXT. LIGHTHOUSE GALLERY - CONTINUOUS
+25	centered	THE END

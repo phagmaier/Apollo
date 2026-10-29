@@ -101,11 +101,14 @@ private slots:
     QCOMPARE(fountain_edit_blockers(captured.assets), QStringList{});
     QVERIFY(!fountain_edit_blockers(captured.assets, "writer-subset-1").isEmpty());
     const auto assets = editable_fountain_assets(captured.assets);
-    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-2"));
+    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-3"));
     QCOMPARE(*assets.original_fountain, bytes(root + "case-subset.fountain"));
     QCOMPARE(initial_fountain_writing(assets), expected);
     auto older = assets;
     auto json = QJsonDocument::fromJson(*older.imported_material).object();
+    // A copy made under writer-subset-2 reopens by its rules: this has no spacing it refused.
+    json.insert("contract", "writer-subset-2"); older.imported_material = QJsonDocument(json).toJson();
+    validate_fountain_working(older);
     json.insert("contract", "writer-subset-1"); older.imported_material = QJsonDocument(json).toJson();
     try { validate_fountain_working(older); QFAIL("a writer-subset-1 claim admitted lowercase headings"); }
     catch (const SourceError& error) { QVERIFY2(QString(error.what()).contains("f1: authored case requires review."), error.what()); }
@@ -114,6 +117,29 @@ private slots:
     json = QJsonDocument::fromJson(*legacy.imported_material).object();
     json.insert("contract", "writer-subset-1"); legacy.imported_material = QJsonDocument(json).toJson();
     validate_fountain_working(legacy);
+  }
+  // writer-subset-3 (docs/spacing.md): spaces at dialogue line edges, a line
+  // of spaces inside dialogue and repeated spaces in action and dialogue keep
+  // their authored text and the original bytes. Dialogue indentation is not
+  // retained, as Fountain ignores it. writer-subset-2 refused this spacing.
+  void writer_subset_admits_spacing_with_a_kept_meaning() {
+    const auto root = QStringLiteral(APOLLO_FIXTURE_ROOT "/import/");
+    const auto captured = read_fountain_intake(root + "spacing-subset.fountain");
+    const auto expected = parse_screenplay(bytes(root + "spacing-subset.expected.json"));
+    QCOMPARE(canonical(convert_fountain(captured.assets).screenplay()), expected);
+    QCOMPARE(fountain_edit_blockers(captured.assets), QStringList{});
+    QCOMPARE(fountain_edit_blockers(captured.assets, "writer-subset-2"),
+             (QStringList{"f2: empty or significant spacing requires review.", "f4: empty or significant spacing requires review.",
+                          "f7: empty or significant spacing requires review."}));
+    const auto assets = editable_fountain_assets(captured.assets);
+    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-3"));
+    QCOMPARE(*assets.original_fountain, bytes(root + "spacing-subset.fountain"));
+    QCOMPARE(initial_fountain_writing(assets), expected);
+    auto older = assets;
+    auto json = QJsonDocument::fromJson(*older.imported_material).object();
+    json.insert("contract", "writer-subset-2"); older.imported_material = QJsonDocument(json).toJson();
+    try { validate_fountain_working(older); QFAIL("a writer-subset-2 claim admitted spacing"); }
+    catch (const SourceError& error) { QVERIFY2(QString(error.what()).contains("f4: empty or significant spacing requires review."), error.what()); }
   }
   void writer_subset_explains_case_it_cannot_present() {
     QTemporaryDir parent;
@@ -125,9 +151,10 @@ private slots:
   void writer_subset_rejects_unverified_material_data() {
     QTest::addColumn<QByteArray>("original");
     for (const auto& original : {QByteArray("@McKay\nWords."), QByteArray("int. caf\xc3\xa9 - day\n\nAction."), QByteArray("@JOS\xc3\xa9\nWords."),
-        QByteArray("!  Indented."), QByteArray("!Extra  spaces."), QByteArray("@MARA\n\tWords."), QByteArray("!Before.\n\n\n!After."),
+        QByteArray("!  Indented."), QByteArray("!Trailing. "), QByteArray(".INT.  ROOM"), QByteArray("@MARA  JONES\nWords."),
+        QByteArray("@MARA\n\tWords."), QByteArray("!Before.\n\n\n!After."),
         QByteArray("[[bad"), QByteArray("A\n~Lyric in speech."), QByteArray("!Unsupported \xf0\x9f\x98\x80"),
-        QByteArray("A\nFirst.\n  \nLast."), QByteArray("!Cross *one _two* three_"), QByteArray(65537, 'x'),
+        QByteArray("A\n(beat)\n  \nFirst."), QByteArray("A\nLast.\n  "), QByteArray("!Cross *one _two* three_"), QByteArray(65537, 'x'),
         QByteArray("!Visible.") + QByteArray("[[n]]").repeated(257)})
       QTest::newRow(original.left(28).toHex().constData()) << original;
   }

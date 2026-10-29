@@ -2,7 +2,7 @@
 
 2026-10-28. This is task **2.6c**, a bounded continuation of 2.6b, not complete
 Fountain compatibility or completion of writing slice 3. Contract `writer-subset-1`
-(now `writer-subset-2`, below) is an engineering choice within the requested preservation work.
+(now `writer-subset-3`, below) is an engineering choice within the requested preservation work.
 
 Admission requires a verified revision-1 interpretation with no unresolved ranges,
 a nonempty screenplay, at most 64 KiB original, at most 256 elements and 256
@@ -29,6 +29,16 @@ presented in capitals (é), and a title not in capitals remain review-only, each
 with a located reason. Copies created under `writer-subset-1` are still validated
 by its rules (headings and cues in ASCII capitals); older Apollo builds refuse
 `writer-subset-2` copies.
+
+**`writer-subset-3` (task 3b)** changes only spacing, under the
+[spacing contract](spacing.md). New copies admit spaces at the edges of dialogue
+lines, lines of spaces inside dialogue (intentional blank lines), and repeated
+spaces inside action and dialogue lines, keeping their authored text and the
+original bytes. Action indentation or trailing spaces, a blank first or last
+dialogue line, repeated spaces in other elements, tabs and extra vertical
+spacing remain review-only. Copies created under `writer-subset-1` or `-2` are
+still validated by their stricter spacing rules; builds before task 3b refuse
+`writer-subset-3` copies.
 
 **Edit in a New Copy** creates a staged project with a fresh identity. Neither a
 review project nor the external Fountain is upgraded or rewritten. Publication

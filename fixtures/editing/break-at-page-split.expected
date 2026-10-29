@@ -1,0 +1,46 @@
+# Expected layout of fixture 02 after one edit to MARA's dialogue, which becomes
+# "We should have left before the tide turned. \n  Now the road is under water and the radio is dead.\nNobody is coming tonight."
+# Hand-derived from B3/B9 (docs/export-profile.md, docs/spacing.md): a sentence
+# that ends its authored line is a split point, and the spaces at the break's
+# edges are not shown. Slots 54-56 hold two lines and (MORE), so the speech
+# splits after "turned."; the split after "dead." would need four lines. The
+# continued page starts with the next authored line, which wraps as in
+# 02-dialogue-split.expected, then "Nobody is coming tonight." on its own
+# authored line. Same format as fixtures/layout/*.expected.
+page 1 number=none
+1	heading	INT. FLOODED ROAD - NIGHT
+3	action	Filler line 01.
+5	action	Filler line 02.
+7	action	Filler line 03.
+9	action	Filler line 04.
+11	action	Filler line 05.
+13	action	Filler line 06.
+15	action	Filler line 07.
+17	action	Filler line 08.
+19	action	Filler line 09.
+21	action	Filler line 10.
+23	action	Filler line 11.
+25	action	Filler line 12.
+27	action	Filler line 13.
+29	action	Filler line 14.
+31	action	Filler line 15.
+33	action	Filler line 16.
+35	action	Filler line 17.
+37	action	Filler line 18.
+39	action	Filler line 19.
+41	action	Filler line 20.
+43	action	Filler line 21.
+45	action	Filler line 22.
+47	action	Filler line 23.
+49	action	Filler line 24.
+51	action	Filler line 25.
+53	cue	MARA (V.O.)
+54	dialogue	We should have left before the tide
+55	dialogue	turned.
+56	more	(MORE)
+page 2 number=2.
+1	cue	MARA (V.O.) (CONT’D)
+2	dialogue	Now the road is under water and the
+3	dialogue	radio is dead.
+4	dialogue	Nobody is coming tonight.
+6	action	Theo does not answer.

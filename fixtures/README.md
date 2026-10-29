@@ -184,7 +184,9 @@ it once with `tools/afterwriting-oracle.sh`, then reconfigure so ctest includes
 `fountain_export_oracle_tests`. See [export/README.md](export/README.md) and the
 [export contract](../docs/fountain-export.md). `import/case-subset.fountain` and
 `export/case-subset.fountain` are the [case contract](../docs/case-handling.md)'s
-lowercase headings and cue extensions, authored and exported in capitals.
+lowercase headings and cue extensions, authored and exported in capitals. `import/spacing-subset.fountain` and `export/spacing-subset.fountain` are the
+[spacing contract](../docs/spacing.md)'s dialogue edge spaces, blank dialogue
+line and repeated spaces, imported as authored and exported as presented.
 
 ## Edited layout — `editing/`
 
@@ -194,3 +196,8 @@ instead. `break-before-space.expected` is fixture 01 after MARA's dialogue gains
 a deliberate break followed by two spaces and a longer sentence;
 `tests/editor_pdf_tests.py` requires the editor to lay it out without a
 QTextLayout mismatch, to agree with its PDF, and the PDF to match this file.
+For the [spacing contract](../docs/spacing.md), `blank-dialogue-line.expected`
+is fixture 01 after MARA's dialogue gains a space before a break, a line of only
+spaces and trailing spaces, and `break-at-page-split.expected` is fixture 02
+after MARA's speech gains deliberate breaks, one where the speech splits. The
+same checks apply.

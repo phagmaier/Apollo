@@ -342,6 +342,85 @@ private slots:
   void lines_follow_fixture_pages() {
     QFETCH(QString, name);
     QVERIFY(open(name));
+    follows_expected(name);
+    if (QTest::currentTestFailed()) return;
+    const auto text = document_->toPlainText();
+    QVERIFY(!text.contains(QStringLiteral("(MORE)")) && !text.contains(QStringLiteral("CONT’D")));
+  }
+
+  // A real Enter at a sentence end makes it a split point (B9). Either side
+  // of the space, the speech splits there exactly as fixture 02 does: the
+  // continued page starts with "Now", never with a blank line, and the space
+  // stays in the writing. Undo restores the writing and the same pages.
+  void deliberate_break_splits_speech_at_page_end_data() {
+    QTest::addColumn<QString>("at");
+    QTest::addColumn<QString>("written");
+    QTest::addColumn<double>("caret_x");
+    QTest::newRow("after the space") << QStringLiteral("Now the road") << QStringLiteral("turned. \nNow") << 216.0;
+    QTest::newRow("before the space") << QStringLiteral(" Now the road") << QStringLiteral("turned.\n Now") << 216 - profile::advance;
+  }
+  void deliberate_break_splits_speech_at_page_end() {
+    QFETCH(QString, at);
+    QFETCH(QString, written);
+    QFETCH(double, caret_x);
+    QVERIFY(open(QStringLiteral("02-dialogue-split")));
+    const auto original = document_->toPlainText();
+    editor_->setProperty("cursorPosition", position_of(at));
+    press(Qt::Key_Return);
+    QVERIFY(QString::fromStdString(block_element(block_at(cursor())).text).contains(written));
+    QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+    follows_expected(QStringLiteral("02-dialogue-split"));
+    if (QTest::currentTestFailed()) return;
+    QVERIFY(near(caret_baseline(cursor()), baseline(2, 2)) && near(caret_rect(cursor()).x(), caret_x));
+    QCOMPARE(ink_mismatch(QStringLiteral("break-at-page-split-") + QTest::currentDataTag()), std::make_pair(0, 0));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_->toPlainText(), original);
+    follows_expected(QStringLiteral("02-dialogue-split"));
+  }
+
+  // Enter at the start of a line in dialogue adds an intentional blank line
+  // to the same speech: one blank slot at the dialogue column, no extra
+  // spacing, later elements one slot lower than after a single break
+  // (fixture 01: THEO 12 -> 13, CUT TO: 18 -> 19). Typing fills it; undo and
+  // redo step through the same writing.
+  void enter_twice_makes_blank_dialogue_line() {
+    QVERIFY(open(QStringLiteral("01-element-geometry")));
+    const int at = position_of(QStringLiteral("I always leave"));
+    const auto block = block_at(at);
+    editor_->setProperty("cursorPosition", at);
+    press(Qt::Key_Return);
+    press(Qt::Key_Return);
+    QCOMPARE(block_element(block).text, std::string("I left the lights on for you. \n\nI always leave the lights on."));
+    QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+    QVERIFY(near(caret_baseline(cursor()), baseline(1, 11)) && near(caret_rect(cursor()).x(), 216));
+    QVERIFY(near(caret_baseline(cursor() - 1), baseline(1, 10)) && near(caret_rect(cursor() - 1).x(), 216));
+    QVERIFY(near(caret_baseline(position_of(QStringLiteral("THEO"))), baseline(1, 13)));
+    QVERIFY(near(caret_baseline(position_of(QStringLiteral("CUT TO:"))), baseline(1, 19)));
+    QVERIFY(near(caret_baseline(position_of(QStringLiteral("THE END"))), baseline(1, 24)));
+    QCOMPARE(ink_mismatch(QStringLiteral("blank-dialogue-line")), std::make_pair(0, 0));
+    press(Qt::Key_Left);
+    type(QStringLiteral("Wait."));
+    QCOMPARE(block_element(block).text, std::string("I left the lights on for you. \nWait.\nI always leave the lights on."));
+    const auto lines = laid_out_lines(*document_);
+    QVERIFY(std::any_of(lines.begin(), lines.end(), [](const LaidOut& l) {
+      return l.text == QStringLiteral("Wait.") && near(l.x, 216) && near(l.baseline, baseline(1, 10));
+    }));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(block_element(block).text, std::string("I left the lights on for you. \n\nI always leave the lights on."));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(block_element(block).text, std::string("I left the lights on for you. \nI always leave the lights on."));
+    QVERIFY(near(caret_baseline(position_of(QStringLiteral("THEO"))), baseline(1, 12)));
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(block_element(block).text, std::string("I left the lights on for you. \n\nI always leave the lights on."));
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(block_element(block).text, std::string("I left the lights on for you. \nWait.\nI always leave the lights on."));
+    QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+  }
+
+private:
+  // The open document's lines, decorations included, at the hand-derived
+  // pages, slots and profile columns of a fixture expectation, and no others.
+  void follows_expected(const QString& name) {
     auto shown = laid_out_lines(*document_);
     auto decorations = layout()->decoration_list();
     std::vector<bool> used_line(shown.size()), used_decoration(decorations.size());
@@ -368,9 +447,9 @@ private slots:
     }
     for (std::size_t i = 0; i < shown.size(); ++i) QVERIFY2(used_line[i] || shown[i].text.isEmpty(), qPrintable(shown[i].text));
     QVERIFY(std::all_of(used_decoration.begin(), used_decoration.end(), [](bool used) { return used; }));
-    const auto text = document_->toPlainText();
-    QVERIFY(!text.contains(QStringLiteral("(MORE)")) && !text.contains(QStringLiteral("CONT’D")));
   }
+
+private slots:
 
   // Glyphs inside each editor line use the engine's fixed advance, so
   // editor and PDF columns agree within a line, not just at its start.
