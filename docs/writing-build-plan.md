@@ -34,8 +34,9 @@ The owner settled the normalization, manual speech resolution and unchanged
 copy leaves both speeches for the owner; clean single-project memory and the
 required release/sanitizer/native checks pass. See
 [readiness evidence](fountain-compatibility.md#owner-reference-writing-readiness-2026-10-29).
-Crash loss during copying remains unverified. The other slice 2
-flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
+Crash loss during copying remains unverified. The bounded case/spacing and
+emphasis steps are recorded below; remaining slice 2 flows and the rest of
+slices 3–6 are still pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
@@ -1116,3 +1117,124 @@ must still resolve both speeches before Fountain export; saving already works.
 Arbitrary spacing, tabs/NBSP, the second reference's title gate and imported PDF
 remain blocked. Extended writing/comfort, full compatibility and the remaining
 writing-milestone features stay open.
+
+### Task 3c — emphasis authoring
+
+2026-10-29. **Status: done for bounded task 3c; required release, sanitizer,
+engine and full native checks pass, including the final dialogue fixes.**
+This does not complete slice 3, task 2.6 or the milestone, and is not owner
+comfort/appearance acceptance.
+
+#### Interaction contract
+
+The owner explicitly chose **require a selection**. In the writer,
+**Ctrl+B / Ctrl+I / Ctrl+U** and **Format → Bold / Italic / Underline** invoke
+the same `EditorCommands` action. A fully covered selection loses only that
+style; a mixed selection gains it throughout. One undo step covers all selected
+elements, without changing words, types, identities or the selection. Authored
+line breaks and element separators receive no style. Bare-caret shortcuts and
+separators-only selections are no-ops; the menu disables actions without a
+selection. There is no next-typing mode.
+
+The [source contract](source-format.md#emphasis-authoring-slice-3-task-3c) defines
+the preservation and boundary details. Existing emphasis remains editable in
+headings/cues without changing their capital presentation. Typing within a
+styled run, split/join, type changes, internal clipboard, undo/redo,
+autosave/reopen and editable imported copies preserve it. Generated `(MORE)`,
+repeated page-continuation cues and generated `(CONT’D)` stay plain.
+The latter fixes actual pre-existing style leakage from repeated cues and
+replaced typed suffixes; source emphasis is retained, not discarded.
+
+`ScreenplayEditor` consumes the three shortcuts before Qt and is explicitly
+plain-text. A Qt 6.12 offscreen baseline found **no default character-format
+mutation** from these shortcuts on the previous plain-text surface; the new
+route nevertheless prevents a Qt rich-text path from bypassing the command.
+
+#### Independent evidence and review
+
+The original public `emphasis-authoring` fixtures provide hand-written initial
+and authored documents, exact canonical Fountain and an eight-row PDF layout.
+Real QML controls apply emphasis in both ordinary projects and new editable
+import copies; the independent aw-parser oracle reads the actual authored
+export and a fresh-process re-export. Editor/PDF checks export the actual
+command-authored ordinary project, check its independent geometry, exact
+bold/italic text and rasterized underline, including plain generated CONT'D.
+
+Before implementation, the three partial-toggle keyboard rows and multi-element
+case fail. New engine regressions compiled against the original engine also
+fail on a styled repeated cue and styled replaced suffixes. Focused corrected
+checks pass. Further cases cover mixed/overlapping ranges, UTF-8/UTF-16 offsets,
+separator-only no-ops, reversed selection, caret-menu dismissal, typing,
+split/join, type changes and styled versus plain clipboard paste.
+
+A final preservation review also reproduced two dialogue-boundary defects:
+Enter inside emphasis styled the break itself, making the otherwise supported
+speech unexportable, and toggling off a legacy span crossing a break left an
+invisible styled separator. The fix inserts a plain break, derives continued-line
+typing's style from the following text (also after reopen), and clears legacy
+separator emphasis on toggle-off. Both regressions fail before the fix and
+pass after it; hand-written Fountain bytes protect the Enter/typing result.
+No import/export eligibility rule or version changed.
+
+Completion review found and corrected two verification issues: Poppler's merged
+mixed-face XML carries the first run's font ID, so exact style checks use its
+nested style tags; the native global-key runner now selects the Hyprland instance
+for the prepared socket and checks its own child's compositor focus before
+every `wtype` batch. No private desktop screenshot or clipboard capture is used.
+
+Final verification:
+
+| Check | Observed result |
+| --- | --- |
+| `mise run check` | **23/23**, including actual authored Fountain export and independent aw-parser; final run is stage 1 of the full native runner |
+| `mise run check-debug` | **23/23**, ASan/UBSan, no sanitizer report |
+| `mise run check-engine` | **2/2**, without Qt/PDF |
+| Full `tools/check-wayland.sh` | All six stages pass: native editor **80/80**, export lifecycle **13/13**, project flows **38/38**, compose/dead-key input, first paint, PDF snapshots, typing and export while typing |
+| New real-key native smoke | `wtype` selects text and sends Ctrl+B/I/U; exact styled JSON, toggle-off, Undo/Redo, bare-caret plain typing, autosave and inverse-style checks after fresh-process reopen pass |
+| Independent layout | Existing hand-derived fixtures unchanged; editor/PDF agreement on 203-/507-page workloads at 0/50 edits and local Academy transcription passes; all 11 Academy body pages pass their independent anchored comparison with the four existing deviations |
+| Actual surface | Format menu and authored writer captures inspected; no owner visual acceptance inferred |
+
+The full runner also refreshed the existing native Wayland/threaded-OpenGL
+instrumentation, **200 synthetic keys per workload per mode**:
+
+| Observed sample | Primary (203 displayed pages) | Stress (507 displayed pages) |
+| --- | ---: | ---: |
+| Typing key-to-frame p95 / max | 17.7 / 18.7 ms | 42.8 / 45.5 ms |
+| Export-while-typing key-to-frame p95 / max | 22.9 / 25.6 ms | 52.4 / 59.1 ms |
+| Warm open to first frame, typing run | 289.7 ms | 530.8 ms |
+| Actual PDF requests / maximum completion time | 50 / 348.9 ms | 34 / 672.5 ms |
+| Sampled editor-plus-helper PSS maximum, export mode | 117.5 MiB | 174.7 MiB |
+
+Neither mode observed a >100 ms stall or missing frame. The primary samples
+meet the exercised timing/memory targets; stress results are recorded separately,
+not held to the primary's 33 ms p95. These are the existing unsaved workload
+`--measure` / `--measure-export` paths, not performance measurements with
+autosave or later writing assistance. Real-key autosave/reopen was verified
+separately on the small isolated project. Memory is a requested-20-ms sampled
+maximum, not an unsampled peak; no cold-start or extended-session claim follows.
+
+Final logs: `build/task-3c/{debug-final,engine-final,native-final,pdf-focused,academy}.log`.
+Native artifacts/results are in
+`build/wayland-check-20261029-024031-xku0mi/`; its `native-emphasis/` output
+is mode 0700, isolated from the owner's application state and retains the
+per-step exact autosave evidence. `build/task-3c/release.log` is the earlier
+failed PDF-oracle attempt, not final evidence. Independent reviews have no
+remaining findings after the input-focus guard correction. Direct completion
+review covered the later dialogue fixes and their two failing-before/passing-after
+regressions; full release, sanitizer and native runs were repeated afterward.
+Temporary original-engine probe source/binary were removed. No dependency or
+font pins changed.
+
+#### Limits and retained gates
+
+`writer-subset-5`, `fountain-canonical-4`, source v1 and all admission/layout
+limits remain unchanged. Arbitrary selections can create styles outside
+Fountain's existing spellable subset; writing still saves and clean export
+reports the located reason. Imported PDF, arbitrary spacing, tabs/NBSP,
+forced mixed-case names and the other reference's title gate remain blocked.
+The owner's private projects/reference material are untouched.
+
+Dual authoring, title form, manual page-break/act controls, suggestions,
+spelling, find/replace and scene navigation/reordering remain separate work.
+Native virtual input is not physical-input latency or owner comfort/appearance
+acceptance. No new crash-loss, copying-loss or power-loss guarantee follows.

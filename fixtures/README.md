@@ -201,3 +201,11 @@ is fixture 01 after MARA's dialogue gains a space before a break, a line of only
 spaces and trailing spaces, and `break-at-page-split.expected` is fixture 02
 after MARA's speech gains deliberate breaks, one where the speech splits. The
 same checks apply.
+
+`emphasis-authoring.expected` (task 3c) is an original one-page, eight-row
+expectation. The real QML writer applies bold/italic/underline to initially
+plain writing, autosaves and reopens it; the agreement check exports that actual
+authored project. It checks exact text/slots/columns, PDF faces and underline
+ink against hand-worked expectations, including a plain generated CONT'D.
+The matching authored model and Fountain spelling are in `import/` and
+`export/`. No existing layout fixture or profile limit changes.

@@ -7,6 +7,7 @@
 #include "source/recovery.h"
 #include "source/fountain_conversion.h"
 #include "source/fountain_working.h"
+#include "source/fountain_export.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -104,6 +105,115 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void emphasis_authoring_survives_save_reopen_and_export() {
+    const auto fixture = QStringLiteral(APOLLO_IMPORT_FIXTURE_DIR "/emphasis-authoring");
+    const auto original = bytes(fixture + ".fountain");
+    const auto initial = parse_screenplay(bytes(fixture + ".expected.json"));
+    const auto authored = parse_screenplay(bytes(fixture + ".authored.expected.json"));
+    const auto exported = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/emphasis-authoring.fountain");
+    QVERIFY(!original.isEmpty() && !exported.isEmpty());
+    const auto requested_output = qEnvironmentVariable("APOLLO_EMPHASIS_OUTPUT");
+    const auto output_root = requested_output.isEmpty() ? path("emphasis-output") : requested_output;
+    QVERIFY(QDir().mkpath(output_root));
+    auto writing = [](const QTextDocument* document) { return canonical(Screenplay{0, document_elements(*document)}); };
+    auto saved = [](const QString& directory) {
+      auto screenplay = open_project(directory).screenplay;
+      screenplay.revision = 0;
+      return screenplay;
+    };
+    // The same real authoring actions protect ordinary writing and the imported
+    // editable-copy path, without manufacturing styled project JSON.
+    for (const bool imported : {false, true}) {
+      const auto state = path("emphasis-state");
+      const auto input = path("emphasis-input") + ".fountain";
+      const auto output = imported ? path("emphasis-imported") + ".fountain" : output_root + "/authored.fountain";
+      replace_file(input, original);
+      QString working = imported ? QString() : create_project(output_root + "/project", initial).directory;
+      {
+        Window window(font_, state, working, {}, imported ? input : QString());
+        if (imported) {
+          QTRY_VERIFY(window.flow.intake_preview());
+          QTRY_VERIFY(!window.flow.busy());
+          QVERIFY(window.flow.intake_edit_supported());
+          window.item("intakeProjectName")->setProperty("text", "Emphasis copy " + QString::number(count_));
+          window.item("intakeProjectParent")->setProperty("text", root_.path());
+          QVERIFY(window.click("editIntake"));
+        }
+        QTRY_VERIFY(window.flow.document());
+        QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+        working = window.flow.autosaver()->location();
+        QCOMPARE(writing(window.flow.document()), initial);
+        const auto unchanged_text = window.flow.document()->toPlainText();
+        auto expected = initial;
+        for (int step = 0; step < 3; ++step) {
+          const auto before = expected;
+          const auto block = window.flow.document()->findBlockByNumber(step == 2 ? 3 : 1);
+          const int start = block.position() + (step == 0 ? 0 : step == 1 ? 5 : 9);
+          const int end = start + (step == 0 ? 4 : step == 1 ? 5 : 3);
+          QVERIFY(QMetaObject::invokeMethod(window.flow.editor(), "select", Q_ARG(int, start), Q_ARG(int, end)));
+          if (step < 2) {
+            QTest::keyClick(&window.view, step == 0 ? Qt::Key_B : Qt::Key_I, Qt::ControlModifier);
+          } else {
+            QVERIFY(window.click("emphasisButton"));
+            QTRY_VERIFY(window.popup_open("emphasisMenu"));
+            QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/emphasis-menu.png")));
+            QTRY_VERIFY(window.item("emphasisUnderline"));
+            QVERIFY(window.click("emphasisUnderline"));
+          }
+          // Code-point offsets are independently specified by the fixtures;
+          // the real document stores Café's bold range as five UTF-8 bytes.
+          expected.elements[step == 2 ? 3 : 1].styles =
+              authored.elements[step == 2 ? 3 : 1].styles;
+          if (step == 0) expected.elements[1].styles.resize(1);
+          QCOMPARE(writing(window.flow.document()), expected);
+          QCOMPARE(window.flow.document()->toPlainText(), unchanged_text);
+          QCOMPARE(window.flow.editor()->property("selectionStart").toInt(), start);
+          QCOMPARE(window.flow.editor()->property("selectionEnd").toInt(), end);
+          QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+          QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+          QCOMPARE(writing(window.flow.document()), before);
+          QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+          QCOMPARE(writing(window.flow.document()), expected);
+        }
+        QCOMPARE(writing(window.flow.document()), authored);
+        window.flow.editor()->setProperty("cursorPosition", 0);
+        QTest::qWait(30);
+        QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/emphasis-authored.png")));
+        QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+        QCOMPARE(saved(working), authored);
+      }
+      {
+        Window window(font_, state, working);
+        QTRY_VERIFY(window.flow.document());
+        QCOMPARE(writing(window.flow.document()), authored);
+        auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+        QVERIFY(job);
+        QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+        QTRY_VERIFY(window.popup_open("exportPanel"));
+        QVERIFY(window.item("exportEligibility")->property("text").toString().startsWith("Ready."));
+        window.item("fountainDestination")->setProperty("text", output);
+        QVERIFY(window.click("exportConfirm"));
+        QTRY_VERIFY(!job->busy());
+        QCOMPARE(bytes(output), exported);
+        if (imported) {
+          const auto pdf = path("emphasis-blocked") + ".pdf";
+          replace_file(pdf, "Existing PDF");
+          auto* pdf_job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+          QVERIFY(pdf_job);
+          QVERIFY(!pdf_job->request(pdf));
+          QCOMPARE(bytes(pdf), QByteArray("Existing PDF"));
+          QVERIFY(pdf_job->status().contains("remain blocked"));
+          QVERIFY(window.click("importedMaterial"));
+          QTRY_VERIFY(window.item("intakeSource"));
+          QCOMPARE(window.item("intakeSource")->property("text").toString().toUtf8(), original);
+          QVERIFY(window.item("intakeSource")->property("readOnly").toBool());
+          QCOMPARE(bytes(working + "/imports/original.fountain"), original);
+        }
+      }
+      QCOMPARE(saved(working), authored);
+      QCOMPARE(bytes(input), original);
+    }
+  }
   void scene_spacing_choice_and_empty_speech_resolution_survive_reopen_and_export() {
     const auto input = path("scene-spacing") + ".fountain";
     const auto original = bytes(APOLLO_IMPORT_FIXTURE_DIR "/scene-spacing.fountain");

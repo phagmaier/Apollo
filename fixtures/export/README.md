@@ -14,6 +14,7 @@ serializer produced any output; none is captured from Apollo.
 | `spacing-subset.fountain` | [`../import/spacing-subset.expected.json`](../import/spacing-subset.expected.json), written as the [spacing contract](../../docs/spacing.md) presents it: no space at a line edge, the blank dialogue line as two spaces, repeated spaces in action and dialogue as authored |
 | `punctuation-subset.fountain` | [`../import/punctuation-subset.expected.json`](../import/punctuation-subset.expected.json), preserving the six admitted Unicode punctuation marks and code-point emphasis after a curly apostrophe, with an authored break and dual pairing |
 | `scene-spacing.fountain` | [`../import/scene-spacing.expected.json`](../import/scene-spacing.expected.json) after an explicit normal-scene-spacing choice and type-only corrections of the two cue/parenthetical-only speeches to action; text, styles and IDs remain authored, but neither spacing nor speech meaning is claimed unchanged |
+| `emphasis-authoring.fountain` | [`../import/emphasis-authoring.authored.expected.json`](../import/emphasis-authoring.authored.expected.json), with keyboard/menu-authored bold Café, italic bells and underlined red; words, authored breaks and identities unchanged |
 
 The original imported Fountain spells the same meaning differently (`!` before
 plain action, notes, stash, sections, synopses, scene number and an unknown title

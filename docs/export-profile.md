@@ -139,6 +139,12 @@ as follows. These are spike rules for owner review, not confirmed behavior:
 
 **Generated `(CONT’D)` after interruption (G1):** when the same character speaks again in the same scene, and only non-speech elements came between, the new cue gets `(CONT’D)` after any extension. The guide calls this "the standard" and notes that many writers drop it. It is on by default (confirmation 2). Generated text is never document text. Fountain export omits it. An imported literal `(CONT'D)` that G1 would generate anyway becomes the generated form, so it is never doubled. The exact import rule belongs to the Fountain mapping work.
 
+Task 3c's emphasis boundary: authored cue text keeps its styles, but generated
+`(MORE)`, the entire repeated page-continuation cue, and generated `(CONT’D)`
+suffixes are plain in editor and PDF. A typed suffix replaced by G1 remains
+styled in the saved source without transferring that style to generated text.
+This changes no wrapping, geometry, continuation wording or fixture expectation.
+
 ### Fit against the Academy pages
 
 Applied to the sample's 10 page breaks, rules B1–B4 reproduce 8. Two are Final Draft behaviors Apollo does not imitate:

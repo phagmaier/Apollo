@@ -264,6 +264,24 @@ int main() {
       {"(MORE)", none, 0, 0}, {"MARA (V.O.) (CONT’D)", none, 0, 0},
       {"Now the road is under water and the", 27, 44, 35}, {"radio is dead. Nobody is coming", 27, 80, 31},
       {"tonight.", 27, 112, 8}, {"Theo does not answer.", 28, 0, 21}});
+  {
+    auto emphasized = fixture("02-dialogue-split");
+    for (auto& element : emphasized) {
+      if (element.type != ElementType::cue && element.type != ElementType::dialogue) continue;
+      for (auto style : {apollo::Style::bold, apollo::Style::italic, apollo::Style::underline})
+        element.styles.push_back({0, element.text.size(), style});
+    }
+    const auto shown = apollo::layout(emphasized);
+    bool repeated = false, more = false, authored = false;
+    for (const auto& line : shown) {
+      if (line.source == none) {
+        repeated |= line.text == "MARA (V.O.) (CONT’D)";
+        more |= line.text == "(MORE)";
+        if (!line.styles.empty()) { std::cerr << "emphasis leaked into generated speech text\n"; ++failures; }
+      } else if (line.text == "MARA (V.O.)") authored = line.styles.size() == 3;
+    }
+    if (!repeated || !more || !authored) { std::cerr << "authored/generated emphasis boundary failed\n"; ++failures; }
+  }
   check_mapping("continued and dual cues", apollo::layout(fixture("08-dual-dialogue-and-contd")), {
       {"MARA", 1, 0, 4}, {"MARA (CONT’D)", 4, 0, 4}, {"THEO", 6, 0, 4}, {"MARA", 8, 0, 4},
       {"I am holding it. You are the", 9, 0, 28}, {"and stop arguing with me.", 7, 28, 25},
@@ -535,6 +553,13 @@ int main() {
     if (shown.size() != 5 || shown[3].text != "MARA (CONT’D)" || shown[3].source != 3 || shown[3].source_length != 4 ||
         shown[3].replaced_length != literal.size()) {
       std::cerr << "typed continuation" << literal << " should be replaced by the generated form\n"; ++failures;
+    }
+    const auto styled = apollo::layout({{ElementType::cue, "MARA"}, {ElementType::dialogue, "Hello."},
+        {ElementType::action, "She turns."},
+        {ElementType::cue, "MARA" + literal, false, {{0, 4 + literal.size(), apollo::Style::underline}}},
+        {ElementType::dialogue, "Again."}});
+    if (styled[3].styles != std::vector<apollo::StyleSpan>{{0, 4, apollo::Style::underline}}) {
+      std::cerr << "emphasis leaked from a replaced typed suffix into generated CONT'D\n"; ++failures;
     }
   }
   return failures ? 1 : 0;

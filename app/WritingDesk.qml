@@ -459,6 +459,44 @@ Rectangle {
                 Text { text: desk.screenplayLayout.pageCount + (desk.screenplayLayout.pageCount === 1 ? " page" : " pages"); color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 } }
                 Text { text: "100%"; color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 } }
             }
+            DeskButton {
+                id: emphasisButton
+                objectName: "emphasisButton"
+                anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
+                text: "Format"
+                ink: "#303843"; fill: "#e9edf0"
+                enabled: editorPage.enabled
+                Accessible.name: "Format selected text: Bold, Italic, Underline"
+                ToolTip.text: editorPage.hasSelection ? "Format selected text" : "Select text to change emphasis"
+                onClicked: emphasisMenu.open()
+                Menu {
+                    id: emphasisMenu
+                    objectName: "emphasisMenu"
+                    y: emphasisButton.height
+                    onClosed: editorPage.focusEditor()
+                    MenuItem {
+                        objectName: "emphasisBold"
+                        text: "Bold\tCtrl+B"
+                        font.bold: true
+                        enabled: editorPage.enabled && editorPage.hasSelection
+                        onTriggered: editorPage.toggleEmphasis("bold")
+                    }
+                    MenuItem {
+                        objectName: "emphasisItalic"
+                        text: "Italic\tCtrl+I"
+                        font.italic: true
+                        enabled: editorPage.enabled && editorPage.hasSelection
+                        onTriggered: editorPage.toggleEmphasis("italic")
+                    }
+                    MenuItem {
+                        objectName: "emphasisUnderline"
+                        text: "Underline\tCtrl+U"
+                        font.underline: true
+                        enabled: editorPage.enabled && editorPage.hasSelection
+                        onTriggered: editorPage.toggleEmphasis("underline")
+                    }
+                }
+            }
         }
         Rectangle {
             id: emptySpeechBar

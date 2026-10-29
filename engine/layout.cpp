@@ -177,8 +177,8 @@ bool following_speech_fits(const std::vector<Element>& elements, std::size_t cue
   return needed <= available || split_speech(parts, available - cue_lines, split);
 }
 
-void transfer_styles(const Element& element, Line& line, std::size_t start) {
-  const auto end = start + line.text.size();
+void transfer_styles(const Element& element, Line& line, std::size_t start, std::size_t length = std::string::npos) {
+  const auto end = start + std::min(line.text.size(), length);
   for (const auto& style : element.styles) {
     const auto lo = std::max(start, style.start), hi = std::min(end, style.end);
     if (lo < hi) line.styles.push_back({lo - start, hi - start, style.style});
@@ -291,7 +291,10 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
       offset = pos + line_text.size();
       lines.push_back({0, 0, ElementType::cue, line_text});
       auto& line = lines.back();
-      transfer_styles(element, line, pos);
+      // Only authored cue text carries emphasis. Repeated page-continuation
+      // cues and generated suffixes are plain, even when a replaced typed
+      // (CONT'D) suffix was emphasized in the source.
+      if (source != no_source && pos < base) transfer_styles(element, line, pos, base - pos);
       if (source == no_source || (pos >= base && !line_text.empty())) continue;
       set_source(line, source, pos);
       line.source_length = std::min(line.source_length, base - pos);

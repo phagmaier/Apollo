@@ -13,10 +13,13 @@ separately, in editor_tests and pdf_tests.
 """
 
 import argparse
+import os
 import json
 import pathlib
 import re
 import shutil
+import subprocess
+import xml.etree.ElementTree as ET
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -123,6 +126,73 @@ def authored_lowercase(editor, output):
         ROOT / "fixtures/layout/08-dual-dialogue-and-contd.expected", "08-dual-dialogue-and-contd")
     print("PASS typed lowercase (cont'd): printed once, as the generated continuation")
 
+def authored_emphasis(editor, output):
+    """Real command-authored ordinary project, not a screenplay.json mutation."""
+    authored = output / "emphasis-authored"
+    shutil.rmtree(authored, ignore_errors=True)  # Only this test's disposable output.
+    authored.mkdir(mode=0o700)
+    env = dict(os.environ, APOLLO_EMPHASIS_OUTPUT=str(authored.resolve()))
+    result = subprocess.run(
+        [str(editor.resolve().parent / "project_access_flow_tests"),
+         "emphasis_authoring_survives_save_reopen_and_export"],
+        env=env, capture_output=True, text=True)
+    (authored / "authoring.log").write_text(result.stdout + result.stderr)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    project = authored / "project"
+    expected = fixture_pages(ROOT / "fixtures/editing/emphasis-authoring.expected")
+    assert (authored / "authored.fountain").read_bytes() == (
+        ROOT / "fixtures/export/emphasis-authoring.fountain").read_bytes()
+    command(editor, project, "--check")
+    pages, rows, _ = agree(editor, project, authored / "agreement")
+    assert (pages, rows) == (1, 8), (pages, rows)
+    snapshot = authored / "snapshot"
+    command(editor, project, "--snapshot", snapshot)
+    pdf = snapshot / "editor.pdf"
+    check_pdf(pdf, expected)
+    check_styles(pdf, expected)
+    # Positive checks alone miss leaking emphasis into adjacent text or CONT'D.
+    xml = ET.fromstring(command("pdftohtml", "-xml", "-hidden", "-fontfullname",
+                               "-zoom", 1, "-stdout", pdf))
+    faces = {node.attrib["id"]: node.attrib["family"].lower()
+             for node in xml.iter("fontspec")}
+    styled = {"bold": [], "italic": []}
+
+    def collect(node, active):
+        if node.tag in ("b", "i"):
+            active = active | {"bold" if node.tag == "b" else "italic"}
+        if node.text:
+            for style in active:
+                styled[style].append(node.text)
+        for child in node:
+            collect(child, active)
+            if child.tail:
+                for style in active:
+                    styled[style].append(child.tail)
+
+    for node in xml.iter("text"):
+        # Poppler merges mixed-face runs under the first run's font id;
+        # nested b/i tags, not that id, describe the merged line's styles.
+        tagged = any(child.tag in ("b", "i") for child in node.iter())
+        collect(node, set() if tagged else {style for style in styled if style in faces[node.attrib["font"]]})
+    assert "".join(styled["bold"]) == "Café", styled
+    assert "".join(styled["italic"]) == "bells", styled
+    # Slot 6 baseline 141pt; red starts nine fixed-width glyphs after x=216pt.
+    # At 144dpi the pinned font's underline is ~2.17px below that baseline.
+    prefix = authored / "underline"
+    command("pdftoppm", "-f", 1, "-l", 1, "-r", 144, "-gray", "-singlefile", pdf, prefix)
+    data = prefix.with_suffix(".pgm").read_bytes()
+    header = re.match(rb"P5\s+(\d+)\s+(\d+)\s+255\s", data)
+    assert header, "expected binary PGM"
+    width = int(header[1])
+    pixels = data[header.end():]
+    assert any(all(pixels[y * width + x] < 100 for x in range(564, 602))
+               for y in range(283, 287)), "authored red has no underline stroke"
+    assert not any(all(pixels[y * width + x] < 100 for x in range(621, 659))
+                   for y in range(283, 287)), "underline leaks into plain lamp"
+    print("PASS actual emphasis authoring: ordinary-project reopen, canonical Fountain, "
+          "independent editor/PDF geometry, bold/italic/underline and plain generated CONT'D")
+
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -149,6 +219,7 @@ def main():
     blank_dialogue_line(args.editor, args.output)
     break_at_page_split(args.editor, args.output)
     authored_lowercase(args.editor, args.output)
+    authored_emphasis(args.editor, args.output)
     sources = []
     for scenes in (175, 444):
         source = args.output / f"workload-{scenes}.fountain"

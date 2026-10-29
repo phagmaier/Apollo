@@ -14,6 +14,12 @@ Rectangle {
     property real pageScale: 0.75
     color: "#d4d9df"
     function focusEditor() { editor.forceActiveFocus() }
+    readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
+    function toggleEmphasis(style) {
+        if (enabled)
+            commands.toggleEmphasis(editor.selectionStart, editor.selectionEnd, style)
+        editor.forceActiveFocus()
+    }
     function selectElement(position, length) {
         if (position < 0)
             return
@@ -68,6 +74,7 @@ Rectangle {
                 focus: true
                 selectByMouse: true
                 persistentSelection: true
+                textFormat: TextEdit.PlainText
                 color: "black"
                 selectionColor: "#8fb4e8"
                 selectedTextColor: "black"
@@ -89,11 +96,18 @@ Rectangle {
                         cursorPosition = position
                 }
 
+                Keys.priority: Keys.BeforeItem
+
                 Keys.onPressed: (event) => {
                     const shift = event.modifiers & Qt.ShiftModifier
                     const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
                     const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
-                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    if (event.modifiers === Qt.ControlModifier
+                            && (event.key === Qt.Key_B || event.key === Qt.Key_I || event.key === Qt.Key_U)) {
+                        // Always consume these keys, even without a selection:
+                        // Qt must never create an out-of-model typing mode.
+                        root.toggleEmphasis(event.key === Qt.Key_B ? "bold" : event.key === Qt.Key_I ? "italic" : "underline")
+                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                         // Commands keep deliberate dialogue breaks in one speech.
                         place(root.commands.enter(cursorPosition, selectionStart, selectionEnd))
                     } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {

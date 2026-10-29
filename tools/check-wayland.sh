@@ -69,7 +69,7 @@ run_wizard() {
     *) error "Unknown option: $mode"; return 2 ;;
   esac
   [[ $# -le 1 ]] || { error 'Expected at most one option; see --help.'; return 2; }
-  for command in mise uv pgrep tee timeout mktemp date wtype; do
+  for command in mise uv pgrep tee timeout mktemp date wtype hyprctl; do
     command -v "$command" >/dev/null || { error "Required command is missing: $command"; return 1; }
   done
 
@@ -104,6 +104,9 @@ run_wizard() {
     "$project_dir/build/release/editor_tests"
   run_logged native-export-lifecycle timeout 90s "$project_dir/build/release/export_job_tests"
   run_logged native-project-access timeout 90s "$project_dir/build/release/project_access_flow_tests"
+  run_logged native-emphasis timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/emphasis_native_smoke.py \
+    --editor "$editor" --output "$APOLLO_RUN_DIR/native-emphasis"
+  printf '\nNative emphasis: real wtype Ctrl+B/I/U, exact saved spans, undo/redo, caret-only plain typing, autosave and fresh-process reopen passed.\n' >> "$APOLLO_RESULTS"
   run_logged native-export-snapshots timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/editor_pdf_tests.py \
     --editor "$editor" --output "$APOLLO_RUN_DIR/native-editor-pdf-tests"
   while IFS= read -r line; do

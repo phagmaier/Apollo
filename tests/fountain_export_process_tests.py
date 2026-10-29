@@ -18,8 +18,8 @@ FIXTURES = ROOT / "fixtures"
 TYPED = "the lamp turns and "  # tools/apollo_editor.cpp --autosave-typing
 
 
-def run(*command, expect=0):
-    result = subprocess.run([str(part) for part in command], capture_output=True, text=True, timeout=60)
+def run(*command, expect=0, env=None):
+    result = subprocess.run([str(part) for part in command], capture_output=True, text=True, timeout=60, env=env)
     assert result.returncode == expect, (command, result.returncode, result.stdout, result.stderr)
     return result
 
@@ -254,9 +254,32 @@ def scene_spacing_subset(editor, root):
             (shot, shot_model, True), (shot_out, shot_model, True)]
 
 
+def emphasis_authoring(editor, flow_tests, root):
+    """Real QML authoring, not pre-styled JSON, feeds the independent oracle."""
+    output = root / "emphasis-authored"
+    environment = dict(os.environ, APOLLO_EMPHASIS_OUTPUT=str(output))
+    run(flow_tests, "emphasis_authoring_survives_save_reopen_and_export", env=environment)
+    project, actual = output / "project", output / "authored.fountain"
+    initial = json.loads((FIXTURES / "import/emphasis-authoring.expected.json").read_text())
+    expected = json.loads((FIXTURES / "import/emphasis-authoring.authored.expected.json").read_text())
+    saved = json.loads((project / "screenplay.json").read_text())
+    assert (saved["titlePage"], saved["elements"]) == (expected["titlePage"], expected["elements"]), saved
+    assert [(e["id"], e["type"], e["text"]) for e in saved["elements"]] == [
+        (e["id"], e["type"], e["text"]) for e in initial["elements"]], saved
+    canonical = FIXTURES / "export/emphasis-authoring.fountain"
+    assert actual.read_bytes() == canonical.read_bytes(), actual.read_bytes()
+    # Reopen in a separate CLI process; it must export the actual saved styles.
+    reopened = output / "reexported.fountain"
+    run(editor, project, "--export-fountain", reopened)
+    assert reopened.read_bytes() == canonical.read_bytes(), reopened.read_bytes()
+    return [(actual, presented(expected), True), (reopened, presented(expected), True),
+            (canonical, presented(expected), True)]
+
+
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--editor", required=True, type=pathlib.Path)
+    arguments.add_argument("--flow-tests", required=True, type=pathlib.Path)
     arguments.add_argument("--output", required=True, type=pathlib.Path)
     arguments.add_argument("--aw-parser", type=pathlib.Path)
     arguments.add_argument("--node", default="node")
@@ -315,6 +338,7 @@ def main():
     spacing_cases = spacing_subset(editor, root)
     punctuation_cases = punctuation_subset(editor, root)
     scene_spacing_cases = scene_spacing_subset(editor, root)
+    emphasis_cases = emphasis_authoring(editor, options.flow_tests, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -327,7 +351,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

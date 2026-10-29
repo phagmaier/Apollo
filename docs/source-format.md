@@ -139,11 +139,9 @@ A deliberate line break is `\n` in element text and `QChar::LineSeparator`
 checks what this relies on: the separator stays inside its block as one
 cursor position, `QTextBlock::text()` keeps it while `toPlainText()` turns it
 into `\n`, selection and undo keep it, and `QTextLayout` always ends a line
-after it, even when told the line is longer. The engine does not yet break
-lines at `\n`, so the editor reports a layout error for such text. Enter,
-Shift+Enter, and external text paste still create elements rather than
-deliberate breaks. Engine, PDF, Fountain, and keyboard support for deliberate
-breaks are slice 3 work.
+after it, even when told the line is longer. The editor, engine and PDF now
+honor authored breaks; Enter inside dialogue continues the same speech.
+See the [spacing contract](spacing.md) for blank dialogue lines and page splits.
 
 Copy/cut and paste between Apollo selections preserve an existing deliberate
 break inside its element, along with its type and emphasis. Clipboard offsets
@@ -153,6 +151,48 @@ still follows the spike's paragraph rules pending slice 3.
 Title-page fields are laid out on the title page wherever they appear in the
 document; on save they move ahead of the body in their own order, which does
 not change any page.
+
+### Emphasis authoring (slice 3 task 3c)
+
+In the writer, **Ctrl+B**, **Ctrl+I**, **Ctrl+U**, or **Format → Bold / Italic /
+Underline** change selected text through `EditorCommands::toggleEmphasis`.
+The owner chose **require a selection**: a bare-caret shortcut does nothing,
+creates no undo entry and does not set a next-typing mode; the menu actions are
+disabled without a selection.
+
+- If every selected text run has the chosen style, remove only that style
+  from the selected range. Otherwise apply it throughout the selection.
+  Other emphasis remains unchanged, including partially overlapping styles.
+- One action is one undo step across all selected elements. Text, element
+  types, identities, authored case and the selection are unchanged by the
+  action. Element separators and deliberate breaks receive no style; each
+  selected authored line has its own ranges. A separators-only selection is a
+  no-op. Existing canonical serialization merges touching/overlapping spans of
+  the same style.
+  Turning a style off also clears that style from any legacy span covering an
+  authored break, so an invisible separator-only span is not left behind.
+- Heading and cue text remain styleable under the existing model, without
+  changing their capital presentation. Generated `(MORE)`, repeated
+  page-continuation cues and generated `(CONT’D)` suffixes are plain. A replaced
+  typed suffix keeps its source style but does not style the generated suffix.
+- Typing within emphasized text inherits its existing character format;
+  splitting/joining, type changes, Apollo clipboard, undo/redo, autosave and
+  reopen preserve the authored spans. Enter inside emphasized dialogue inserts
+  a plain deliberate break between the preserved styled text. Typing at the
+  start of that continued line inherits the following text's style, identically
+  before and after reopen, without a pending caret mode. Enter at an element's
+  end starts the next element plain. External plain-text paste is unstyled.
+- Both shortcuts and menu actions use the document command; TextEdit is
+  explicitly plain-text and consumes these shortcuts before Qt handles them.
+  A Qt 6.12 baseline probe found that the previous default shortcuts did **not**
+  change the document's character formats on the tested plain-text surface.
+
+No source-schema or import/export contract revision changes. Arbitrary
+selection emphasis can still exceed Fountain's existing spellable-emphasis
+subset (for example crossing styles or intraword boundaries); saving remains
+allowed and clean export reports the located refusal. The
+[task 3c record](writing-build-plan.md#task-3c--emphasis-authoring) holds evidence
+and remaining limits.
 
 ### Identity
 

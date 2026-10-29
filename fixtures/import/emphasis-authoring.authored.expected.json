@@ -1,0 +1,15 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [],
+  "elements": [
+    {"id":"f1","type":"sceneHeading","text":"int. booth - day"},
+    {"id":"f2","type":"action","text":"Café bells ring.","styles":[{"start":0,"end":4,"style":"bold"},{"start":5,"end":10,"style":"italic"}]},
+    {"id":"f3","type":"character","text":"MARA"},
+    {"id":"f4","type":"dialogue","text":"Keep the red lamp.\nWait for blue.","styles":[{"start":9,"end":12,"style":"underline"}]},
+    {"id":"f5","type":"action","text":"Rain taps."},
+    {"id":"f6","type":"character","text":"MARA"},
+    {"id":"f7","type":"dialogue","text":"Still here."}
+  ]
+}

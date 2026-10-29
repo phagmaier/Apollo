@@ -216,7 +216,15 @@ int EditorCommands::typeText(int position, int selectionStart, int selectionEnd,
                      document_->availableUndoSteps() == typed_steps_ && !word_start;
   // Outside an edit block, consecutive inserts merge into the previous step.
   if (!group) cursor.beginEditBlock();
-  cursor.insertText(text);
+  if (!cursor.hasSelection() && !cursor.atBlockStart() && !cursor.atBlockEnd() &&
+      document_->characterAt(cursor.position() - 1) == QChar::LineSeparator) {
+    // The break itself is plain. At the start of a continued authored line,
+    // inherit the text being continued, not the separator's format. This
+    // derives from document text and works identically after reopening.
+    auto following = cursor;
+    following.movePosition(QTextCursor::NextCharacter);
+    cursor.insertText(text, following.charFormat());
+  } else cursor.insertText(text);
   if (!group) cursor.endEditBlock();
   typed_end_ = cursor.position();
   typed_steps_ = document_->availableUndoSteps();
@@ -233,7 +241,7 @@ int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
     const auto next = type == ElementType::parenthetical && in_speech(block) ? ElementType::dialogue : ElementType::action;
     if (type != next) set_type(cursor, next);
   } else if (type == ElementType::dialogue && !cursor.atBlockEnd()) {
-    cursor.insertText(QString(QChar::LineSeparator));
+    cursor.insertText(QString(QChar::LineSeparator), QTextCharFormat());
   } else if (cursor.atBlockEnd()) {
     const bool dialogue = type == ElementType::cue || (type == ElementType::parenthetical && in_speech(block));
     QTextBlockFormat next;
@@ -273,6 +281,70 @@ void EditorCommands::cycleType(int position, bool backward) {
   cursor.beginEditBlock();
   set_type(cursor, next);
   cursor.endEditBlock();
+}
+
+void EditorCommands::toggleEmphasis(int selectionStart, int selectionEnd, const QString& name) {
+  const auto style = name == QLatin1String("bold") ? std::optional{Style::bold} :
+                     name == QLatin1String("italic") ? std::optional{Style::italic} :
+                     name == QLatin1String("underline") ? std::optional{Style::underline} : std::nullopt;
+  const auto [start, end] = std::minmax(selectionStart, selectionEnd);
+  if (!style || start < 0 || end >= document_->characterCount() || start == end) return;
+  auto emphasized = [&](const QTextCharFormat& format) {
+    if (*style == Style::bold) return format.fontWeight() >= QFont::Bold;
+    if (*style == Style::italic) return format.fontItalic();
+    return format.fontUnderline();
+  };
+  bool all = true, any = false;
+  for (auto block = document_->findBlock(start); block.isValid() && block.position() < end && all; block = block.next()) {
+    for (auto it = block.begin(); !it.atEnd(); ++it) {
+      const auto fragment = it.fragment();
+      const int from = std::max(start - fragment.position(), 0);
+      const int to = std::min(end - fragment.position(), fragment.length());
+      if (from >= to) continue;
+      const auto text = fragment.text();
+      // A separator has no authored emphasis. Ignore it when deciding
+      // whether the selected text is already fully styled.
+      for (int at = from; at < to; ++at) {
+        if (text[at] == QChar::LineSeparator) continue;
+        any = true;
+        all &= emphasized(fragment.charFormat());
+        break;
+      }
+      if (!all) break;
+    }
+  }
+  if (!any) return;
+  QTextCharFormat format;
+  if (*style == Style::bold) format.setFontWeight(all ? QFont::Normal : QFont::Bold);
+  else if (*style == Style::italic) format.setFontItalic(!all);
+  else format.setFontUnderline(!all);
+  QTextCursor cursor(document_);
+  cursor.beginEditBlock();
+  for (auto block = document_->findBlock(start); block.isValid() && block.position() < end; block = block.next()) {
+    const int to = std::min(end - block.position(), block.length() - 1);
+    int from = std::max(start - block.position(), 0);
+    if (all && from < to) {
+      // Clear the style from legacy spans that include a deliberate break
+      // too; toggle-off must not leave an invisible emphasis-only separator.
+      cursor.setPosition(block.position() + from);
+      cursor.setPosition(block.position() + to, QTextCursor::KeepAnchor);
+      cursor.mergeCharFormat(format);
+      continue;
+    }
+    const auto text = block.text();
+    while (from < to) {
+      const auto separator = text.indexOf(QChar::LineSeparator, from);
+      const int stop = separator < 0 ? to : std::min(to, static_cast<int>(separator));
+      if (from < stop) {
+        cursor.setPosition(block.position() + from);
+        cursor.setPosition(block.position() + stop, QTextCursor::KeepAnchor);
+        cursor.mergeCharFormat(format);
+      }
+      from = stop + 1;
+    }
+  }
+  cursor.endEditBlock();
+  typed_end_ = typed_steps_ = -1;
 }
 
 void EditorCommands::copy(int selectionStart, int selectionEnd) {

@@ -1,0 +1,12 @@
+# ORIGINAL PUBLIC synthetic authoring case; hand-derived from the fixed profile.
+# Heading slot 1; blank slot between elements; cue/dialogue stay together.
+# The second MARA follows an action but no other speaker: generated suffix plain.
+page 1 number=none
+1	heading	INT. BOOTH - DAY
+3	action	Café bells ring.	bold=Café italic=bells
+5	cue	MARA
+6	dialogue	Keep the red lamp.	underline=red
+7	dialogue	Wait for blue.
+9	action	Rain taps.
+11	cue	MARA (CONT’D)
+12	dialogue	Still here.

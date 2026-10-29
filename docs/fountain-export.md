@@ -78,6 +78,14 @@ marker spelling are not byte-identical to an imported original.
 | Page break | `===` |
 | Emphasis | `_underline_`, `*italic*`, `**bold**`, `***bold italic***`, nested outer-first; underline outside an equal run; literal `\*`, `\_`, and `\\` only where a backslash would escape the next character |
 
+Task 3c's [selection authoring](source-format.md#emphasis-authoring-slice-3-task-3c)
+uses these existing emphasis rules without widening them or revising
+`fountain-canonical-4` / `writer-subset-5`. A style command may leave a snapshot
+outside the spellable subset; it remains saveable and gets the same located
+export refusal. Real command-authored exports and fresh-process re-exports of
+the original `emphasis-authoring` fixture are checked against hand-written
+semantics and canonical bytes by aw-parser, not only Apollo's interpreter.
+
 Without **Include title page**, title fields are neither checked nor written.
 
 ## Verification of each export

@@ -24,6 +24,9 @@ public:
   Q_INVOKABLE int typeText(int position, int selectionStart, int selectionEnd, const QString& text);
   Q_INVOKABLE int enter(int position, int selectionStart, int selectionEnd);
   Q_INVOKABLE void cycleType(int position, bool backward);
+  // Selection only; a mixed selection gains the style, full coverage removes
+  // it. Names are bold, italic, underline. Breaks are not styled.
+  Q_INVOKABLE void toggleEmphasis(int selectionStart, int selectionEnd, const QString& style);
   Q_INVOKABLE void copy(int selectionStart, int selectionEnd);
   Q_INVOKABLE int cut(int selectionStart, int selectionEnd);
   Q_INVOKABLE int paste(int position, int selectionStart, int selectionEnd);

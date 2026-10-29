@@ -175,7 +175,8 @@ if(APOLLO_BUILD_EDITOR)
     --output "${CMAKE_CURRENT_BINARY_DIR}/project-lock-tests")
   set_tests_properties(project_lock_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
   add_test(NAME fountain_export_process_tests COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/tests/fountain_export_process_tests.py"
-    --editor "$<TARGET_FILE:apollo_editor>" --output "${CMAKE_CURRENT_BINARY_DIR}/fountain-export-process-tests")
+    --editor "$<TARGET_FILE:apollo_editor>" --flow-tests "$<TARGET_FILE:project_access_flow_tests>"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/fountain-export-process-tests")
   set_tests_properties(fountain_export_process_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1" TIMEOUT 90)
   # aw-parser comes with the pinned afterwriting that tools/afterwriting-oracle.sh installs.
   if(DEFINED ENV{XDG_CACHE_HOME})
@@ -188,7 +189,8 @@ if(APOLLO_BUILD_EDITOR)
   find_program(NODE_EXECUTABLE node)
   if(NODE_EXECUTABLE AND EXISTS "${APOLLO_AW_PARSER}/parser.js")
     add_test(NAME fountain_export_oracle_tests COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/tests/fountain_export_process_tests.py"
-      --editor "$<TARGET_FILE:apollo_editor>" --output "${CMAKE_CURRENT_BINARY_DIR}/fountain-export-oracle-tests"
+      --editor "$<TARGET_FILE:apollo_editor>" --flow-tests "$<TARGET_FILE:project_access_flow_tests>"
+      --output "${CMAKE_CURRENT_BINARY_DIR}/fountain-export-oracle-tests"
       --aw-parser "${APOLLO_AW_PARSER}" --node "${NODE_EXECUTABLE}")
     set_tests_properties(fountain_export_oracle_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1" TIMEOUT 90)
   else()

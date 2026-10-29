@@ -2,6 +2,8 @@
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
 #include "fountain/import.h"
+#include "source/screenplay_format.h"
+#include "source/fountain_export.h"
 
 #include <QClipboard>
 #include <QMimeData>
@@ -256,6 +258,227 @@ private slots:
   // Any warning, such as a QML binding error, fails the test.
   void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral(".*"))); }
   void cleanup() { view_.reset(); document_.reset(); }
+
+  void emphasis_shortcuts_toggle_partial_and_mixed_selections_data() {
+    QTest::addColumn<int>("key");
+    QTest::addColumn<int>("style");
+    QTest::newRow("bold") << int(Qt::Key_B) << int(Style::bold);
+    QTest::newRow("italic") << int(Qt::Key_I) << int(Style::italic);
+    QTest::newRow("underline") << int(Qt::Key_U) << int(Style::underline);
+  }
+  void emphasis_shortcuts_toggle_partial_and_mixed_selections() {
+    QFETCH(int, key);
+    QFETCH(int, style);
+    const auto chosen = static_cast<Style>(style);
+    const auto other = chosen == Style::italic ? Style::bold : Style::italic;
+    QVERIFY(open_elements({{ElementType::action, "alpha beta gamma", false, {{0, 10, chosen}, {6, 10, other}}}}));
+    const auto original = source::canonical({0, document_elements(*document_)});
+    auto expected = original;
+    expected.elements[0].styles = {{0, 3, chosen}, {6, 10, other}, {8, 10, chosen}};
+    expected = source::canonical(expected);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 3), Q_ARG(int, 8));
+    press(static_cast<Qt::Key>(key), Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    QCOMPARE(editor_->property("selectionStart").toInt(), 3);
+    QCOMPARE(editor_->property("selectionEnd").toInt(), 8);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    // A partially covered selection becomes fully emphasized, rather than
+    // inverting each individual fragment or changing the other style.
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 0), Q_ARG(int, 13));
+    press(static_cast<Qt::Key>(key), Qt::ControlModifier);
+    expected.elements[0].styles = {{0, 13, chosen}, {6, 10, other}};
+    expected = source::canonical(expected);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    press(static_cast<Qt::Key>(key), Qt::ControlModifier);
+    expected.elements[0].styles = {{6, 10, other}};
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    QVERIFY(layout()->error().isEmpty());
+  }
+
+  void emphasis_at_a_bare_caret_does_not_change_typing() {
+    QVERIFY(open_elements({{ElementType::action, "plain words"}}));
+    const auto original = source::canonical({0, document_elements(*document_)});
+    editor_->setProperty("cursorPosition", 3);
+    const auto undo_steps = document_->availableUndoSteps();
+    auto* button = view_->rootObject()->findChild<QQuickItem*>("emphasisButton");
+    QVERIFY(button);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     button->mapToScene(button->boundingRect().center()).toPoint());
+    QTRY_VERIFY(view_->rootObject()->findChild<QObject*>("emphasisMenu")->property("opened").toBool());
+    for (const auto* name : {"emphasisBold", "emphasisItalic", "emphasisUnderline"}) {
+      auto* action = find_item(view_->contentItem(), QString::fromLatin1(name));
+      QVERIFY(action && !action->isEnabled());
+    }
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    for (auto key : {Qt::Key_B, Qt::Key_I, Qt::Key_U}) press(key, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+    QCOMPARE(document_->availableUndoSteps(), undo_steps);
+    type(QStringLiteral("x"));
+    auto expected = original;
+    expected.elements[0].text = "plaxin words";
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+  }
+
+  void emphasis_spans_elements_and_authored_breaks_in_one_undo() {
+    QVERIFY(open_elements({{ElementType::heading, "int. booth - day"},
+                           {ElementType::action, "Caf\xc3\xa9 bells\nring."},
+                           {ElementType::cue, "mara"}, {ElementType::dialogue, "Reply."}}));
+    const auto original = source::canonical({0, document_elements(*document_)});
+    const int last = document_->lastBlock().position();
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 5), Q_ARG(int, last));
+    press(Qt::Key_B, Qt::ControlModifier);
+    auto expected = original;
+    expected.elements[0].styles = {{5, 16, Style::bold}};
+    expected.elements[1].styles = {{0, 11, Style::bold}, {12, 17, Style::bold}};
+    expected.elements[2].styles = {{0, 4, Style::bold}};
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    QCOMPARE(editor_->property("selectionStart").toInt(), 5);
+    QCOMPARE(editor_->property("selectionEnd").toInt(), last);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 5), Q_ARG(int, last));
+    press(Qt::Key_B, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+    // Selecting only the element separator is not a formatting action.
+    const int end = document_->firstBlock().length() - 1;
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, end), Q_ARG(int, end + 1));
+    const auto undo_steps = document_->availableUndoSteps();
+    press(Qt::Key_I, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+    QCOMPARE(document_->availableUndoSteps(), undo_steps);
+    const int authored_break = document_->findBlockByNumber(1).position() + 10;
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, authored_break), Q_ARG(int, authored_break + 1));
+    press(Qt::Key_U, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+    QCOMPARE(document_->availableUndoSteps(), undo_steps);
+  }
+
+  void emphasis_after_non_bmp_text_uses_utf8_model_offsets() {
+    // The musical symbol is preserved unsupported writing, not new PDF/font
+    // eligibility. UTF-16 positions differ from code points and UTF-8 bytes.
+    QVERIFY(open_elements({{ElementType::action, "A\xf0\x9d\x84\x9e \xc3\xa9" "cho."}}));
+    const auto original = source::canonical({0, document_elements(*document_)});
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 8), Q_ARG(int, 4));
+    press(Qt::Key_U, Qt::ControlModifier);
+    auto expected = original;
+    expected.elements[0].styles = {{6, 11, Style::underline}};
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    QCOMPARE(cursor(), 4);
+    press(Qt::Key_U, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+  }
+
+  void authored_emphasis_survives_typing_split_join_type_and_clipboard() {
+    QVERIFY(open_elements({{ElementType::action, "Caf\xc3\xa9 bells.", false, {}, "authored"},
+                           {ElementType::action, "Untouched.", false, {}, "after"}}));
+    const auto initial = source::canonical({0, document_elements(*document_)});
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 0), Q_ARG(int, 11));
+    for (auto key : {Qt::Key_B, Qt::Key_I, Qt::Key_U}) press(key, Qt::ControlModifier);
+    auto expected = initial;
+    expected.elements[0].styles = {{0, 12, Style::italic}, {0, 12, Style::bold}, {0, 12, Style::underline}};
+    expected = source::canonical(expected);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    editor_->setProperty("cursorPosition", 3);
+    type(QStringLiteral("x"));
+    expected.elements[0].text = "Cafx\xc3\xa9 bells.";
+    for (auto& span : expected.elements[0].styles) span.end = 13;
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    // Both halves retain all authored emphasis; a type change never clears it.
+    editor_->setProperty("cursorPosition", 5);
+    press(Qt::Key_Return);
+    const auto split = source::canonical({0, document_elements(*document_)});
+    QVERIFY(same_elements(split.elements, {
+        {ElementType::action, "Cafx\xc3\xa9", false, {{0, 6, Style::bold}, {0, 6, Style::italic}, {0, 6, Style::underline}}},
+        {ElementType::action, " bells.", false, {{0, 7, Style::bold}, {0, 7, Style::italic}, {0, 7, Style::underline}}},
+        initial.elements[1]}));
+    QCOMPARE(split.elements[0].id, std::string("authored"));
+    QVERIFY(split.elements[1].id != "authored" && split.elements[1].id != "after");
+    press(Qt::Key_Tab);
+    auto changed = split;
+    changed.elements[1].type = ElementType::cue;
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), changed);
+    press(Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), split);
+    press(Qt::Key_Backspace);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), split);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 0), Q_ARG(int, 5));
+    press(Qt::Key_C, Qt::ControlModifier);
+    editor_->setProperty("cursorPosition", 12);
+    press(Qt::Key_V, Qt::ControlModifier);
+    expected.elements[0].text += "Cafx\xc3\xa9";
+    for (auto& span : expected.elements[0].styles) span.end = 19;
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}).elements[0].text, std::string("Cafx\xc3\xa9 bells."));
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    // Plain external paste does not acquire the destination's emphasis.
+    editor_->setProperty("cursorPosition", 17);
+    QGuiApplication::clipboard()->setText(QStringLiteral(" plain"));
+    press(Qt::Key_V, Qt::ControlModifier);
+    expected.elements[0].text += " plain";
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), expected);
+    QVERIFY(layout()->error().isEmpty());
+  }
+
+  void emphasized_dialogue_break_keeps_exportable_spans_and_typing() {
+    QVERIFY(open_elements({{ElementType::cue, "MARA"}, {ElementType::dialogue, "Bright words."}}));
+    const int speech = document_->lastBlock().position();
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, speech), Q_ARG(int, speech + 13));
+    press(Qt::Key_B, Qt::ControlModifier);
+    const auto styled = source::canonical({0, document_elements(*document_)});
+    editor_->setProperty("cursorPosition", speech + 7);
+    press(Qt::Key_Return);
+    auto split = styled;
+    split.elements[1].text = "Bright \nwords.";
+    split.elements[1].styles = {{0, 7, Style::bold}, {8, 14, Style::bold}};
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), split);
+    QCOMPARE(source::export_fountain(document_elements(*document_), true).bytes, QByteArray("MARA\n**Bright**\n**words.**\n"));
+    type(QStringLiteral("X"));
+    auto typed = split;
+    typed.elements[1].text = "Bright \nXwords.";
+    typed.elements[1].styles = {{0, 7, Style::bold}, {8, 15, Style::bold}};
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), typed);
+    QCOMPARE(source::export_fountain(document_elements(*document_), true).bytes, QByteArray("MARA\n**Bright**\n**Xwords.**\n"));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), split);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), styled);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), split);
+    // Reopening the same source must give the same style to subsequent
+    // typing at the start of the continued line, with no pending state.
+    QVERIFY(open_elements(split.elements));
+    editor_->setProperty("cursorPosition", speech + 8);
+    type(QStringLiteral("X"));
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), typed);
+  }
+
+  void toggle_off_removes_legacy_emphasis_on_an_authored_break() {
+    QVERIFY(open_elements({{ElementType::cue, "MARA"},
+                           {ElementType::dialogue, "One.\nTwo.", false, {{0, 9, Style::bold}}}}));
+    const auto original = source::canonical({0, document_elements(*document_)});
+    const int start = document_->lastBlock().position();
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, start), Q_ARG(int, start + 9));
+    press(Qt::Key_B, Qt::ControlModifier);
+    auto plain = original;
+    plain.elements[1].styles.clear();
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), plain);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
+  }
 
   // The approved shell must leave the live editor and its selection intact
   // when the outline is shown/hidden, including a compact desktop window.
@@ -1267,38 +1490,26 @@ private slots:
     QCOMPARE(highlighted(331.2, 540, 12), 0);
   }
 
-  // Generated continuation text keeps the source cue's emphasis, like the
-  // PDF; the automatic suffix is plain.
-  void continuation_text_keeps_the_cue_style() {
+  void generated_continuations_do_not_inherit_authored_emphasis() {
     QVERIFY(open(QStringLiteral("02-dialogue-split")));
     const int cue = position_of(QStringLiteral("MARA (V.O.)"));
-    QTextCursor bold(document_.get());
-    bold.setPosition(cue);
-    bold.setPosition(cue + 11, QTextCursor::KeepAnchor);
-    QTextCharFormat format;
-    format.setFontWeight(QFont::Bold);
-    bold.mergeCharFormat(format);
+    const int end = position_of(QStringLiteral("Theo does not answer.")) - 1;
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, cue), Q_ARG(int, end));
+    for (auto key : {Qt::Key_B, Qt::Key_I, Qt::Key_U}) press(key, Qt::ControlModifier);
     QVERIFY(layout()->error().isEmpty());
     const auto& runs = static_cast<DecorationModel*>(layout()->decoration_model())->runs();
-    auto run = [&](const QString& text) {
-      return std::find_if(runs.begin(), runs.end(), [&](const DecorationModel::Run& r) { return r.text == text; });
-    };
-    const auto name = run(QStringLiteral("MARA (V.O.)")), suffix = run(QStringLiteral(" (CONT’D)"));
-    QVERIFY(name != runs.end() && suffix != runs.end());
-    QVERIFY(name->bold && !suffix->bold);
-    QVERIFY(near(name->x * pt, 288) && near(name->baseline * pt, baseline(2, 1)));
-    QVERIFY(near(suffix->x * pt, 288 + 11 * profile::advance));
-    int drawn_bold = 0;
-    std::vector<QQuickItem*> items{view_->rootObject()};
-    while (!items.empty()) {
-      auto* item = items.back();
-      items.pop_back();
-      if (item->property("text").toString() == QStringLiteral("MARA (V.O.)"))
-        drawn_bold += item->property("font").value<QFont>().bold() ? 1 : -1;
-      for (auto* child : item->childItems()) items.push_back(child);
+    bool repeated = false, more = false;
+    for (const auto& run : runs) {
+      QVERIFY(!run.bold && !run.italic && !run.underline);
+      repeated |= run.text == QStringLiteral("MARA (V.O.) (CONT’D)")
+                  && near(run.x * pt, 288) && near(run.baseline * pt, baseline(2, 1));
+      more |= run.text == QStringLiteral("(MORE)");
     }
-    QCOMPARE(drawn_bold, 1);
-    QCOMPARE(ink_mismatch(QStringLiteral("styled-continuation")), std::make_pair(0, 0));
+    QVERIFY(repeated && more);
+    const auto styled = block_element(block_at(cue));
+    QCOMPARE(source::canonical_styles(styled.styles),
+             (std::vector<StyleSpan>{{0, 11, Style::italic}, {0, 11, Style::bold}, {0, 11, Style::underline}}));
+    QCOMPARE(ink_mismatch(QStringLiteral("authored-emphasis-plain-continuation")), std::make_pair(0, 0));
   }
 
   // A typed (CONT'D) where G1 generates one is shown once, as the generated
