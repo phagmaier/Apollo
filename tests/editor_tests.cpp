@@ -615,20 +615,47 @@ private slots:
     press(Qt::Key_Return);
     QCOMPARE(element_type(block_at(cursor())), ElementType::action);
     QCOMPARE(document_->blockCount(), blocks);
+    // An emptied parenthetical under a cue returns to dialogue in one undo
+    // step, without losing its element identity or adding a block.
+    auto parenthetical = document_->begin();
+    while (parenthetical.isValid() && element_type(parenthetical) != ElementType::parenthetical) parenthetical = parenthetical.next();
+    QVERIFY(parenthetical.isValid());
+    const auto original = block_element(parenthetical);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, parenthetical.position()),
+                              Q_ARG(int, parenthetical.position() + parenthetical.length() - 1));
+    press(Qt::Key_Backspace);
+    press(Qt::Key_Return);
+    QCOMPARE(element_type(block_at(cursor())), ElementType::dialogue);
+    QCOMPARE(block_element(block_at(cursor())).id, original.id);
+    QCOMPARE(document_->blockCount(), blocks);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(element_type(document_->findBlock(parenthetical.position())), ElementType::parenthetical);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(block_element(document_->findBlock(parenthetical.position())), original);
   }
 
-  // Enter inside an element splits it into two elements of the same type.
-  // The second dialogue part takes the next slot in the same speech.
+  // Enter inside dialogue keeps one speech element and an authored break.
   void enter_inside_element_splits_it() {
     QVERIFY(open(QStringLiteral("01-element-geometry")));
     const int at = position_of(QStringLiteral("I always leave"));
     editor_->setProperty("cursorPosition", at);
     press(Qt::Key_Return);
-    QCOMPARE(block_at(at).text(), QStringLiteral("I left the lights on for you. "));
-    QCOMPARE(block_at(cursor()).text(), QStringLiteral("I always leave the lights on."));
+    QCOMPARE(block_at(at), block_at(cursor()));
+    QCOMPARE(block_element(block_at(at)).text, std::string("I left the lights on for you. \nI always leave the lights on."));
     QCOMPARE(element_type(block_at(at)), ElementType::dialogue);
     QCOMPARE(element_type(block_at(cursor())), ElementType::dialogue);
     QVERIFY(near(caret_baseline(cursor()), baseline(1, 10)) && near(caret_rect(cursor()).x(), 216));
+  }
+
+  void deleting_whole_element_keeps_surviving_identity() {
+    QVERIFY(open(QStringLiteral("01-element-geometry")));
+    const auto first = document_->begin(), second = first.next();
+    const auto survivor = block_element(second);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, first.position()), Q_ARG(int, second.position()));
+    press(Qt::Key_Delete);
+    QCOMPARE(block_element(document_->begin()), survivor);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(block_element(document_->begin().next()), survivor);
   }
 
   // Tab cycles heading, action, character, parenthetical, dialogue,

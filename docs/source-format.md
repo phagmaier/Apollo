@@ -1,4 +1,4 @@
-# Apollo source format and saving (editable v1; review-only manifest v2)
+# Apollo source format and saving (ordinary v1, review v2, imported writer v3)
 
 2026-10-28. Status: implemented in [writing-build-plan](writing-build-plan.md)
 slice 1 and slice 2 tasks 2.1–2.5, bounded import intake 2.6a, and the initial
@@ -156,13 +156,15 @@ not change any page.
 
 ### Identity
 
-- Import and new elements get a random 64-bit id written as 16 hex digits.
+- New ordinary elements get a random 64-bit id written as 16 hex digits.
+  Bounded converted imports start with the frozen interpretation’s `fN` IDs.
 - A split (Enter inside an element, or pasting between two parts of one)
   keeps the id on the part before the split; the other part gets a new id.
   When the part before is empty, as with Enter at the start of an element,
   the part with the text keeps the id instead.
-- A join (deleting across an element boundary) keeps the earlier element and
-  its id, as Qt keeps the earlier block's format.
+- A join between surviving text keeps the earlier element and its id, as Qt
+  keeps the earlier block’s format. Deleting an entire leading element including
+  its separator keeps the surviving following element’s identity instead.
 - Pasted elements are new elements, including Apollo-to-Apollo paste and
   cut/paste. A whole-scene move keeps every id. Undo and redo restore ids.
 - A block that Qt splits without an editor command, such as an input-method
@@ -940,3 +942,47 @@ build rejects v2 metadata. This is a conservative read-only checkpoint; correcti
 UI, editable association preservation, complete grammar, canonical Fountain
 serialization, independent post-edit semantic round-trip, faithful layout/font
 diagnostics and production export remain pending.
+
+### Bounded editable Fountain copies (task 2.6c)
+
+The [writer subset contract](editable-fountain-subset.md) defines exact admission,
+association behavior, independent fixtures and remaining blockers. This adds a
+new manifest **v3**, with the five keys `format`, `version`, `id`, `screenplay`,
+`mode`; `mode` is `fountain-working`. Older builds refuse v3. Ordinary projects
+stay v1; v1/v2 intake metadata and review manifests retain their meanings.
+
+`imported-material.json` uses format `apollo-fountain-working`, version `1`,
+contract `writer-subset-1`, and `intake` containing the complete frozen v2 review
+metadata. These are exactly four keys. The original Fountain bytes, digest,
+origin, source ranges, interpreted screenplay, records and associations remain
+immutable; the nested review permissions remain false. The outer preservation
+contract is independently recomputed on create/open/recovery, never trusted as a
+permission boolean. Missing, altered, unsupported or newer evidence is refused.
+
+Explicit **Edit in a New Copy** (also `NEW_DIR --edit-fountain FILE`) creates a
+fresh staged project initialized with the located interpretation's exact elements
+and IDs. Prior review projects and the external source stay untouched. Failed
+publication retains the reader/lock. Activation compares the published assets
+with the reviewed snapshot before offering a writer.
+
+The mutable screenplay still uses source v1, with stable IDs, normalized LF,
+code-point spans on disk and UTF-8 spans in memory. Later unfinished/unsupported
+edits remain saveable; admission limits apply to the original conversion, not to
+whether new writing can be preserved. The original note/stash/metadata records
+are copied verbatim through Save a Copy, local/emergency packages and recovery
+forks. Their historical IDs are resolved against the live document; missing
+anchors show Detached, changed types show Type changed, and undo reconnects.
+There is no automatic retargeting or claim of tracking a text passage after edits.
+
+The writer's imported-material reader shows names, original ranges/text and live
+association states, plus the complete original source. Qt's text view normalizes
+line endings for display; the retained bytes and record strings keep CRLF/BOM
+as specified. Save a Copy updates the displayed active location. Saving and
+Reload check immutable dependencies; changed import evidence pauses saving and
+cannot be adopted by Reload. Cached evidence remains available for Save a Copy
+and emergency protection.
+
+Imported documents carry an export block for their lifetime. The PDF request
+checks it before staging or replacing output, including instrumentation, reopened
+copies and recovery writers. No canonical Fountain export path exists yet. Both
+clean exports remain gated even after editing or removing all imported text.

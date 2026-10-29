@@ -1,5 +1,6 @@
 #include "editor/project_access_flow.h"
 #include "source/fountain_conversion.h"
+#include "source/fountain_working.h"
 #include "editor/autosave.h"
 #include "editor/editor_view.h"
 #include "editor/pdf_export_job.h"
@@ -11,8 +12,16 @@
 #include <QQuickItem>
 #include <QQuickView>
 #include <QTextDocument>
+#include <QMap>
 
 namespace apollo::editor {
+namespace {
+void check_import_subset(source::FountainIntake& intake) {
+  const auto blockers = source::fountain_edit_blockers(intake.assets);
+  intake.edit_supported = blockers.isEmpty();
+  intake.edit_blockers = blockers.join('\n');
+}
+}
 ProjectAccessFlow::ProjectAccessFlow(QQuickView& view, QFont font, QString font_directory, QString exporter, QString session_path)
     : view_(view), font_(std::move(font)), font_directory_(std::move(font_directory)), exporter_(std::move(exporter)),
       state_(session_path), library_(session_path.isEmpty() ? QString() : session_path + ".recents") {
@@ -21,6 +30,30 @@ ProjectAccessFlow::ProjectAccessFlow(QQuickView& view, QFont font, QString font_
   connect(&state_timer_, &QTimer::timeout, this, &ProjectAccessFlow::persist_session);
 }
 QQuickItem* ProjectAccessFlow::editor() const { return editor_; }
+QString ProjectAccessFlow::location() const { return saver_ ? saver_->location() : location_; }
+
+QVariantList ProjectAccessFlow::intake_findings() const {
+  if (!intake_) return {};
+  if (!intake_working()) return intake_->findings;
+  QMap<QString, int> current;
+  for (const auto& e : document_elements(*document_)) current.insert(QString::fromStdString(e.id), int(e.type));
+  QVariantList findings;
+  for (const auto& value : intake_->findings) {
+    auto finding = value.toMap();
+    const auto anchor = finding.value("anchor").toString();
+    const auto type = finding.value("anchorType").toInt();
+    QString state;
+    if (anchor.isEmpty()) state = "Project-wide imported information";
+    else if (type < 0) state = "Imported organization: " + anchor;
+    else if (!current.contains(anchor)) state = "Detached: " + anchor + " (original source retained)";
+    else if (current.value(anchor) != type) state = "Type changed: " + anchor;
+    else state = "Present: " + anchor;
+    finding.insert("association", state);
+    finding.insert("message", finding.value("message").toString() + "\n" + state);
+    findings.append(finding);
+  }
+  return findings;
+}
 
 ProjectAccessFlow::~ProjectAccessFlow() {
   state_timer_.stop();
@@ -128,7 +161,7 @@ void ProjectAccessFlow::preview_import(const QString& path) {
     access_.reset();
     std::optional<source::FountainIntake> intake;
     QString failure;
-    try { intake = source::read_fountain_intake(path); }
+    try { intake = source::read_fountain_intake(path); check_import_subset(*intake); }
     catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
     QMetaObject::invokeMethod(this, [this, intake = std::move(intake), failure]() mutable {
       busy_ = false;
@@ -141,22 +174,26 @@ void ProjectAccessFlow::preview_import(const QString& path) {
 
 void ProjectAccessFlow::publish_import(const QString& parent, const QString& name) {
   if (review_session_) return;
-  publish_import_impl(parent, name, false);
+  publish_import_impl(parent, name, 0);
 }
 bool ProjectAccessFlow::intake_interpreted() const {
   return intake_ && intake_->interpreted;
 }
 void ProjectAccessFlow::interpret_import(const QString& parent, const QString& name) {
-  publish_import_impl(parent, name, true);
+  publish_import_impl(parent, name, 1);
 }
-void ProjectAccessFlow::publish_import_impl(const QString& parent, const QString& name, bool interpret) {
+void ProjectAccessFlow::edit_import(const QString& parent, const QString& name) {
+  if (!intake_edit_supported()) return;
+  publish_import_impl(parent, name, 2);
+}
+void ProjectAccessFlow::publish_import_impl(const QString& parent, const QString& name, int mode) {
   if (busy_ || document_ || !intake_) return;
   // Move ownership on the GUI thread; QML never observes a pointer being reset
   // by the worker. Failure returns the original locked reader unchanged.
   publishing_reader_ = review_session_ != nullptr;
   auto reader = std::move(review_session_);
   busy_ = true; error_.clear(); emit changed();
-  launch([this, parent, name, interpret, assets = intake_->assets, reader = std::move(reader)]() mutable {
+  launch([this, parent, name, mode, assets = intake_->assets, reader = std::move(reader)]() mutable {
     std::optional<source::Project> project;
     QString failure;
     try {
@@ -165,8 +202,10 @@ void ProjectAccessFlow::publish_import_impl(const QString& parent, const QString
         if (source::open_project(reader->opened().project.directory).assets != assets)
           throw source::SourceError(source::SourceError::Kind::external_change, "Retained source changed; reopen it before making an interpretation copy.");
       }
-      if (interpret) assets = source::interpreted_fountain_assets(assets);
-      project = source::create_named_project(parent, name, {0, {{ElementType::action, ""}}}, assets);
+      source::Screenplay writing{0, {{ElementType::action, ""}}};
+      if (mode == 1) assets = source::interpreted_fountain_assets(assets);
+      if (mode == 2) { assets = source::editable_fountain_assets(assets); writing = source::initial_fountain_writing(assets); }
+      project = source::create_named_project(parent, name, writing, assets);
       reader.reset(); // Release the old reader only after publication.
     }
     catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
@@ -220,9 +259,16 @@ void ProjectAccessFlow::inspect(const QString& directory, const QString& expecte
     QString failure;
     try {
       access_ = std::make_unique<source::ProjectAccess>(path, expected_id);
-      if (expected_assets && source::open_project(path).assets != *expected_assets)
-        throw source::SourceError(source::SourceError::Kind::external_change,
-            QStringLiteral("Published import at %1 differs from the reviewed bytes. It was retained but not activated; inspect its evidence before opening again.").arg(path));
+      if (expected_assets) {
+        const auto published = source::open_project(path);
+        // Fresh editable publication must still contain the exact converted
+        // writing. Later normal opens intentionally accept the owner's edits.
+        const bool changed_writing = source::is_fountain_working(*expected_assets) &&
+            published.screenplay != source::canonical(source::initial_fountain_writing(*expected_assets));
+        if (published.assets != *expected_assets || changed_writing)
+          throw source::SourceError(source::SourceError::Kind::external_change,
+              QStringLiteral("Published import at %1 differs from the reviewed bytes or converted screenplay. It was retained but not activated; inspect its evidence before opening again.").arg(path));
+      }
     }
     catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); access_.reset(); }
     QMetaObject::invokeMethod(this, [this, failure] {
@@ -259,7 +305,9 @@ void ProjectAccessFlow::select(int index, const QString& destination) {
     QString failure;
     std::optional<source::FountainIntake> intake;
     try { session = index < 0 ? access_->open_current() : access_->recover(static_cast<std::size_t>(index), destination);
-      if (session->opened().project.import_review) intake = source::open_fountain_intake(session->opened().assets);
+      if (session->opened().project.import_review) {
+        intake = source::open_fountain_intake(session->opened().assets); check_import_subset(*intake);
+      } else if (session->opened().project.import_working) intake = source::open_working_fountain(session->opened().assets);
     }
     catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); session.reset(); }
     if (session) access_.reset();
@@ -267,8 +315,8 @@ void ProjectAccessFlow::select(int index, const QString& destination) {
       busy_ = false;
       if (!session) { error_ = failure; emit changed(); return; }
       try {
-        if (intake) install_intake(std::move(session), std::move(*intake));
-        else install(std::move(session));
+        if (intake && !intake->working) install_intake(std::move(session), std::move(*intake));
+        else { intake_ = std::move(intake); install(std::move(session)); }
       }
       catch (const std::exception& error) {
         error_ = QString::fromUtf8(error.what());
@@ -296,7 +344,8 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   editor_->forceActiveFocus();
   connect(editor_, SIGNAL(cursorPositionChanged()), this, SLOT(schedule_session()));
   connect(document_.get(), &QTextDocument::contentsChanged, this, &ProjectAccessFlow::schedule_session);
-  connect(saver_.get(), &Autosaver::locationChanged, this, [this] { library_dirty_ = true; schedule_session(); });
+  if (intake_ && intake_->working) connect(document_.get(), &QTextDocument::contentsChanged, this, &ProjectAccessFlow::changed);
+  connect(saver_.get(), &Autosaver::locationChanged, this, [this] { library_dirty_ = true; schedule_session(); emit changed(); });
   connect(saver_.get(), &Autosaver::leaveReady, this, [this](bool success) {
     if (!success) {
       leaving_ = false; leave_failed_ = true;
@@ -308,7 +357,7 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   });
   connect(saver_.get(), &Autosaver::released, this, [this] {
     view_.setSource({});
-    export_job_.reset(); saver_.reset(); document_.reset();
+    export_job_.reset(); saver_.reset(); document_.reset(); intake_.reset();
     leaving_ = false; saver_drained_ = false; leave_failed_ = false;
     location_.clear(); error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
     show_access(); emit changed();

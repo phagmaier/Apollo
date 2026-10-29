@@ -1,0 +1,30 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [
+    {"id":"f1","field":"title","text":"THE PLATFORM"},
+    {"id":"f2","field":"credit","text":"Written by"},
+    {"id":"f3","field":"author","text":"Ada Vale"},
+    {"id":"f4","field":"source","text":"Original screenplay"},
+    {"id":"f5","field":"contact","text":"ada@example.test"},
+    {"id":"f6","field":"draftDate","text":"2026-10-28"}
+  ],
+  "elements": [
+    {"id":"f7","type":"sceneHeading","text":"INT. PLATFORM - DAY"},
+    {"id":"f8","type":"action","text":"Café doors open.\nA clock ticks.","styles":[{"start":5,"end":10,"style":"bold"}]},
+    {"id":"f9","type":"character","text":"MARA (V.O.)"},
+    {"id":"f10","type":"parenthetical","text":"(quietly)"},
+    {"id":"f11","type":"dialogue","text":"First line.\nSecond line.","styles":[{"start":6,"end":10,"style":"italic"},{"start":19,"end":23,"style":"underline"}]},
+    {"id":"f12","type":"character","text":"JUNE","dual":true},
+    {"id":"f13","type":"dialogue","text":"At the same time."},
+    {"id":"f14","type":"lyric","text":"A distant song."},
+    {"id":"f15","type":"transition","text":"CUT TO:"},
+    {"id":"f16","type":"sceneHeading","text":"EXT. PLATFORM - NIGHT"},
+    {"id":"f17","type":"action","text":"A literal *star* and both.","styles":[{"start":21,"end":25,"style":"italic"},{"start":21,"end":25,"style":"bold"}]},
+    {"id":"f18","type":"centered","text":"END OF ACT ONE"},
+    {"id":"f19","type":"pageBreak","text":""},
+    {"id":"f20","type":"sceneHeading","text":"INT. TRAIN - NIGHT"},
+    {"id":"f21","type":"action","text":"The train leaves."}
+  ]
+}

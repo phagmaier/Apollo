@@ -4,6 +4,7 @@
 #include "editor/screenplay_layout.h"
 #include "source/recovery.h"
 #include "source/fountain_conversion.h"
+#include "source/fountain_working.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -21,6 +22,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <QTextCursor>
+#include <QTextBlock>
 #include <QThread>
 #include <QtTest>
 
@@ -89,6 +91,260 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void editable_import_preserves_content_and_associations_in_actual_writer_data() {
+    QTest::addColumn<bool>("crlf");
+    QTest::newRow("LF") << false;
+    QTest::newRow("BOM-CRLF") << true;
+  }
+  void editable_import_preserves_content_and_associations_in_actual_writer() {
+    QFETCH(bool, crlf);
+    const auto fixture = QStringLiteral(APOLLO_IMPORT_FIXTURE_DIR "/writer-subset");
+    auto original = bytes(fixture + ".fountain");
+    if (crlf) { original.replace("\n", "\r\n"); original.prepend("\xef\xbb\xbf"); }
+    auto expected = parse_screenplay(bytes(fixture + ".expected.json"));
+    const auto input = path("writer-input"); replace_file(input, original);
+    const auto review_assets = interpreted_fountain_assets(read_fountain_intake(input).assets);
+    const auto review = create_project(path("writer-review"), {0, {{ElementType::action, ""}}}, review_assets);
+    const auto review_manifest = bytes(review.directory + "/project.json");
+    const auto review_source = bytes(review.screenplay_path());
+    const auto state = path("writer-state");
+    QString working, copied;
+    ProjectAssets preserved_assets;
+    auto writing = [](const QTextDocument* doc) { return canonical(Screenplay{0, document_elements(*doc)}); };
+    auto saved_writing = [](const QString& path) { auto s = open_project(path).screenplay; s.revision = 0; return s; };
+    auto association = [](const Window& window, const QString& anchor) {
+      for (const auto& item : window.flow.intake_findings()) {
+        const auto f = item.toMap();
+        if (f.value("anchor") == anchor) return f.value("association").toString();
+      }
+      return QString();
+    };
+    {
+      Window window(font_, state, review.directory);
+      QTRY_VERIFY(window.flow.intake_interpreted()); QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(!window.flow.document());
+      QVERIFY(window.flow.intake_edit_supported());
+      window.item("intakeProjectName")->setProperty("text", "Writer " + QString::number(count_));
+      window.item("intakeProjectParent")->setProperty("text", root_.filePath("missing-parent"));
+      QVERIFY(window.click("editIntake")); QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(window.flow.intake_active() && !window.flow.document());
+      QVERIFY_THROWS_EXCEPTION(SourceError, ProjectSession(review.directory));
+      window.item("intakeProjectParent")->setProperty("text", root_.path());
+      QVERIFY(window.click("editIntake")); QTRY_VERIFY(window.flow.document());
+      QVERIFY(window.flow.intake_working());
+      QVERIFY(qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>())->status().contains("remain blocked"));
+      working = window.flow.autosaver()->location();
+      const auto p = open_project(working);
+      preserved_assets = p.assets;
+      QVERIFY(p.project.id != review.id && p.project.import_working);
+      QCOMPARE(writing(window.flow.document()), expected);
+      QCOMPARE(saved_writing(working), expected);
+      auto* layout = static_cast<ScreenplayLayout*>(window.flow.document()->documentLayout());
+      QVERIFY2(layout->error().isEmpty(), qPrintable(layout->error()));
+      // Hand-derived profile slots/columns, independent of the layout engine.
+      const auto shown = shown_lines(*window.flow.document());
+      for (const auto& want : std::vector<ShownLine>{{1, 3, "action", 108, QString::fromUtf8("Café doors open.")},
+          {1, 4, "action", 108, "A clock ticks."}, {1, 8, "dual-dialogue-L", 108, "First line."},
+          {1, 9, "dual-dialogue-L", 108, "Second line."}}) {
+        QVERIFY2(std::any_of(shown.begin(), shown.end(), [&](const auto& line) {
+          return line.page == want.page && line.slot == want.slot && line.kind == want.kind && line.text == want.text && std::abs(line.x - want.x) < .01;
+        }), qPrintable(want.text));
+      }
+      QCOMPARE(association(window, "f8"), QString("Present: f8"));
+      QVERIFY(window.click("importedMaterial"));
+      QTRY_VERIFY(window.item("intakeSource"));
+      QCOMPARE(window.flow.intake_source().toUtf8(), crlf ? original.mid(3) : original);
+      QCOMPARE(window.item("intakeSource")->property("text").toString().toUtf8(), bytes(fixture + ".fountain"));
+      QVERIFY(window.item("intakeSource")->property("readOnly").toBool());
+      QVERIFY(window.click("intakeHome"));
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+      // Split action: the original association stays on the first part, undo
+      // restores the exact independent screenplay and identities.
+      auto action = window.flow.document()->findBlockByNumber(7);
+      QCOMPARE(block_element(action).id, std::string("f8"));
+      window.flow.editor()->setProperty("cursorPosition", action.position() + 5);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QCOMPARE(block_element(window.flow.document()->findBlockByNumber(7)).id, std::string("f8"));
+      QVERIFY(block_element(window.flow.document()->findBlockByNumber(8)).id != "f8");
+      QCOMPARE(association(window, "f8"), QString("Present: f8"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(window.flow.document()), expected);
+      // Joining with the preceding heading keeps that heading's identity;
+      // the removed action anchor is explicit, and undo reconnects it.
+      action = window.flow.document()->findBlockByNumber(7);
+      window.flow.editor()->setProperty("cursorPosition", action.position());
+      QTest::keyClick(&window.view, Qt::Key_Backspace);
+      QVERIFY(association(window, "f8").startsWith("Detached:"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(window.flow.document()), expected);
+      QCOMPARE(association(window, "f8"), QString("Present: f8"));
+      // A whole-element deletion detaches the note instead of retargeting it.
+      action = window.flow.document()->findBlockByNumber(7);
+      QMetaObject::invokeMethod(window.flow.editor(), "select", Q_ARG(int, action.position()), Q_ARG(int, action.next().position()));
+      QTest::keyClick(&window.view, Qt::Key_Delete);
+      QVERIFY(association(window, "f8").startsWith("Detached:"));
+      QVERIFY(window.click("importedMaterial"));
+      QTRY_VERIFY(window.item("intakeFindingText"));
+      QVERIFY(window.item("intakeFindingText")->property("text").toString().contains("Detached: f8"));
+      QVERIFY(window.item("intakeFindingText")->property("text").toString().contains("Remember the blue door."));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/import-working-reader.png")));
+      QVERIFY(window.click("intakeHome"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(window.flow.document()), expected);
+      QCOMPARE(association(window, "f8"), QString("Present: f8"));
+      // A type change is visible; undo restores the association's type.
+      action = window.flow.document()->findBlockByNumber(7);
+      window.flow.editor()->setProperty("cursorPosition", action.position());
+      QTest::keyClick(&window.view, Qt::Key_Tab);
+      QCOMPARE(association(window, "f8"), QString("Type changed: f8"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(window.flow.document()), expected);
+      // Real Enter within dialogue: a deliberate break in one element, with
+      // independently specified text and style offsets after redo.
+      const auto dialogue = window.flow.document()->findBlockByNumber(10);
+      QCOMPARE(block_element(dialogue).id, std::string("f11"));
+      window.flow.editor()->setProperty("cursorPosition", dialogue.position() + 2);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(window.flow.document()), expected);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      expected.elements[10].text = "Fi\nrst line.\nSecond line.";
+      expected.elements[10].styles = {{7, 11, Style::italic}, {20, 24, Style::underline}};
+      QCOMPARE(writing(window.flow.document()), expected);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(saved_writing(working), expected);
+      QVERIFY(layout->error().isEmpty());
+      // Scene reordering preserves element IDs and their historical records.
+      const auto heading = window.flow.document()->findBlockByNumber(15);
+      window.flow.editor()->setProperty("cursorPosition", heading.position());
+      QTest::keyClick(&window.view, Qt::Key_Up, Qt::AltModifier | Qt::ShiftModifier);
+      QCOMPARE(association(window, "f7"), QString("Present: f7"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(window.flow.document()), expected);
+      // Persist a removed anchor as well: its stashed passage must remain
+      // available through reopen, recovery and future copies.
+      const auto transition = window.flow.document()->findBlockByNumber(14);
+      QCOMPARE(block_element(transition).id, std::string("f15"));
+      QMetaObject::invokeMethod(window.flow.editor(), "select", Q_ARG(int, transition.position()), Q_ARG(int, transition.next().position()));
+      QTest::keyClick(&window.view, Qt::Key_Delete);
+      expected.elements.erase(expected.elements.begin() + 14);
+      QVERIFY(association(window, "f15").startsWith("Detached:"));
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(saved_writing(working), expected);
+      const auto blocked_pdf = path("blocked.pdf"); replace_file(blocked_pdf, "Existing PDF evidence");
+      QVERIFY(!qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>())->request(blocked_pdf));
+      QCOMPARE(bytes(blocked_pdf), QByteArray("Existing PDF evidence"));
+      QVERIFY(qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>())->status().contains("remain blocked"));
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/import-writing.png")));
+    }
+    {
+      Window window(font_, state);
+      QTRY_VERIFY(window.flow.document());
+      QCOMPARE(writing(window.flow.document()), expected);
+      QCOMPARE(association(window, "f8"), QString("Present: f8"));
+      QVERIFY(association(window, "f15").startsWith("Detached:"));
+      QCOMPARE(open_project(working).assets, preserved_assets);
+      copied = path("writer-copy");
+      QVERIFY(window.click("saveCopy"));
+      window.item("copyDestination")->setProperty("text", copied);
+      QVERIFY(window.click("copyConfirm"));
+      QTRY_COMPARE(window.flow.autosaver()->location(), copied);
+      QCOMPARE(window.flow.location(), copied);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(saved_writing(copied), expected);
+      QCOMPARE(open_project(copied).assets, preserved_assets);
+      QCOMPARE(writing(window.flow.document()), expected);
+      QCOMPARE(association(window, "f8"), QString("Present: f8"));
+      QVERIFY(association(window, "f15").startsWith("Detached:"));
+      QVERIFY(open_project(copied).project.id != open_project(working).project.id);
+      // Continue editing in the adopted copy; only that copy changes.
+      const auto last = window.flow.document()->lastBlock();
+      window.flow.editor()->setProperty("cursorPosition", last.position() + last.length() - 1);
+      window.type(" Still moving.");
+      expected.elements.back().text = "The train leaves. Still moving.";
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(saved_writing(copied), expected);
+      QVERIFY(saved_writing(working).elements.back().text == "The train leaves.");
+    }
+    const auto complete = open_project(copied);
+    const auto damaged = QByteArray("{damaged imported screenplay\n");
+    replace_file(complete.project.screenplay_path(), damaged);
+    {
+      Window window(font_, path("recover-import-state"), copied);
+      QTRY_VERIFY(!window.flow.busy());
+      QVERIFY(!window.flow.document() && !window.flow.current_available());
+      int latest = -1;
+      for (int i = 0; i < window.flow.candidates().size(); ++i)
+        if (window.flow.candidates()[i].toMap().value("revision").toULongLong() == complete.screenplay.revision) latest = i;
+      QVERIFY(latest >= 0);
+      const auto package = window.flow.candidates()[latest].toMap().value("location").toString();
+      const auto package_source = bytes(package + "/screenplay.json");
+      window.item("recoveryDestination")->setProperty("text", path("recovered-import"));
+      const auto choice = QString("recoveryChoice%1").arg(latest).toLatin1();
+      QVERIFY(window.click(choice.constData())); QVERIFY(window.click("recoverProject"));
+      QTRY_VERIFY(window.flow.document());
+      QCOMPARE(writing(window.flow.document()), expected);
+      QCOMPARE(association(window, "f8"), QString("Present: f8"));
+      QVERIFY(association(window, "f15").startsWith("Detached:"));
+      QCOMPARE(open_project(window.flow.autosaver()->location()).assets, preserved_assets);
+      QVERIFY(!qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>())->request(path("blocked-recovery.pdf")));
+      QCOMPARE(bytes(complete.project.screenplay_path()), damaged);
+      QCOMPARE(bytes(package + "/screenplay.json"), package_source);
+      const auto last = window.flow.document()->lastBlock();
+      window.flow.editor()->setProperty("cursorPosition", last.position() + last.length() - 1);
+      window.type(" Recovered.");
+      expected.elements.back().text = "The train leaves. Still moving. Recovered.";
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(saved_writing(window.flow.autosaver()->location()), expected);
+    }
+    QCOMPARE(bytes(review.directory + "/project.json"), review_manifest);
+    QCOMPARE(bytes(review.screenplay_path()), review_source);
+    QCOMPARE(open_project(review.directory).assets, review_assets);
+    QCOMPARE(bytes(input), original);
+    QCOMPARE(*preserved_assets.original_fountain, original);
+  }
+  void unsupported_import_keeps_editable_control_and_publication_gated() {
+    const auto input = path("unsupported-input"); replace_file(input, "@McKay\nA mixed-case cue.\n");
+    Window window(font_, path("unsupported-state"), {}, {}, input);
+    QTRY_VERIFY(window.flow.intake_preview()); QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.intake_edit_supported());
+    QVERIFY(window.flow.intake_edit_blockers().contains("authored case"));
+    window.item("intakeProjectName")->setProperty("text", "Unsupported");
+    window.item("intakeProjectParent")->setProperty("text", root_.path());
+    QVERIFY(!window.item("editIntake")->isEnabled());
+    window.flow.edit_import(root_.path(), "Unsupported");
+    QVERIFY(!window.flow.document());
+    QVERIFY(!QFileInfo::exists(root_.filePath("Unsupported")));
+    QCOMPARE(bytes(input), QByteArray("@McKay\nA mixed-case cue.\n"));
+  }
+  void changed_published_writing_cannot_activate_as_the_reviewed_conversion() {
+    const auto input = path("changed-conversion"); replace_file(input, "!Original writing.[[note]]");
+    const auto state = path("changed-conversion-state");
+    const auto previous = project();
+    SessionState(state).save({previous.directory, previous.id, "first", 0, 0});
+    const auto before = bytes(state);
+    Window window(font_, state, {}, {}, input);
+    QTRY_VERIFY(window.flow.intake_preview()); QTRY_VERIFY(!window.flow.busy());
+    const auto parent = path("publication-parent"); QVERIFY(QDir().mkpath(parent));
+    // Block GUI delivery while the real worker publishes, then replace only
+    // the mutable screenplay with valid, unreviewed writing (same UUID/assets).
+    window.flow.edit_import(parent, "Changed");
+    const auto published = parent + "/Changed";
+    QElapsedTimer deadline; deadline.start();
+    while (!QFileInfo::exists(published + "/project.json") && deadline.elapsed() < 5000) QThread::msleep(1);
+    QVERIFY(QFileInfo::exists(published + "/project.json"));
+    const auto evidence = serialize_screenplay({0, {{ElementType::action, "Unreviewed replacement.", false, {}, "f1"}}});
+    replace_file(published + "/screenplay.json", evidence);
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(!window.flow.document() && !window.flow.autosaver());
+    QVERIFY(window.flow.error().contains("differs from the reviewed"));
+    QCOMPARE(window.flow.location(), published);
+    QCOMPARE(bytes(state), before);
+    QVERIFY(ProjectLibrary(state + ".recents").load().empty());
+    QCOMPARE(bytes(published + "/screenplay.json"), evidence);
+    QCOMPARE(bytes(published + "/imports/original.fountain"), QByteArray("!Original writing.[[note]]"));
+  }
   void initTestCase() {
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     qputenv("XDG_DATA_HOME", root_.filePath("data").toUtf8());

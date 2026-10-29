@@ -43,12 +43,18 @@ independent original example. These are semantic expectations, not layout
 oracles. The interpretation reader replaces candidate hints with types, named
 records and exact diagnostics when viewing the new version.
 
-The result is still an **interpretation review**, not editable import acceptance.
-No imported project enters the writer yet: even a source with no syntax errors
-has not passed the independent edit/save/reopen/Fountain-export gate, and the
-existing layout cannot faithfully represent all imported breaks/spacing/case.
-The stored output policy and actual project paths block editing and both clean
-exports. The limited spike CLI paths retain their explicit research scope.
+These copies remain **interpretation reviews**. Their stored permissions,
+placeholder screenplay and manifest are never upgraded in place.
+
+**2.6c adds a separate bounded editable copy**, admitted by the
+[writer preservation contract](editable-fountain-subset.md). It supports a
+representative subset through actual editing, undo/redo, autosave, reopen,
+recovery and Save a Copy, with independent expected content and associations.
+Unsupported cases remain in review. Clean Fountain and PDF exports stay blocked
+for every imported working project; complete Fountain compatibility is pending.
+The frozen revision-1 interpretation remains the immutable historical baseline,
+including its original conservative limitation messages. The working wrapper
+validates its separate subset contract without rewriting that baseline.
 
 ### Conversion revision 1 and migration
 
@@ -182,10 +188,10 @@ These are intake assertions, not layout or complete parser acceptance.
 - **2.6b remaining:** extend semantic coverage for syntax outside the exercised
   corpus and resolve diagnostics through an explicit correction workflow.
   Reassess the conservative conversion limits using measured realistic inputs.
-  Editable activation requires a separately tested preservation contract for
-  edits and imported associations, plus the authoring/layout work below. Keep
-  the gate closed until that evidence exists.
-- **2.6c / slice 3:** complete authoring/layout contracts, title form, case,
+  General editable activation still requires fuller authoring/layout evidence.
+  The separate 2.6c subset admits only cases meeting its tested preservation
+  contract; it does not relax review-only permissions or enable clean exports.
+- **2.6c bounded step implemented; remaining slice 3:** complete authoring/layout contracts, title form, case,
   spacing and deliberate breaks; expose unresolved imported material in context.
 - **Slice 3/5 compatibility gate:** canonical Fountain serializer, independent
   parsing of import → edit → save/reopen → export, semantic expected fixtures

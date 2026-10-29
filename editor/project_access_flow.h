@@ -40,6 +40,9 @@ class ProjectAccessFlow : public QObject {
   Q_PROPERTY(bool intakePreview READ intake_preview NOTIFY changed)
   Q_PROPERTY(bool intakeActive READ intake_active NOTIFY changed)
   Q_PROPERTY(bool intakeInterpreted READ intake_interpreted NOTIFY changed)
+  Q_PROPERTY(bool intakeWorking READ intake_working NOTIFY changed)
+  Q_PROPERTY(bool intakeEditSupported READ intake_edit_supported NOTIFY changed)
+  Q_PROPERTY(QString intakeEditBlockers READ intake_edit_blockers NOTIFY changed)
   Q_PROPERTY(QString intakeSummary READ intake_summary NOTIFY changed)
   Q_PROPERTY(QString intakeSource READ intake_source NOTIFY changed)
   Q_PROPERTY(QVariantList intakeFindings READ intake_findings NOTIFY changed)
@@ -58,10 +61,11 @@ public:
   Q_INVOKABLE void preview_import(const QString& path);
   Q_INVOKABLE void publish_import(const QString& parent, const QString& name);
   Q_INVOKABLE void interpret_import(const QString& parent, const QString& name);
+  Q_INVOKABLE void edit_import(const QString& parent, const QString& name);
   Q_INVOKABLE QUrl folder_url(const QString& path) const;
   Q_INVOKABLE QString local_folder(const QUrl& url) const;
   bool busy() const { return busy_; }
-  QString location() const { return location_; }
+  QString location() const;
   QString error() const { return error_; }
   QString notice() const { return notice_; }
   bool current_available() const { return current_available_; }
@@ -71,12 +75,15 @@ public:
   QString default_location() const { return default_location_; }
   bool leaving() const { return leaving_; }
   bool leave_failed() const { return leave_failed_; }
-  bool intake_preview() const { return intake_ && !intake_active(); }
+  bool intake_preview() const { return intake_ && !document_ && !intake_active(); }
   bool intake_active() const { return review_session_ != nullptr || publishing_reader_; }
   bool intake_interpreted() const;
+  bool intake_working() const { return intake_ && intake_->working && document_; }
+  bool intake_edit_supported() const { return intake_ && !intake_->working && intake_->edit_supported; }
+  QString intake_edit_blockers() const { return intake_ ? intake_->edit_blockers : QString(); }
   QString intake_summary() const { return intake_ ? intake_->summary : QString(); }
   QString intake_source() const { return intake_ ? intake_->source_view : QString(); }
-  QVariantList intake_findings() const { return intake_ ? intake_->findings : QVariantList(); }
+  QVariantList intake_findings() const;
   QTextDocument* document() const { return document_.get(); }
   Autosaver* autosaver() const { return saver_.get(); }
   QQuickItem* editor() const;
@@ -100,7 +107,7 @@ private:
   void finish_leave();
   void update_notice();
   void show_intake();
-  void publish_import_impl(const QString& parent, const QString& name, bool interpret);
+  void publish_import_impl(const QString& parent, const QString& name, int mode);
   void install_intake(std::unique_ptr<source::ProjectSession> session, source::FountainIntake intake);
   QQuickView& view_;
   QFont font_;

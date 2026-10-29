@@ -88,7 +88,10 @@ frozen every visual detail.
   **Interpret in a New Copy** (or `NEW_DIR --interpret-fountain FILE`) retains
   located interpretations, named notes/stash and metadata in another read-only
   project, with unresolved ranges and layout limitations. Original projects
-  are never upgraded in place; editing and clean export remain gated. See
+  are never upgraded in place. Task 2.6c adds **Edit in a New Copy**
+  (`NEW_DIR --edit-fountain FILE`) only for the independently tested
+  [bounded writer subset](docs/editable-fountain-subset.md). Its imported reader
+  stays available while writing; all clean imported exports remain gated. See
   [fountain-compatibility.md](docs/fountain-compatibility.md): full editable
   conversion and round-trip compatibility remain pending. The explicit spike
   `--create [FILE]`/instrumentation paths retain their limited parser.

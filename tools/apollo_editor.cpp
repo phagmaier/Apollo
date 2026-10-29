@@ -4,6 +4,7 @@
 #include "editor/pdf_export_job.h"
 #include "editor/project_access_flow.h"
 #include "source/fountain_conversion.h"
+#include "source/fountain_working.h"
 #include "fountain/import.h"
 #include "source/project.h"
 
@@ -494,7 +495,7 @@ int main(int argc, char** argv) {
   const bool check = mode == "--check", measuring = mode == "--measure", comparing = mode == "--agreement",
              snapshot = mode == "--snapshot", export_measuring = mode == "--measure-export", creating = mode == "--create",
              typing = mode == "--autosave-typing", interpreting = mode == "--interpret-fountain",
-             retaining = mode == "--retain-fountain" || interpreting;
+             editing_import = mode == "--edit-fountain", retaining = mode == "--retain-fountain" || interpreting || editing_import;
   if ((check || comparing || typing || creating || retaining) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   QGuiApplication application(argc, argv);
   const bool usage = retaining ? argc != 4 : check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
@@ -505,15 +506,19 @@ int main(int argc, char** argv) {
                  "       apollo_editor PROJECT --create [FILE.fountain]\n"
                  "       apollo_editor PROJECT --retain-fountain FILE\n"
                  "       apollo_editor NEW_PROJECT --interpret-fountain FILE\n"
+                 "       apollo_editor NEW_PROJECT --edit-fountain FILE\n"
                  "       apollo_editor PROJECT --autosave-typing LOG [KEYS [INTERVAL_MS [PHASE:N]]]\n";
     return 2;
   }
   try {
     if (retaining) {
       const auto intake = apollo::source::read_fountain_intake(QString::fromLocal8Bit(argv[3]));
-      const auto assets = interpreting ? apollo::source::interpreted_fountain_assets(intake.assets) : intake.assets;
-      const auto project = apollo::source::create_project(QString::fromLocal8Bit(argv[1]), {0, {{apollo::ElementType::action, ""}}}, assets);
-      std::cout << "retained for read-only review at " << project.directory.toStdString() << '\n';
+      const auto assets = editing_import ? apollo::source::editable_fountain_assets(intake.assets)
+          : interpreting ? apollo::source::interpreted_fountain_assets(intake.assets) : intake.assets;
+      const auto writing = editing_import ? apollo::source::initial_fountain_writing(assets)
+          : apollo::source::Screenplay{0, {{apollo::ElementType::action, ""}}};
+      const auto project = apollo::source::create_project(QString::fromLocal8Bit(argv[1]), writing, assets);
+      std::cout << (editing_import ? "editable copy (clean exports gated) at " : "retained for read-only review at ") << project.directory.toStdString() << '\n';
       return 0;
     }
     if (creating) {

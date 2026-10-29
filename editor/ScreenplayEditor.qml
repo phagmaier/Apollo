@@ -87,8 +87,7 @@ Rectangle {
                     const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
                     const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
                     if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                        // Shift+Enter included: TextEdit would insert a line
-                        // separator, which the engine does not break at.
+                        // Commands keep deliberate dialogue breaks in one speech.
                         place(root.commands.enter(cursorPosition, selectionStart, selectionEnd))
                     } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                         root.commands.cycleType(cursorPosition, event.key === Qt.Key_Backtab || shift)

@@ -18,6 +18,7 @@ inline constexpr int project_version = 1;
 struct Project {
   QString directory, id, screenplay_file;
   bool import_review = false;
+  bool import_working = false;
   QString screenplay_path() const { return directory + QLatin1Char('/') + screenplay_file; }
 };
 // Immutable import dependencies, kept in memory so a copy can be complete

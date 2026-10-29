@@ -1,0 +1,100 @@
+[
+  {
+    "id": "r1",
+    "kind": "note",
+    "text": "Remember the blue door.",
+    "anchor": "f8",
+    "parent": "",
+    "depth": 0,
+    "range": {
+      "startByte": 259,
+      "endByte": 286,
+      "firstLine": 16,
+      "lastLine": 16
+    }
+  },
+  {
+    "id": "r2",
+    "kind": "stash",
+    "text": "INT. OMITTED ROOM - NIGHT\nKeep this omitted passage.",
+    "anchor": "f15",
+    "parent": "",
+    "depth": 0,
+    "range": {
+      "startByte": 408,
+      "endByte": 464,
+      "firstLine": 30,
+      "lastLine": 31
+    }
+  },
+  {
+    "id": "r3",
+    "kind": "titleMetadata",
+    "text": "Revision: Keep this field",
+    "anchor": "",
+    "parent": "",
+    "depth": 0,
+    "range": {
+      "startByte": 133,
+      "endByte": 158,
+      "firstLine": 7,
+      "lastLine": 7
+    }
+  },
+  {
+    "id": "r4",
+    "kind": "section",
+    "text": "Arrival",
+    "anchor": "",
+    "parent": "",
+    "depth": 1,
+    "range": {
+      "startByte": 160,
+      "endByte": 169,
+      "firstLine": 9,
+      "lastLine": 9
+    }
+  },
+  {
+    "id": "r5",
+    "kind": "synopsis",
+    "text": "Opening sequence",
+    "anchor": "r4",
+    "parent": "",
+    "depth": 0,
+    "range": {
+      "startByte": 170,
+      "endByte": 188,
+      "firstLine": 10,
+      "lastLine": 10
+    }
+  },
+  {
+    "id": "r6",
+    "kind": "sceneNumber",
+    "text": "12A",
+    "anchor": "f7",
+    "parent": "",
+    "depth": 0,
+    "range": {
+      "startByte": 209,
+      "endByte": 215,
+      "firstLine": 12,
+      "lastLine": 12
+    }
+  },
+  {
+    "id": "r7",
+    "kind": "synopsis",
+    "text": "A scene synopsis",
+    "anchor": "f7",
+    "parent": "",
+    "depth": 0,
+    "range": {
+      "startByte": 217,
+      "endByte": 235,
+      "firstLine": 14,
+      "lastLine": 14
+    }
+  }
+]

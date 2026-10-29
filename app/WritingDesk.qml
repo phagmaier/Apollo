@@ -231,12 +231,32 @@ Rectangle {
                 onClicked: desk.toggleOutline()
             }
             DeskButton {
-                width: 44; height: 44; text: "▧"; font.pixelSize: 22; enabled: false
-                Accessible.name: "Notes (outside this spike)"
+                objectName: "importedMaterial"
+                width: 44; height: 44; text: "▧"; font.pixelSize: 22
+                enabled: desk.projectFlow !== null && desk.projectFlow.intakeWorking
+                Accessible.name: "Read imported notes, stash and original source"
+                ToolTip.text: "Imported material"
+                onClicked: importedPanel.open()
             }
             DeskButton {
                 width: 44; height: 44; text: "◇"; font.pixelSize: 24; enabled: false
                 Accessible.name: "Stash (outside this spike)"
+            }
+        }
+    }
+
+    Popup {
+        id: importedPanel; objectName: "importedPanel"
+        x: 24; y: 24; width: desk.width - 48; height: desk.height - 48
+        modal: true; padding: 0; focus: true
+        onClosed: editorPage.focusEditor()
+        Loader {
+            anchors.fill: parent; active: importedPanel.opened
+            sourceComponent: Component {
+                ImportedMaterial {
+                    access: desk.projectFlow; writerMode: true
+                    onBackToWriter: importedPanel.close()
+                }
             }
         }
     }

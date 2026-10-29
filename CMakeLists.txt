@@ -58,7 +58,7 @@ if(APOLLO_BUILD_EDITOR)
     message(FATAL_ERROR "APOLLO_BUILD_EDITOR requires APOLLO_BUILD_PDF for editor/PDF agreement")
   endif()
   find_package(Qt6 6.12 REQUIRED COMPONENTS Gui Quick Test)
-  add_library(apollo_source source/screenplay_format.cpp source/project.cpp source/recovery.cpp source/project_access.cpp source/project_creation.cpp source/fountain_intake.cpp source/fountain_conversion.cpp)
+  add_library(apollo_source source/screenplay_format.cpp source/project.cpp source/recovery.cpp source/project_access.cpp source/project_creation.cpp source/fountain_intake.cpp source/fountain_conversion.cpp source/fountain_working.cpp)
   target_link_libraries(apollo_source PUBLIC apollo_layout Qt6::Core)
   target_compile_options(apollo_source PRIVATE -Wall -Wextra -Wpedantic)
   add_executable(source_tests tests/source_tests.cpp)
@@ -117,6 +117,7 @@ if(APOLLO_BUILD_EDITOR)
   target_link_libraries(project_access_flow_tests PRIVATE apollo_editor_core Qt6::Test)
   target_compile_definitions(project_access_flow_tests PRIVATE
     APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime"
+    APOLLO_IMPORT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/import"
     APOLLO_ARTIFACT_DIR="${CMAKE_CURRENT_BINARY_DIR}/project-access-tests")
   add_dependencies(project_access_flow_tests pdf_export)
   add_test(NAME project_access_flow_tests COMMAND project_access_flow_tests)

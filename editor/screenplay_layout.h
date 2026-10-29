@@ -17,6 +17,8 @@ inline constexpr int element_type_property = QTextFormat::UserProperty + 1;
 inline constexpr int dual_right_property = QTextFormat::UserProperty + 2;
 // The element's persistent id (source/screenplay_format.h), a QString.
 inline constexpr int element_id_property = QTextFormat::UserProperty + 4;
+// Set for the lifetime of an imported writer, including copy/reload paths.
+inline constexpr auto export_block_property = "apolloExportBlock";
 // Document coordinates are 96 dpi pixels. At 12 pt = 16 px the Courier Prime
 // advance (9.59375 px) is exact in QTextLayout's 1/64 px fixed point; at 12 px
 // it rounds to 7.1875 and drifts 0.48 pt across a 61-column line.

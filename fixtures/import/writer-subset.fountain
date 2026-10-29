@@ -1,0 +1,43 @@
+Title: THE PLATFORM
+Credit: Written by
+Author: Ada Vale
+Source: Original screenplay
+Contact: ada@example.test
+Draft date: 2026-10-28
+Revision: Keep this field
+
+# Arrival
+= Opening sequence
+
+INT. PLATFORM - DAY #12A#
+
+= A scene synopsis
+
+!Café **doors** open.[[Remember the blue door.]]
+A clock ticks.
+
+MARA (V.O.)
+(quietly)
+First *line*.
+Second _line_.
+
+JUNE ^
+At the same time.
+
+~A distant song.
+
+>CUT TO:
+/*INT. OMITTED ROOM - NIGHT
+Keep this omitted passage.*/
+
+EXT. PLATFORM - NIGHT
+
+!A literal \*star\* and ***both***.
+
+> END OF ACT ONE <
+
+===
+
+INT. TRAIN - NIGHT
+
+!The train leaves.

@@ -568,7 +568,7 @@ std::vector<ShownLine> shown_lines(const QTextDocument& document) {
       const auto line = text_layout->lineAt(i);
       QString text;
       for (int at = line.textStart(); at < line.textStart() + line.textLength() && at < block_text.size(); ++at)
-        if (!hidden[static_cast<std::size_t>(at)]) text += block_text[at];
+        if (!hidden[static_cast<std::size_t>(at)] && block_text[at] != QChar::LineSeparator) text += block_text[at];
       qsizetype lead = 0;
       while (lead < text.size() && text[lead] == QLatin1Char(' ')) ++lead;
       text = text.mid(lead);

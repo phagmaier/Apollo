@@ -235,6 +235,9 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
       transfer_styles(element, result.back(), pos);
       set_source(result.back(), source, base + pos);
       offset = pos + text.size();
+      auto next = offset;
+      while (next < element.text.size() && element.text[next] == ' ') ++next;
+      if (next < element.text.size() && element.text[next] == '\n') offset = next + 1;
       continuation = true;
     }
   };

@@ -11,7 +11,10 @@
 
 namespace apollo::editor {
 PdfExportJob::PdfExportJob(QTextDocument* document, QString fonts, QString worker, QString source, QObject* parent)
-    : QObject(parent), document_(document), fonts_(std::move(fonts)), worker_(std::move(worker)), source_(std::move(source)) {}
+    : QObject(parent), document_(document), fonts_(std::move(fonts)), worker_(std::move(worker)), source_(std::move(source)) {
+  if (document_ && !document_->property(export_block_property).toString().isEmpty())
+    status_ = "PDF export unavailable: " + document_->property(export_block_property).toString();
+}
 PdfExportJob::~PdfExportJob() {
   if (process_) {
     process_->disconnect(this);
@@ -30,6 +33,8 @@ bool PdfExportJob::request(const QString& destination, bool include_title) {
   QByteArray payload;
   try {
     if (!document_) throw std::runtime_error("editor document is closed");
+    const auto block = document_->property(export_block_property).toString();
+    if (!block.isEmpty()) throw std::runtime_error(block.toStdString());
     if (destination.trimmed().isEmpty()) throw std::runtime_error("choose a PDF destination");
     std::error_code error;
     if (!source_.isEmpty() && std::filesystem::equivalent(source_.toStdString(), destination.toStdString(), error))

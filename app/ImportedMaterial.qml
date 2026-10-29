@@ -5,6 +5,8 @@ import QtQuick.Dialogs
 Rectangle {
     id: page
     required property var access
+    property bool writerMode: false
+    signal backToWriter()
     property var selectedFinding: findings.currentIndex >= 0 ? access.intakeFindings[findings.currentIndex] : null
     property string selectedText: selectedFinding ? "Lines " + selectedFinding.firstLine + "–" + selectedFinding.lastLine
         + "; bytes [" + selectedFinding.startByte + ", " + selectedFinding.endByte + ")\n"
@@ -22,9 +24,9 @@ Rectangle {
         Button {
             objectName: "intakeHome"
             anchors { right: parent.right; rightMargin: 28; verticalCenter: parent.verticalCenter }
-            text: page.access.intakePreview ? "Cancel Import" : "Home"
+            text: page.writerMode ? "Back to Writing" : page.access.intakePreview ? "Cancel Import" : "Home"
             enabled: !page.access.busy
-            onClicked: page.access.home()
+            onClicked: page.writerMode ? page.backToWriter() : page.access.home()
         }
     }
     ScrollView {
@@ -34,7 +36,7 @@ Rectangle {
         Column {
             width: scroll.availableWidth; spacing: 16
             Label {
-                width: parent.width; text: page.access.intakeActive ? page.access.location : "Preview of the bytes that will be retained"
+                width: parent.width; text: page.writerMode || page.access.intakeActive ? page.access.location : "Preview of the bytes that will be retained"
                 textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere; color: "#303843"
                 font { family: "Liberation Sans"; pixelSize: 16; weight: Font.DemiBold }
             }
@@ -53,9 +55,9 @@ Rectangle {
                 text: page.access.error; textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere; color: "#9d3030"
             }
             Column {
-                visible: page.access.intakePreview || !page.access.intakeInterpreted
+                visible: !page.writerMode
                 width: parent.width; spacing: 10
-                Label { text: page.access.intakeActive ? "Interpret this source in a new project copy" : "Retain or interpret this source in a new project"; color: "#303843"; font.pixelSize: 17 }
+                Label { text: page.access.intakeActive ? "Create a new project copy from this source" : "Retain or convert this source in a new project"; color: "#303843"; font.pixelSize: 17 }
                 TextField {
                     id: name; objectName: "intakeProjectName"; width: parent.width
                     enabled: !page.access.busy; placeholderText: "Project folder name"; selectByMouse: true
@@ -80,9 +82,21 @@ Rectangle {
                     }
                     Button {
                         objectName: "interpretIntake"; text: page.access.busy ? "Interpreting source…" : "Interpret in a New Copy"
+                        visible: !page.access.intakeInterpreted
                         enabled: !page.access.busy && name.text.trim().length > 0 && parentFolder.text.length > 0
                         onClicked: page.access.interpret_import(parentFolder.text, name.text)
                     }
+                    Button {
+                        objectName: "editIntake"; text: page.access.busy ? "Creating editable copy…" : "Edit in a New Copy"
+                        enabled: !page.access.busy && page.access.intakeEditSupported && name.text.trim().length > 0 && parentFolder.text.length > 0
+                        onClicked: page.access.edit_import(parentFolder.text, name.text)
+                    }
+                }
+                Label {
+                    width: parent.width; textFormat: Text.PlainText; wrapMode: Text.Wrap
+                    text: page.access.intakeEditSupported ? "This source meets the bounded writer subset. Editing creates a new copy; clean exports remain blocked."
+                        : "Editable conversion is gated:\n" + page.access.intakeEditBlockers
+                    color: "#303843"
                 }
             }
             Label { text: "Review findings"; color: "#303843"; font { family: "Liberation Sans"; pixelSize: 18; weight: Font.DemiBold } }

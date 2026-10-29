@@ -12,6 +12,9 @@ struct FountainIntake {
   QString summary, source_view;
   QVariantList findings;
   bool interpreted = false;
+  bool working = false;
+  bool edit_supported = false;
+  QString edit_blockers;
 };
 inline constexpr qsizetype maximum_fountain_bytes = 16 * 1024 * 1024;
 inline constexpr qsizetype maximum_fountain_metadata_bytes = 64 * 1024 * 1024;

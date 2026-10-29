@@ -1,5 +1,6 @@
 #include "source/fountain_conversion.h"
 #include "source/fountain_intake.h"
+#include "source/fountain_working.h"
 #include "source/project_access.h"
 #include "source/recovery.h"
 
@@ -52,6 +53,60 @@ QStringList codes(const std::vector<FountainIssue>& issues) {
 class FountainConversionTests : public QObject {
   Q_OBJECT
 private slots:
+  void writer_subset_matches_independent_screenplay_and_associations() {
+    const auto root = QStringLiteral(APOLLO_FIXTURE_ROOT "/import/");
+    const auto captured = read_fountain_intake(root + "writer-subset.fountain");
+    const auto expected = parse_screenplay(bytes(root + "writer-subset.expected.json"));
+    const auto c = convert_fountain(captured.assets);
+    QCOMPARE(canonical(c.screenplay()), expected);
+    const auto records = QJsonDocument::fromJson(bytes(root + "writer-subset.records.expected.json")).array();
+    const auto actual = c.json().value("retained").toArray();
+    QCOMPARE(actual.size(), records.size());
+    for (qsizetype i = 0; i < records.size(); ++i) {
+      const auto want = records[i].toObject(), got = actual[i].toObject();
+      for (auto it = want.begin(); it != want.end(); ++it) QCOMPARE(got.value(it.key()), it.value());
+      QVERIFY(!got.value("name").toString().isEmpty());
+    }
+    QCOMPARE(fountain_edit_blockers(captured.assets), QStringList{});
+    const auto assets = editable_fountain_assets(captured.assets);
+    QCOMPARE(initial_fountain_writing(assets), expected);
+    QTemporaryDir parent;
+    const auto project = create_project(parent.filePath("working"), expected, assets);
+    QVERIFY(project.import_working && !project.import_review);
+    QCOMPARE(open_project(project.directory).assets, assets);
+    // Metadata cannot grant access by flipping a boolean or contract revision.
+    for (const auto* key : {"contract", "version", "unknown"}) {
+      auto bad = assets;
+      auto json = QJsonDocument::fromJson(*bad.imported_material).object();
+      json.insert(key, 2); bad.imported_material = QJsonDocument(json).toJson();
+      QVERIFY_THROWS_EXCEPTION(SourceError, validate_fountain_working(bad));
+    }
+    ProjectSession session(project.directory);
+    replace_file(project.directory + "/imports/original.fountain", "Changed evidence");
+    QVERIFY_THROWS_EXCEPTION(SourceError, session.save(serialize_screenplay(expected)));
+    QVERIFY_THROWS_EXCEPTION(SourceError, session.read_reload());
+    QCOMPARE(bytes(project.screenplay_path()), serialize_screenplay(expected));
+    // Cached dependencies still protect the original imported records in a copy.
+    const auto copy = create_project(parent.filePath("copy"), expected, assets);
+    QCOMPARE(open_project(copy.directory).assets, assets);
+  }
+  void writer_subset_rejects_unverified_material_data() {
+    QTest::addColumn<QByteArray>("original");
+    for (const auto& original : {QByteArray("@McKay\nWords."), QByteArray("int. home - day\n\nAction."),
+        QByteArray("!  Indented."), QByteArray("!Extra  spaces."), QByteArray("@MARA\n\tWords."), QByteArray("!Before.\n\n\n!After."),
+        QByteArray("[[bad"), QByteArray("A\n~Lyric in speech."), QByteArray("!Unsupported \xf0\x9f\x98\x80"),
+        QByteArray("A\nFirst.\n  \nLast."), QByteArray("!Cross *one _two* three_"), QByteArray(65537, 'x'),
+        QByteArray("!Visible.") + QByteArray("[[n]]").repeated(257)})
+      QTest::newRow(original.left(28).toHex().constData()) << original;
+  }
+  void writer_subset_rejects_unverified_material() {
+    QFETCH(QByteArray, original);
+    QTemporaryDir parent;
+    const auto captured = intake(original, parent.path());
+    QVERIFY(!fountain_edit_blockers(captured.assets).empty());
+    QVERIFY_THROWS_EXCEPTION(SourceError, editable_fountain_assets(captured.assets));
+    QCOMPARE(*captured.assets.original_fountain, original);
+  }
   void independent_and_official_interpretations_data() {
     QTest::addColumn<QString>("name");
     const auto expected = QJsonDocument::fromJson(bytes(QStringLiteral(APOLLO_FIXTURE_ROOT "/import/interpretations.expected.json"))).object();

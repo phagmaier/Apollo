@@ -31,6 +31,9 @@ int main() {
   check("empty", wrap("", 5), {});
   check("trailing spaces", wrap("cold.  ", 35), {"cold."});
   check("only spaces", wrap("   ", 5), {});
+  check("authored breaks", wrap("First line.\nSecond line.", 35), {"First line.", "Second line."});
+  check("blank authored lines", wrap("one\n  \n\nlast\n", 35), {"one", "", "", "last", ""});
+  check("hard and soft wraps", wrap("café doors open\nnext", 10), {"café doors", "open", "next"});
   try { (void)wrap("text", 0); std::cerr << "zero width accepted\n"; ++failures; }
   catch (const std::invalid_argument&) {}
   using apollo::ElementType;

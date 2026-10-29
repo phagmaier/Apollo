@@ -164,3 +164,13 @@ Page counts are afterwriting's; Apollo's may differ by a few pages because its s
 ## Your own scripts
 
 Your existing Fountain scripts are the best real-world import test. Copy them into `reference/own/`, which is gitignored and stays local. A professionally exported PDF of any of them would add a second page-break reference.
+
+## Bounded editable import — `import/writer-subset*`
+
+The original Fountain and hand-written source/record expectations exercise a
+representative, explicitly gated writer subset. The checks cover content and
+historical imported associations through actual editing, undo, autosave,
+reopen, recovery and Save a Copy, plus executable crash/restart flows. These do
+not establish full grammar or exported Fountain round-trip compatibility. See
+[import/README.md](import/README.md) and the
+[writer contract](../docs/editable-fountain-subset.md).

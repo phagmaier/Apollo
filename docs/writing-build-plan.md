@@ -15,8 +15,12 @@ as `2d61ac4`; task 2.5 adds verified recents, staged blank creation with safe
 collision handling/selectable locations, and lossless in-window switching.
 Task 2.5 is finalized as `be35108`. **2.6a — lossless intake and read-only
 review is done**, as a bounded first subtask; full editable import remains
-incomplete. See its evidence below and the [compatibility table](fountain-compatibility.md).
-Leak detection and crash loss during copying remain unverified. The other slice 2
+incomplete. Initial **2.6b** interpretation/copy work is finalized in `d140a1b`.
+The next bounded **2.6c** step admits an independently tested writer subset;
+all clean imported exports remain gated. See its
+[preservation contract](editable-fountain-subset.md), evidence below and the
+[compatibility table](fountain-compatibility.md).
+Crash loss during copying remains unverified. The other slice 2
 flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
 
@@ -792,3 +796,36 @@ affected Python checks passed with `UV_CACHE_DIR=/tmp/apollo-uv-cache`.
 The previously recorded sanitizer, engine, native and Academy evidence remains
 applicable to this unchanged checkpoint. Direct final review found no additional
 concrete in-scope defect.
+
+### Task 2.6c — bounded editable preservation
+
+Implemented the explicitly requested next bounded step under
+[editable-fountain-subset.md](editable-fountain-subset.md). The independent
+fixture covers every saved screenplay element type, six title fields, emphasis,
+Unicode é, literal punctuation, deliberate breaks and dual speeches alongside
+named note/stash, organization, scene-number and title-metadata records. Admission
+is conservative: at most 64 KiB, 256 elements and 256 retained records; no
+unresolved syntax, unverified characters/case/spacing or layout failure.
+
+The explicit new-copy flow uses a v3 manifest and separately validated immutable
+working metadata. Existing reviews stay read-only. Current writing is source v1;
+imported records retain historical IDs/provenance and show present, detached or
+type-changed associations. The reader stays accessible from the writer, including
+after Save a Copy. Immutable dependency changes pause saving and cannot be adopted
+by Reload. Clean Fountain and PDF exports stay blocked in writers, copies,
+recovery forks and executable snapshot paths.
+
+The smallest editing/layout work makes LF a real engine break and makes Enter
+inside dialogue preserve one speech element. Empty dialogue parenthetical Enter
+also follows the agreed return-to-dialogue rule. Existing element identities
+support the bounded historical association contract without adding text tracking.
+Remaining work includes general grammar/corrections, mixed case/spacing/font
+contracts, full authoring/title/dual controls, canonical Fountain output with an
+independent exported semantic round-trip, and representative performance.
+
+Evidence and direct review are recorded in the
+[subset verification](editable-fountain-subset.md#verification-and-review).
+Full release, ASan/UBSan with leak detection and engine-only checks pass, with
+independent Academy/layout references retained. Final activation and association
+regressions also pass in related sanitizer and native Wayland flows. This closes
+the bounded preservation step, not full task 2.6 or slice 3 compatibility.

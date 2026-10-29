@@ -39,3 +39,29 @@ heading and lyrics within speech have explicit unresolved expectations, rather
 than being waved through as supported. This tests interpretations, not PDF
 layout or a Fountain import/export round-trip. The original whitespace-only
 dialogue line and trailing transition spaces are intentional test data.
+
+## Bounded writer subset
+
+`writer-subset.fountain` is original test writing. Its `.expected.json` was
+hand-written from the intended types, words, title fields, dual relationship and
+code-point emphasis spans, independently of the converter. The
+`.records.expected.json` gives independently worked record text, associations,
+section depth and original byte/line locations. The byte counts were checked
+with a separate Python byte listing, not generated from Apollo output.
+
+Together these cover every saved screenplay type, all six title fields,
+Unicode é, literal escaped punctuation, bold/italic/underline combinations,
+deliberate action/dialogue breaks, paired speeches, named note/stash, unknown
+title metadata, section/synopses and production number associations. Profile
+slots/columns for the authored breaks are independently specified in the QML
+flow test. LF and BOM/CRLF variants use the same screenplay expectations while
+preserving their different original bytes and stash line endings.
+
+`fountain_conversion_tests` compares the complete model and retained records;
+`project_access_flow_tests` uses real QML controls and keyboard events through
+editing, undo/redo, autosave/reopen, detached associations, Save a Copy and
+explicit recovery from a damaged source. The actual executable process tests
+independently compare saved JSON to these expectations after typing and SIGKILL
+at four save phases, followed by normal app reopen/resume. See the
+[preservation contract](../../docs/editable-fountain-subset.md) for admission
+limits and remaining export/grammar/layout blockers.

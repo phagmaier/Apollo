@@ -156,8 +156,10 @@ int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
   const auto block = cursor.block();
   const auto type = element_type(block);
   if (block.text().isEmpty()) {
-    // Provisional: Enter on an empty element makes it action.
-    if (type != ElementType::action) set_type(cursor, ElementType::action);
+    const auto next = type == ElementType::parenthetical && in_speech(block) ? ElementType::dialogue : ElementType::action;
+    if (type != next) set_type(cursor, next);
+  } else if (type == ElementType::dialogue && !cursor.atBlockEnd()) {
+    cursor.insertText(QString(QChar::LineSeparator));
   } else if (cursor.atBlockEnd()) {
     const bool dialogue = type == ElementType::cue || (type == ElementType::parenthetical && in_speech(block));
     QTextBlockFormat next;

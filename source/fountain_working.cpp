@@ -1,0 +1,112 @@
+#include "source/fountain_working.h"
+#include "source/fountain_conversion.h"
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QMap>
+
+namespace apollo::source {
+namespace {
+[[noreturn]] void fail(const QString& reason, SourceError::Kind kind = SourceError::Kind::malformed) {
+  throw SourceError(kind, "Editable Fountain copy: " + reason);
+}
+ProjectAssets review_assets(const ProjectAssets& assets) {
+  if (!assets.imported_material || !assets.original_fountain) fail("metadata and original are required");
+  if (assets.imported_material->size() > maximum_fountain_metadata_bytes) fail("metadata exceeds its limit");
+  QJsonParseError error;
+  const auto json = QJsonDocument::fromJson(*assets.imported_material, &error);
+  const auto root = json.object();
+  if (root.value("version").toDouble() > 1) fail("needs a newer Apollo", SourceError::Kind::newer_version);
+  if (error.error != QJsonParseError::NoError || !json.isObject() || root.size() != 4 ||
+      root.value("format") != "apollo-fountain-working" || root.value("version") != 1 ||
+      root.value("contract") != "writer-subset-1" || !root.value("intake").isObject() ||
+      root.value("intake").toObject().value("version") != 2) fail("unsupported preservation contract");
+  ProjectAssets review{QJsonDocument(root.value("intake").toObject()).toJson(), assets.original_fountain};
+  validate_fountain_intake(review);
+  return review;
+}
+QStringList blockers(const FountainConversion& c, qsizetype size) {
+  QStringList result;
+  if (size > 64 * 1024 || c.elements.empty() || c.elements.size() > 256) result << "Writer subset is bounded to 64 KiB and 1–256 elements.";
+  if (c.records.size() > 256) result << "Writer subset is bounded to 256 imported records.";
+  if (!c.unresolved.empty()) result << "Unresolved source ranges require review.";
+  for (const auto& gap : c.limitations)
+    if (gap.code != "authored-case" && gap.code != "deliberate-break-layout")
+      result << "Unverified spacing or layout: " + gap.code;
+  for (const auto& located : c.elements) {
+    const auto& e = located.element;
+    const auto text = QString::fromUtf8(e.text);
+    const auto id = QString::fromStdString(e.id);
+    for (const auto cp : text.toUcs4())
+      if (!((cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9)) {
+        result << id + ": character outside the verified writer subset."; break;
+      }
+    if (e.type == ElementType::cue || e.type == ElementType::heading || e.type == ElementType::title) {
+      bool ascii_upper = true;
+      for (const auto cp : text.toUcs4()) if (cp > 126 || (cp >= 'a' && cp <= 'z')) ascii_upper = false;
+      if (!ascii_upper) result << id + ": authored case requires review.";
+    }
+    if (text.contains('\n') && e.type != ElementType::action && e.type != ElementType::dialogue)
+      result << id + ": this element's multiline layout is unverified.";
+    if (is_title_field(e.type) && text.size() > 48) result << id + ": long title field requires review.";
+    if (e.type != ElementType::page_break)
+      for (const auto& line : text.split('\n'))
+        if (line.isEmpty() || line != line.trimmed() || line.contains("  ")) {
+          result << id + ": empty or significant spacing requires review."; break;
+        }
+  }
+  if (result.isEmpty()) {
+    try { (void)layout_document(c.screenplay().elements); }
+    catch (const std::exception& error) { result << "Layout requires review: " + QString::fromUtf8(error.what()); }
+  }
+  result.removeDuplicates();
+  return result;
+}
+}
+bool is_fountain_working(const ProjectAssets& assets) {
+  return assets.imported_material && QJsonDocument::fromJson(*assets.imported_material).object().value("format") == "apollo-fountain-working";
+}
+QStringList fountain_edit_blockers(const ProjectAssets& review) {
+  const auto c = convert_fountain(review);
+  auto result = blockers(c, review.original_fountain->size());
+  if (review.original_fountain->contains('\t')) result << "Tabs are outside the verified writer subset.";
+  return result;
+}
+ProjectAssets editable_fountain_assets(const ProjectAssets& review) {
+  const auto interpreted = interpreted_fountain_assets(review);
+  const auto reasons = fountain_edit_blockers(interpreted);
+  if (!reasons.empty()) fail(reasons.join('\n'));
+  const QJsonObject root{{"format", "apollo-fountain-working"}, {"version", 1}, {"contract", "writer-subset-1"},
+      {"intake", QJsonDocument::fromJson(*interpreted.imported_material).object()}};
+  return {QJsonDocument(root).toJson(), interpreted.original_fountain};
+}
+void validate_fountain_working(const ProjectAssets& assets) {
+  const auto reasons = fountain_edit_blockers(review_assets(assets));
+  if (!reasons.empty()) fail(reasons.join('\n'));
+}
+Screenplay initial_fountain_writing(const ProjectAssets& assets) {
+  validate_fountain_working(assets);
+  return convert_fountain(review_assets(assets)).screenplay();
+}
+FountainIntake open_working_fountain(const ProjectAssets& assets) {
+  validate_fountain_working(assets);
+  const auto review = review_assets(assets);
+  auto result = open_fountain_intake(review);
+  const auto c = convert_fountain(review);
+  result.assets = assets;
+  result.working = true;
+  result.summary = QString("Editable import copy. %1 screenplay elements; %2 retained records.\n"
+      "The original and imported records are read-only. Associations refer to original elements, not tracked text ranges; removed anchors are shown as Detached. "
+      "Notes, stash, organization and production metadata stay outside screenplay output.\n%3")
+      .arg(c.elements.size()).arg(c.records.size()).arg(fountain_export_block);
+  result.findings.clear();
+  QMap<QString, int> types;
+  for (const auto& e : c.elements) types.insert(QString::fromStdString(e.element.id), int(e.element.type));
+  for (const auto& r : c.records)
+    result.findings.append(QVariantMap{{"kind", r.name}, {"startByte", r.range.start}, {"endByte", r.range.end},
+      {"firstLine", r.range.first_line}, {"lastLine", r.range.last_line}, {"text", r.text}, {"truncated", false},
+      {"message", "Retained " + r.kind + "; original association: " + r.anchor},
+      {"anchor", r.anchor}, {"anchorType", types.value(r.anchor, -1)}});
+  return result;
+}
+}

@@ -3,7 +3,8 @@
 #include <stdexcept>
 
 namespace apollo {
-std::vector<std::string> wrap(std::string_view text, std::size_t width) {
+namespace {
+std::vector<std::string> wrap_line(std::string_view text, std::size_t width) {
   if (width == 0) throw std::invalid_argument("wrap width must be positive");
   std::vector<std::string> lines;
   // Spaces at a line end are break points, not text.
@@ -38,5 +39,19 @@ std::vector<std::string> wrap(std::string_view text, std::size_t width) {
     }
   }
   return lines;
+}
+}
+std::vector<std::string> wrap(std::string_view text, std::size_t width) {
+  if (width == 0) throw std::invalid_argument("wrap width must be positive");
+  if (text.find('\n') == std::string_view::npos) return wrap_line(text, width);
+  std::vector<std::string> result;
+  for (std::size_t start = 0;;) {
+    const auto end = text.find('\n', start);
+    auto lines = wrap_line(text.substr(start, end == std::string_view::npos ? end : end - start), width);
+    if (lines.empty()) lines.emplace_back();
+    result.insert(result.end(), lines.begin(), lines.end());
+    if (end == std::string_view::npos) return result;
+    start = end + 1;
+  }
 }
 }
