@@ -140,6 +140,19 @@ separately:
 | `project_access_flow_tests` `typed_spacing_is_kept_and_exported_as_presented` | Real keys in the Writing desk: Enter after a space and again; undo/redo; autosave and reopen keep `At the \n\nsame time.`; the panel discloses one line; the export through real controls, and after reopening, equals hand-written `At the\n  \nsame time.`. A speech made to begin with a blank line is refused with its reason and nothing is written; Backspace corrects it. The 2.6d flow's Enter before a space is now eligible with the disclosure |
 | `fountain_export_process_tests` / `fountain_export_oracle_tests` | Executables: typing ending in a space exports without it, with the disclosure, while the saved writing keeps it. The spacing fixture is imported, typed into and exported as hand-written text; authored source and original bytes are unchanged; indented action is refused. aw-parser 0.1.1 reads the export, the hand-written export and the original fixture as the presented model |
 
+### Native owner check
+
+Run `tools/check-spacing.sh`. It builds release and opens an ordinary synthetic
+project, with isolated XDG application state and all work/logs retained in a new
+ignored `build/spacing-check-*` directory. The printed checkpoints cover Enter
+before an existing dialogue space, a second Enter for an internal blank line,
+Left/Right across the hidden leading space, and Ctrl+Shift+E's spacing disclosure
+with an export outside the project. No private source or owner project is used.
+`tools/check-spacing.sh --smoke` automates the existing focused native spacing,
+persistence/disclosure and export checks without recording owner acceptance.
+The choices above remain provisional pending the owner's feel assessment.
+`fountain-canonical-4` / `writer-subset-4` inherit revision 3's spacing unchanged.
+
 ## Remaining limitations
 
 - No dedicated control or advisory for blank spacing; creation controls remain

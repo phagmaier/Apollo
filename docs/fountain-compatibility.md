@@ -54,7 +54,7 @@ recovery and Save a Copy, with independent expected content and associations.
 Unsupported cases remain in review. PDF export stays blocked for every imported
 working project; complete Fountain compatibility is pending.
 **2.6d adds bounded canonical Fountain export** for editable projects, ordinary
-and imported, under [`fountain-canonical-3`](fountain-export.md). Each request
+and imported, under [`fountain-canonical-4`](fountain-export.md). Each request
 checks the current snapshot, including edits after import, against the writer
 subset's content rules, speech structure, unambiguous spelling and emphasis
 rules; refusals name the element and reason. Output is verified by reading it
@@ -215,6 +215,10 @@ These are intake assertions, not layout or complete parser acceptance.
   not shown or written, blank dialogue lines and repeated spaces in action and
   dialogue are laid out, exported and (`writer-subset-3`) imported, and speeches
   split at deliberate breaks ([spacing.md](spacing.md)).
+- **Representative-workflow bounded step:** `writer-subset-4` /
+  `fountain-canonical-4` preserve six typographic punctuation marks exactly.
+  Size, syntax, spacing and imported PDF gates are not relaxed. Measurements
+  and the remaining full-length blockers are recorded below.
 - **Slice 3/5 compatibility gate, remaining:** widen export with each authoring
   contract (forced mixed-case names, title case, Unicode, action indentation and other spacing in spacing.md's limits, multiline title/lyric/centered,
   lyric within speech, complex emphasis) and independent examples for each;
@@ -225,3 +229,143 @@ The published syntax has examples that exceed the older parser samples; neither
 corpus alone is exhaustive. Intake tests cannot establish font fidelity,
 editing, note conversion, export compatibility, power-loss durability, or import
 performance on representative full-length scripts.
+
+## Representative full-length assessment (2026-10-28)
+
+Two existing local references were assessed on disposable copies in a
+mode-0700 ignored build directory. Neither original was edited; SHA-256 checks
+confirmed both unchanged. No private screenplay text or fixture derived from it
+is committed. The owner's accompanying PDF has 88 pages; that is a workload
+size observation, **not** validation of Apollo's imported layout.
+
+### Blockers and distance to a writing workflow
+
+| Measured category | Owner reference | Second local reference |
+| --- | ---: | ---: |
+| Original bytes | 100,514 | 148,439 |
+| Interpreted elements, including title fields | 2,319 | 2,759 |
+| Character-blocked elements, before → after punctuation support | 9 → 0 | 771 → 3 |
+| Unresolved syntax ranges | 2 empty speeches | 0 |
+| Located unsupported layout | 49 extra-vertical-spacing locations | 113 action-whitespace locations |
+| Elements refused for significant spacing | 0 | 304 |
+| Title-case refusal | 0 | 1 |
+| Tabs present | No | Yes |
+| Editable size/element gate | Exceeds 64 KiB / 256 elements | Exceeds 64 KiB / 256 elements |
+| Export-check diagnostics on interpreted model, before → after | 11 → 2 | 962 → 194 |
+
+Counts are not additive: one element can have several reasons, a layout code
+is deduplicated in the admission message, and unresolved syntax/size are
+whole-import gates. The actual admission message counts fall from 12 to 3 and
+1,079 to 311. The second reference's remaining characters are one U+00A0
+(nonbreaking space) and two U+00B0 (degree signs); its remaining export-model
+diagnostics are those three characters, 190 repeated-space elements and one
+title-case refusal. The owner's two empty speeches still prevent clean output.
+The 49 vertical-spacing locations must not simply be collapsed to get a pass.
+
+Neither full reference is editable yet. Actual `--edit-fountain` requests
+refuse without publishing a project, and actual exports of their review copies
+refuse without replacing an existing output. The export-model counts above
+come from an in-process diagnostic probe of the interpretation, **not** an
+enabled export path or proof of round-trip fidelity for these scripts. The
+official committed sample corpus remains 6/16 admitted; it is not a full-length
+workload or an exhaustive Fountain grammar.
+
+Sanitized **synthetic**, not quoted, examples: `He can’t wait…` and
+`INT. ROOM — NIGHT` now preserve their punctuation; a cue without dialogue,
+extra blank separator lines, action indentation, tabs and nonbreaking spaces
+remain visible and gated. No script-specific wording or located excerpts are
+needed to explain these categories.
+
+### Responsiveness: measured, not inferred
+
+Release builds on this machine; warm repeated runs, not a controlled cold-start
+benchmark. The in-process baseline used five runs per script; actual CLI and
+native review paths used three. Native review uses the real `ProjectAccessFlow`
+and confirms Wayland/OpenGL. Its clock starts after `QGuiApplication`
+construction and includes font registration, QML setup, intake and the
+admission result; “ready” means reader state installed, not compositor/display
+latency. Other verification ran in the background, so these are indicative
+samples, not isolated performance budgets or before/after speedup claims.
+
+| Operation (median milliseconds) | Owner reference | Second local reference |
+| --- | ---: | ---: |
+| Baseline lossless intake and candidate view, in process | 4.5 | 4.5 |
+| Baseline located interpretation, in process | 14.2 | 19.2 |
+| Baseline editable admission/refusal, in process | 15.3 | 21.6 |
+| Baseline refused export-model check, in process | 10.8 | 9.9 |
+| Actual CLI interpretation plus staged publication, process wall time | 333.8 | 413.1 |
+| Current native read-only review ready, including admission | 191.8 | 301.3 |
+
+CLI publication ranges were 333.8–345.2 and 409.5–415.7 ms; native readiness
+ranges were 183.7–197.3 and 271.6–310.1 ms. A **successful** CLI Fountain
+export of the 8-element / 199-byte independent punctuation fixture took
+66.5 ms median, 58.3–75.4 ms across five warm process runs, including project
+validation and atomic output. It is deliberately labeled a small fixture:
+successful full-length import/edit/export latency and full-length typing
+responsiveness remain unmeasured because neither representative input passes
+the fidelity gates. No timeout/cancel, cold-start or owner-comfort claim follows.
+
+### Selected bounded improvement
+
+Typographic punctuation was the largest counted content blocker, so
+`writer-subset-4` / `fountain-canonical-4` add exactly **— ‘ ’ “ ” …**, not
+general Unicode acceptance or ASCII substitution. The frozen revision-1
+converter and older copy contracts are unchanged. Size limits are retained:
+lifting them alone would admit neither reference and would not establish
+authored-spacing or syntax fidelity.
+
+The original synthetic `punctuation-subset` fixtures provide independently
+written authored semantics and canonical output, including a bold span after a
+curly apostrophe, an authored break, a parenthetical, CONT’D and dual dialogue.
+Conversion/admission and exact export regressions fail on the old repertoire.
+The real QML flow imports, types an ellipsis, undoes/redoes, autosaves, reopens
+and exports the hand-written content. Every new character has a nonzero,
+fixed-pitch glyph in all four pinned faces; a writer capture was visually
+inspected. The executable/oracle flow additionally checks original bytes,
+code-point styles and independent aw-parser readings of the original,
+hand-written export and a typed/reopened export. Imported PDF remains blocked,
+including preservation of an existing PDF on refusal.
+
+This is progress toward writing existing scripts, not a usable full-length
+import claim. Next fidelity work is vertical/action spacing and ambiguous
+empty speeches, then independently exercised full-length admission bounds;
+the second reference also needs its title and residual-character contracts.
+No correction UI, general Unicode policy, title form or expanded PDF support
+was added.
+
+### Verification and review
+
+- Release: `mise run check`, **23/23**, completed inside the successful native
+  preflight. Includes both executable Fountain suites and the independent
+  aw-parser check of 13 original/expected/edited inputs.
+- ASan/UBSan: `mise run check-debug`, **23/23**, no sanitizer report.
+- Engine-only: `mise run check-engine`, **2/2**.
+- `tools/check-wayland.sh --preflight`: editor **62/62**, export lifecycle
+  **13/13**, project flows **36/36**, native PDF snapshots and 203-/507-page
+  first-paint/export checks pass. Editor/input uses native threaded OpenGL and
+  fcitx5; project flows use synthetic Qt events and software scenegraph.
+  Full native typing measurements were not rerun.
+- `tools/check-spacing.sh --smoke`: native focused spacing **6/6**, existing
+  spacing export/persistence flow **3/3**, synthetic native project agreement
+  and actual Fountain export pass. `bash -n` passes. This does not record
+  owner acceptance of the provisional spacing feel.
+- `uv run tools/compare_academy.py --probe build/release/layout_probe`: full
+  text and all 11 anchored body pages pass with the four documented deviations.
+
+Completion review covered the shared repertoire, strict validation of older
+copies, Unicode/code-point emphasis, authored-source preservation, actual
+publication/reopen/export, the unchanged PDF block, and the isolated manual
+runner. It caught and removed a runner assumption that spike `--create` keeps
+trailing dialogue spaces; the checkpoint now creates its leading space by a
+real Enter. An initial new test asserted active-reader rather than preview
+state; that test setup was corrected. No outstanding concrete in-scope finding
+remains. An overlapping release configure and an initial sanitizer command
+deadline were rerun successfully without relaxing checks.
+
+Evidence: release/debug `build/{release,debug}/Testing/Temporary/LastTest.log`,
+native `build/wayland-check-20261028-202516-i6rXY1/`, spacing runner
+`build/spacing-check-ssx74u/`, aggregate JSON and red regressions under
+`build/workflow-assessment-g03orzwl/`. **The assessment directory also contains
+disposable private copies: do not publish that directory.** Temporary probe
+sources/binaries were removed. No dependency pins, engine layout rules or
+independent layout references changed.

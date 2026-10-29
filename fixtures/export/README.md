@@ -12,6 +12,7 @@ serializer produced any output; none is captured from Apollo.
 | `writer-subset-edited-no-title.fountain` | The same, exported without the title page |
 | `case-subset.fountain` | [`../import/case-subset.expected.json`](../import/case-subset.expected.json), whose headings and cue extensions are authored in lowercase, written with headings and cues in capitals as the [case contract](../../docs/case-handling.md) presents them |
 | `spacing-subset.fountain` | [`../import/spacing-subset.expected.json`](../import/spacing-subset.expected.json), written as the [spacing contract](../../docs/spacing.md) presents it: no space at a line edge, the blank dialogue line as two spaces, repeated spaces in action and dialogue as authored |
+| `punctuation-subset.fountain` | [`../import/punctuation-subset.expected.json`](../import/punctuation-subset.expected.json), preserving the six admitted Unicode punctuation marks and code-point emphasis after a curly apostrophe, with an authored break and dual pairing |
 
 The original imported Fountain spells the same meaning differently (`!` before
 plain action, notes, stash, sections, synopses, scene number and an unknown title

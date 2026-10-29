@@ -189,6 +189,26 @@ def case_subset(editor, root):
             (FIXTURES / "export/case-subset.fountain", presented(json.loads((FIXTURES / "import/case-subset.expected.json").read_text())), True)]
 
 
+def punctuation_subset(editor, root):
+    """Keep typographic Unicode and code-point emphasis through real typing/reopen."""
+    fixture = FIXTURES / "import/punctuation-subset.fountain"
+    original, project, out = root / "punctuation.fountain", root / "punctuated", root / "punctuated.fountain"
+    shutil.copyfile(fixture, original)
+    run(editor, project, "--edit-fountain", original)
+    assert type_at_end(editor, project, root / "typing-punctuation.log", 1, "f8") == len("The lamp turns.")
+    run(editor, project, "--export-fountain", out)
+    expected = (FIXTURES / "export/punctuation-subset.fountain").read_text()
+    assert out.read_text() == expected.replace("The lamp turns.\n", "The lamp turns.t\n")
+    authored = json.loads((FIXTURES / "import/punctuation-subset.expected.json").read_text())
+    typed = json.loads(json.dumps(authored))
+    typed["elements"][-1]["text"] += "t"
+    saved = json.loads((project / "screenplay.json").read_text())
+    assert (saved["titlePage"], saved["elements"]) == (typed["titlePage"], typed["elements"]), saved
+    assert original.read_bytes() == fixture.read_bytes()
+    assert (project / "imports/original.fountain").read_bytes() == fixture.read_bytes()
+    return [(out, typed, True), (FIXTURES / "export/punctuation-subset.fountain", authored, True), (fixture, authored, True)]
+
+
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--editor", required=True, type=pathlib.Path)
@@ -216,12 +236,12 @@ def main():
     assert out.read_text() == expected.replace("The train leaves.\n", "The train leaves." + TYPED.rstrip() + "\n"), out.read_text()
 
     # A refused snapshot leaves an existing file as it was.
-    dashed = root / "dashed.fountain"
-    dashed.write_text("Wait\u2014now.\n")
-    run(editor, root / "dashed", "--create", dashed)
+    unverified = root / "unverified.fountain"
+    unverified.write_text("Wait\u00a0now.\n")
+    run(editor, root / "unverified", "--create", unverified)
     out.write_bytes(b"Existing export")
-    blocked = run(editor, root / "dashed", "--export-fountain", out, expect=3)
-    assert "Fountain export blocked: Element 1, Action “Wait—now.”: contains “—” (U+2014)" in blocked.stderr, blocked.stderr
+    blocked = run(editor, root / "unverified", "--export-fountain", out, expect=3)
+    assert "contains “ ” (U+00A0)" in blocked.stderr, blocked.stderr
     assert out.read_bytes() == b"Existing export"
 
     # One more typed letter: nothing is left out.
@@ -248,6 +268,7 @@ def main():
 
     case_cases = case_subset(editor, root)
     spacing_cases = spacing_subset(editor, root)
+    punctuation_cases = punctuation_subset(editor, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -260,7 +281,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

@@ -1,4 +1,4 @@
-# Canonical Fountain export (`fountain-canonical-3`)
+# Canonical Fountain export (`fountain-canonical-4`)
 
 2026-10-28. This is task **2.6d**, a bounded first step of the slice 3/5
 Fountain export gate. It exports clean Fountain for **editable projects** —
@@ -15,6 +15,10 @@ unless authored in capitals. Revision 3 (task 3b) writes spacing as presented
 under the [spacing contract](spacing.md): no spaces at line edges, a blank
 dialogue line as two spaces, and repeated spaces in action and dialogue as
 typed. Revision 2 refused every leading, trailing or repeated space.
+Revision 4 adds exact Unicode punctuation **— ‘ ’ “ ” …** (U+2014, U+2018,
+U+2019, U+201C, U+201D, U+2026). No ASCII substitution or normalization is
+performed. Title text still requires ASCII capitals; all other case, spacing,
+structure, size and PDF gates remain unchanged.
 
 ## Eligibility: checked on every snapshot
 
@@ -24,9 +28,9 @@ later eligible again; saving is never restricted by it. Every element in the
 snapshot (title fields only when the title page is included) must satisfy:
 
 - **The writer-subset content rules**, shared in code with import admission
-  (`writer_subset_gaps`): printable ASCII and é only; scene headings and
-  character cues in any ASCII case but with no letter that presentation leaves
-  lowercase (é); the title in ASCII capitals; line breaks only in action and dialogue;
+  (`writer_subset_gaps`): printable ASCII, é and the six punctuation marks above;
+  scene headings and character cues in any ASCII case but with no letter that
+  presentation leaves lowercase (é); the title in ASCII capitals; line breaks only in action and dialogue;
   title fields of at most 48 characters. A page break carries no text. The
   generated `(MORE)` type is refused.
 - **Spacing** ([spacing contract](spacing.md)): no element whose presented text
@@ -146,12 +150,20 @@ Independent expectations are in [fixtures/export](../fixtures/export/README.md).
 The oracle test is configured only when aw-parser and node are present; run
 `tools/afterwriting-oracle.sh` once (it needs network, node and pnpm), then
 reconfigure. `node tools/aw_tokens.cjs AW_PARSER_DIR FILE` prints its reading.
+The later `punctuation-subset` fixtures add hand-written semantics and canonical
+text for **— ‘ ’ “ ” …**. Conversion tests retain earlier contracts' refusal of
+these characters; the QML flow types, undoes/redoes, saves, reopens and exports
+an ellipsis while checking exact authored text/styles and the separate PDF
+block. The executable/oracle flow reads the original, expected and typed export
+with aw-parser, including the bold code-point span after a curly apostrophe.
 
 Measured on this machine (release build, synthetic repeats of the subset model):
 2,106 elements / 40 KB take 4 ms for the GUI-thread check and 11 ms for the
-worker; 10,506 elements / 200 KB take 20 ms and 57 ms. Realistic full-length
-scripts mostly exceed the subset today (for example mixed-case cues), so this
-is not a representative-workload measurement.
+worker; 10,506 elements / 200 KB take 20 ms and 57 ms. These are not
+representative-script measurements. The later
+[full-length assessment](fountain-compatibility.md#representative-full-length-assessment-2026-10-28)
+records actual preview/publication timings and remaining gates; neither full
+reference is currently editable or exportable.
 
 ## Remaining gates
 

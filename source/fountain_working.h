@@ -13,14 +13,16 @@ namespace apollo::source {
 // and -2: an empty line, or a leading, trailing or repeated space. Newer
 // admission and the export refine it by element type (docs/spacing.md).
 enum class WriterSubsetGap { character, authored_case, uncapitalized_letter, multiline, long_title, spacing };
-std::vector<WriterSubsetGap> writer_subset_gaps(const Element& element);
+// Current character repertoire; punctuation is preserved, never transliterated.
+bool writer_subset_character(char32_t codepoint);
+std::vector<WriterSubsetGap> writer_subset_gaps(const Element& element, bool typographic_punctuation = true);
 // Conservative admission contracts; see docs/editable-fountain-subset.md. New
-// copies use writer-subset-3, which admits the spacing in docs/spacing.md.
-// Copies made under an earlier contract are validated by its rules:
-// writer-subset-2 refused that spacing, and writer-subset-1 also required
-// headings and cues in ASCII capitals. The original review model is
+// copies use writer-subset-4, adding six verified typographic punctuation marks.
+// Copies made under an earlier contract are validated by its rules: -3 refused
+// these punctuation marks, -2 also refused the newer spacing, and -1 also
+// required headings and cues in ASCII capitals. The original review model is
 // immutable. Later writing may be unfinished.
-inline constexpr auto writer_subset_contract = "writer-subset-3";
+inline constexpr auto writer_subset_contract = "writer-subset-4";
 QStringList fountain_edit_blockers(const ProjectAssets& review, const QString& contract = writer_subset_contract);
 ProjectAssets editable_fountain_assets(const ProjectAssets& review);
 bool is_fountain_working(const ProjectAssets& assets);

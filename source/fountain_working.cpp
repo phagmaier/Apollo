@@ -22,7 +22,7 @@ Review review_of(const ProjectAssets& assets) {
   if (error.error != QJsonParseError::NoError || !json.isObject() || root.size() != 4 ||
       root.value("format") != "apollo-fountain-working" || root.value("version") != 1 ||
       (root.value("contract") != "writer-subset-1" && root.value("contract") != "writer-subset-2" &&
-       root.value("contract") != writer_subset_contract) ||
+       root.value("contract") != "writer-subset-3" && root.value("contract") != writer_subset_contract) ||
       !root.value("intake").isObject() || root.value("intake").toObject().value("version") != 2)
     fail("unsupported preservation contract");
   ProjectAssets review{QJsonDocument(root.value("intake").toObject()).toJson(), assets.original_fountain};
@@ -56,6 +56,9 @@ bool admitted_spacing(const Element& e) {
     return std::none_of(lines.begin(), lines.end(), [](const QString& line) { return line.isEmpty() || line != line.trimmed(); });
   return false;
 }
+bool legacy_character(char32_t cp) {
+  return (cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9;
+}
 QStringList blockers(const FountainConversion& c, qsizetype size, const QString& contract) {
   QStringList result;
   if (size > 64 * 1024 || c.elements.empty() || c.elements.size() > 256) result << "Writer subset is bounded to 64 KiB and 1–256 elements.";
@@ -71,8 +74,8 @@ QStringList blockers(const FountainConversion& c, qsizetype size, const QString&
     if (legacy_case) result << id + ": authored case requires review.";
     else if (mixed_case_name(e)) result << id + ": forced mixed-case character name requires review; Apollo presents cues in capitals.";
     // writer-subset-1 and -2 admitted no empty line and no leading, trailing or repeated space.
-    const bool spacing = contract == writer_subset_contract && admitted_spacing(e);
-    for (const auto gap : writer_subset_gaps(e))
+    const bool spacing = (contract == "writer-subset-3" || contract == writer_subset_contract) && admitted_spacing(e);
+    for (const auto gap : writer_subset_gaps(e, contract == writer_subset_contract))
       if (!(legacy_case && gap == WriterSubsetGap::uncapitalized_letter) && !(spacing && gap == WriterSubsetGap::spacing)) switch (gap) {
         case WriterSubsetGap::character: result << id + ": character outside the verified writer subset."; break;
         case WriterSubsetGap::authored_case: result << id + ": authored case requires review."; break;
@@ -90,11 +93,15 @@ QStringList blockers(const FountainConversion& c, qsizetype size, const QString&
   return result;
 }
 }
-std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e) {
+bool writer_subset_character(char32_t cp) {
+  return legacy_character(cp) || cp == 0x2014 || cp == 0x2018 || cp == 0x2019 ||
+      cp == 0x201c || cp == 0x201d || cp == 0x2026;
+}
+std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e, bool typographic_punctuation) {
   std::vector<WriterSubsetGap> result;
   const auto text = QString::fromUtf8(e.text);
   for (const auto cp : text.toUcs4())
-    if (!((cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9)) { result.push_back(WriterSubsetGap::character); break; }
+    if (!(typographic_punctuation ? writer_subset_character(cp) : legacy_character(cp))) { result.push_back(WriterSubsetGap::character); break; }
   if (e.type == ElementType::title) {
     bool ascii_upper = true;
     for (const auto cp : text.toUcs4()) if (cp > 126 || (cp >= 'a' && cp <= 'z')) ascii_upper = false;

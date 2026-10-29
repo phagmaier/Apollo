@@ -316,6 +316,72 @@ private slots:
     QCOMPARE(bytes(input), original);
     QCOMPARE(*preserved_assets.original_fountain, original);
   }
+  void punctuation_import_edit_reopen_and_export_preserves_authored_unicode() {
+    const auto fixture = QStringLiteral(APOLLO_IMPORT_FIXTURE_DIR "/punctuation-subset");
+    const auto original = bytes(fixture + ".fountain");
+    const auto input = path("punctuation-input");
+    replace_file(input, original);
+    auto expected = parse_screenplay(bytes(fixture + ".expected.json"));
+    auto exported = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/punctuation-subset.fountain");
+    const auto state = path("punctuation-state"), output = path("punctuation-output") + ".fountain";
+    QString working;
+    {
+      Window window(font_, state, {}, {}, input);
+      QTRY_VERIFY(window.flow.intake_preview());
+      QVERIFY(window.flow.intake_edit_supported());
+      window.item("intakeProjectName")->setProperty("text", "Punctuation " + QString::number(count_));
+      window.item("intakeProjectParent")->setProperty("text", root_.path());
+      QVERIFY(window.click("editIntake"));
+      QTRY_VERIFY(window.flow.document());
+      working = window.flow.autosaver()->location();
+      QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);
+      QVERIFY(draws(font_, window.flow.document()->findBlockByNumber(1), QString::fromUtf8(expected.elements[1].text)));
+      // Every newly admitted code point has a real fixed-pitch glyph in each
+      // pinned face, rather than silently relying on font fallback.
+      for (const auto weight : {QFont::Normal, QFont::Bold}) for (const bool italic : {false, true}) {
+        auto font = font_; font.setWeight(weight); font.setItalic(italic);
+        const auto raw = QRawFont::fromFont(font);
+        const auto glyphs = raw.glyphIndexesForString(QStringLiteral("—‘’“”…"));
+        for (const auto glyph : glyphs) QVERIFY(glyph != 0);
+        for (const auto advance : raw.advancesForGlyphIndexes(glyphs))
+          QVERIFY(std::abs(advance.x() / px_per_point - profile::advance) < 0.01);
+      }
+      auto* editor = window.flow.editor();
+      const auto last = window.flow.document()->lastBlock();
+      editor->setProperty("cursorPosition", last.position() + last.length() - 1);
+      editor->forceActiveFocus();
+      window.type(QStringLiteral("…"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(block_element(last).text, std::string("The lamp turns."));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      expected.elements.back().text += "…";
+      exported.replace("The lamp turns.\n", "The lamp turns.…\n");
+      QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);
+      QVERIFY(static_cast<ScreenplayLayout*>(window.flow.document()->documentLayout())->error().isEmpty());
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/punctuation-writing.png")));
+    }
+    {
+      Window window(font_, state);
+      QTRY_VERIFY(window.flow.document());
+      QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);
+      QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(window.item("exportEligibility")->property("text").toString().startsWith("Ready."));
+      window.item("fountainDestination")->setProperty("text", output);
+      QVERIFY(window.click("exportConfirm"));
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(output), exported);
+      const auto pdf = path("blocked-punctuation") + ".pdf";
+      replace_file(pdf, "Existing PDF evidence");
+      QVERIFY(!qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>())->request(pdf));
+      QCOMPARE(bytes(pdf), QByteArray("Existing PDF evidence"));
+    }
+    QCOMPARE(bytes(input), original);
+    QCOMPARE(bytes(working + "/imports/original.fountain"), original);
+  }
+
   // Import → real edits → autosave → reopen → clean Fountain, compared with
   // hand-written expected text. Eligibility follows each snapshot, refusals
   // and failures keep existing files, and writing continues during export.

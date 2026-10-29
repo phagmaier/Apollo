@@ -1,0 +1,16 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [],
+  "elements": [
+    {"id":"f1","type":"sceneHeading","text":"INT. SIGNAL ROOM — NIGHT"},
+    {"id":"f2","type":"action","text":"The sign reads “WAIT”. Café doors open—slowly."},
+    {"id":"f3","type":"character","text":"MARA (CONT’D)"},
+    {"id":"f4","type":"parenthetical","text":"(‘quietly’)"},
+    {"id":"f5","type":"dialogue","text":"I’m sure…\nWe’ll wait.","styles":[{"start":4,"end":8,"style":"bold"}]},
+    {"id":"f6","type":"character","text":"THEO","dual":true},
+    {"id":"f7","type":"dialogue","text":"“Then wait,” he says."},
+    {"id":"f8","type":"action","text":"The lamp turns."}
+  ]
+}

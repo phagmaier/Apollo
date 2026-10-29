@@ -22,6 +22,11 @@ projects whose current snapshot meets the [export contract](fountain-export.md);
 PDF of imported writing remains gated. See the
 [preservation contract](editable-fountain-subset.md), evidence below and the
 [compatibility table](fountain-compatibility.md).
+The representative full-length assessment adds `writer-subset-4` /
+`fountain-canonical-4` for six preserved typographic punctuation marks. Both
+local full scripts still fail other admission gates; this is not full-length
+editable import. See the measured blocker inventory in
+[fountain-compatibility.md](fountain-compatibility.md#representative-full-length-assessment-2026-10-28).
 Crash loss during copying remains unverified. The other slice 2
 flows and slices 3–6 remain pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
@@ -989,3 +994,37 @@ Academy transcription (0 and 50 edits) and `compare_academy.py` pass with
 unchanged results; the layout fixtures are unchanged. Each new layout check
 fails on the previous engine. Logs: `build/task-spacing-{release,debug,engine,academy,native}.log`;
 native artifacts are in `build/wayland-check-20261028-195348-YusiiS/`.
+
+### Representative full-length workflow — bounded punctuation step
+
+2026-10-28. Assessment used disposable private copies and committed independent
+fixtures. The owner's 100,514-byte / 2,319-element reference has 9
+character-blocked elements, 2 unresolved empty speeches and 49 extra-vertical-
+spacing locations, and exceeds current editable size/element bounds. The second
+148,439-byte / 2,759-element reference has 771 character-blocked elements plus
+spacing, title, tabs and size gates. Counts, measurement boundaries and
+remaining work are in the
+[compatibility assessment](fountain-compatibility.md#representative-full-length-assessment-2026-10-28).
+No private wording was used as test data.
+
+The bounded improvement preserves **— ‘ ’ “ ” …** as authored Unicode in new
+`writer-subset-4` copies and `fountain-canonical-4` output, removing 9 and 768
+character-blocked elements respectively. Older contracts and the frozen
+revision-1 interpretation remain unchanged. Independent original fixtures,
+real import/edit/undo/autosave/reopen/export flows and aw-parser verify the
+expanded repertoire. Size, unresolved syntax, unsupported spacing/Unicode,
+title and imported PDF gates remain; neither reference becomes editable yet.
+This does not complete task 2.6 or slices 3/5.
+
+`tools/check-spacing.sh` is the short native owner check. It creates only an
+isolated synthetic ordinary project, prints the four requested checkpoints and
+keeps work/logs in ignored build output. Its `--smoke` mode checks the native
+editor and existing real-controls disclosure/persistence/export behavior.
+No spacing choice is promoted to an owner-approved policy.
+
+Final verification: release 23/23, ASan/UBSan 23/23 without a sanitizer report,
+engine-only 2/2; native preflight editor 62/62, export lifecycle 13/13, project
+flows 36/36 plus native PDF snapshots/first paint; spacing runner smoke and
+Academy independent comparison pass. Full native typing was not rerun.
+Detailed evidence paths, measurement boundaries, review corrections and
+remaining gates are in the compatibility assessment above.

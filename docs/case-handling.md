@@ -107,6 +107,12 @@ headings in capitals, as Apollo does, but reads `MARA (cont'd)` as action,
 unlike Fountain 1.1 and its official Dialogue sample. Exported capitals are read
 as cues by both.
 
+`writer-subset-4` / `fountain-canonical-4` additionally preserve six punctuation
+marks **— ‘ ’ “ ” …**, including an authored curly-apostrophe `(CONT’D)`.
+Punctuation does not require case conversion. This does not relax the title's
+ASCII-capitals restriction, the lowercase-letter gate in headings/cues, or the
+owner's forced mixed-case-name policy.
+
 ## Remaining limitations
 
 - Letters outside ASCII in headings and cues are not shown in capitals in the

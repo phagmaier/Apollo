@@ -2,7 +2,7 @@
 
 2026-10-28. This is task **2.6c**, a bounded continuation of 2.6b, not complete
 Fountain compatibility or completion of writing slice 3. Contract `writer-subset-1`
-(now `writer-subset-3`, below) is an engineering choice within the requested preservation work.
+(now `writer-subset-4`, below) is an engineering choice within the requested preservation work.
 
 Admission requires a verified revision-1 interpretation with no unresolved ranges,
 a nonempty screenplay, at most 64 KiB original, at most 256 elements and 256
@@ -39,6 +39,16 @@ dialogue line, repeated spaces in other elements, tabs and extra vertical
 spacing remain review-only. Copies created under `writer-subset-1` or `-2` are
 still validated by their stricter spacing rules; builds before task 3b refuse
 `writer-subset-3` copies.
+
+**`writer-subset-4` (representative-workflow assessment)** adds six exact Unicode
+punctuation marks: **— ‘ ’ “ ” …** (U+2014, U+2018, U+2019, U+201C, U+201D,
+U+2026). They are preserved in authored text, emphasis offsets, saved writing and
+clean Fountain; never replaced with ASCII. All four pinned Courier Prime faces
+must supply fixed-pitch glyphs. The title still requires ASCII capitals. No
+other Unicode, size, syntax, spacing or layout gate is widened, and imported PDF
+remains blocked. New copies use this contract; `writer-subset-1` through `-3`
+keep their earlier character rules on validation/reopen. Older builds refuse
+`writer-subset-4` instead of silently widening an older copy.
 
 **Edit in a New Copy** creates a staged project with a fresh identity. Neither a
 review project nor the external Fountain is upgraded or rewritten. Publication
@@ -149,3 +159,9 @@ including setup/cleanup. Logs are `build/task-2.6c-final-related.log`,
 `build/task-2.6c-final-debug-related.log` and
 `build/task-2.6c-final-native.log`. Final diff inspection found no additional
 in-scope issue; no dependency/runtime pins or independent layout references changed.
+
+The later punctuation step's independent fixtures, real flows, older-contract
+validation and final release/sanitizer/native evidence are recorded in
+[the representative-workflow assessment](fountain-compatibility.md#representative-full-length-assessment-2026-10-28).
+Its two full scripts remain blocked by other fidelity and size gates; the new
+repertoire is not evidence of full-length editable compatibility.

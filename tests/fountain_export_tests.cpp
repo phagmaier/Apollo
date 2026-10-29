@@ -56,6 +56,10 @@ private slots:
     QCOMPARE(presented.bytes, bytes(APOLLO_FIXTURE_ROOT "/export/spacing-subset.fountain"));
     QCOMPARE(fountain_spacing_note(spaced.elements),
              QString("Written without the spaces at the start or end of 1 line, which Apollo does not show or print. The project keeps them as typed."));
+    const auto punctuated = parse_screenplay(bytes(APOLLO_FIXTURE_ROOT "/import/punctuation-subset.expected.json"));
+    const auto punctuation = export_fountain(punctuated.elements, true);
+    QVERIFY2(punctuation.blockers.isEmpty(), qPrintable(punctuation.blockers.join('\n')));
+    QCOMPARE(punctuation.bytes, bytes(APOLLO_FIXTURE_ROOT "/export/punctuation-subset.fountain"));
   }
 
   // Action is unforced only when its first line begins with a letter or digit,
@@ -140,7 +144,7 @@ private slots:
     QTest::newRow("cue letter not shown in capitals") << Elements{e(H, "INT. A"), e(C, "jos\xc3\xa9"), e(D, "Hi.")}
         << QString("Element 2, Character cue “josé”: contains “é”, which Apollo does not yet show in capitals in scene headings and character cues.");
     QTest::newRow("heading letter not shown in capitals") << Elements{e(H, "INT. CAF\xc3\xa9")} << QString("Element 1, Scene heading “INT. CAFé”: contains “é”");
-    QTest::newRow("unverified character") << Elements{e(A, "Wait—now.")} << QString("Element 1, Action “Wait—now.”: contains “—” (U+2014)");
+    QTest::newRow("unverified character") << Elements{e(A, "Wait now.")} << QString("Element 1, Action “Wait now.”: contains “ ” (U+00A0)");
     QTest::newRow("empty element") << Elements{e(A, "Done."), e(A, "")} << QString("Element 2, Action (empty): is empty; type its text or delete it.");
     QTest::newRow("only spaces") << Elements{e(A, "Done."), e(A, "   ")} << QString("Element 2, Action (empty): is empty; type its text or delete it.");
     QTest::newRow("repeated spaces in a heading") << Elements{e(H, "INT.  A")}
@@ -267,7 +271,7 @@ private slots:
     std::mt19937 random(11);
     const char* pieces[] = {"a", "B", "x", " ", ".", "!", "#", "=", ">", "<", "@", "~", "(", ")", "*", "_", "\\", "/", "[", "]",
                             ":", "^", "TO:", "INT. ", "\xc3\xa9", "1", "\n", "-", "'", "Note:", "I/E ", "EXT",
-                            "  ", " \n", "\n\n"};
+                            "  ", " \n", "\n\n", "—", "‘", "’", "“", "”", "…"};
     const ElementType types[] = {H, A, C, P, D, ElementType::lyric, T, ElementType::centered, ElementType::page_break,
                                  ElementType::title, ElementType::author};
     int eligible = 0;

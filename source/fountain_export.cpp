@@ -238,8 +238,8 @@ Writer::Writer(const std::vector<Element>& snapshot, bool include_title) {
       switch (gap) {
         case WriterSubsetGap::character:
           for (const char32_t cp : QString::fromUtf8(e.text).toUcs4())
-            if (!((cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9)) {
-              block(i, QString("contains “%1” (U+%2); this export is verified for printable ASCII and é")
+            if (!writer_subset_character(cp)) {
+              block(i, QString("contains “%1” (U+%2); this export is verified for printable ASCII, é and typographic punctuation — ‘ ’ “ ” …")
                   .arg(QString::fromUcs4(&cp, 1), QString::number(cp, 16).toUpper().rightJustified(4, '0')));
               break;
             }

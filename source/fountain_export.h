@@ -5,9 +5,9 @@
 #include <QStringList>
 
 namespace apollo::source {
-// Contract fountain-canonical-3; see docs/fountain-export.md. These functions
+// Contract fountain-canonical-4; see docs/fountain-export.md. These functions
 // read only their arguments, so an export can run them on a worker thread.
-inline constexpr auto fountain_export_contract = "fountain-canonical-3";
+inline constexpr auto fountain_export_contract = "fountain-canonical-4";
 // The frozen revision-1 reader that verifies each export is bounded to 1 MiB.
 inline constexpr qsizetype maximum_fountain_export_bytes = 1024 * 1024;
 

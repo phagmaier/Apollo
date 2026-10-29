@@ -80,6 +80,11 @@ frozen every visual detail.
   full typing measurements).
   Automate the checks available to the agent; leave subjective comfort and
   appearance acceptance to the owner and state what was actually verified.
+- For a short spacing feel check, run `tools/check-spacing.sh`. It opens a
+  disposable synthetic project with isolated application state and printed
+  checkpoints for deliberate/blank dialogue lines, leading-space navigation and
+  Fountain disclosure. `--smoke` automates the focused native checks. Spacing
+  choices remain provisional until owner review; see `docs/spacing.md`.
 - The bounded Writing desk shell is in `app/WritingDesk.qml`. Use
   `tools/inspect-writing-desk.sh` for the prototype/QML comparison, or `--smoke`
   for its automated native launch/outline/export check. See

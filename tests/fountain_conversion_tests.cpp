@@ -101,7 +101,7 @@ private slots:
     QCOMPARE(fountain_edit_blockers(captured.assets), QStringList{});
     QVERIFY(!fountain_edit_blockers(captured.assets, "writer-subset-1").isEmpty());
     const auto assets = editable_fountain_assets(captured.assets);
-    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-3"));
+    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-4"));
     QCOMPARE(*assets.original_fountain, bytes(root + "case-subset.fountain"));
     QCOMPARE(initial_fountain_writing(assets), expected);
     auto older = assets;
@@ -132,7 +132,7 @@ private slots:
              (QStringList{"f2: empty or significant spacing requires review.", "f4: empty or significant spacing requires review.",
                           "f7: empty or significant spacing requires review."}));
     const auto assets = editable_fountain_assets(captured.assets);
-    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-3"));
+    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-4"));
     QCOMPARE(*assets.original_fountain, bytes(root + "spacing-subset.fountain"));
     QCOMPARE(initial_fountain_writing(assets), expected);
     auto older = assets;
@@ -140,6 +140,25 @@ private slots:
     json.insert("contract", "writer-subset-2"); older.imported_material = QJsonDocument(json).toJson();
     try { validate_fountain_working(older); QFAIL("a writer-subset-2 claim admitted spacing"); }
     catch (const SourceError& error) { QVERIFY2(QString(error.what()).contains("f4: empty or significant spacing requires review."), error.what()); }
+    json.insert("contract", "writer-subset-3"); older.imported_material = QJsonDocument(json).toJson();
+    validate_fountain_working(older);
+  }
+  void punctuation_keeps_unicode_styles_and_legacy_admission() {
+    const auto root = QStringLiteral(APOLLO_FIXTURE_ROOT "/import/punctuation-subset");
+    const auto captured = read_fountain_intake(root + ".fountain");
+    const auto expected = parse_screenplay(bytes(root + ".expected.json"));
+    QCOMPARE(canonical(convert_fountain(captured.assets).screenplay()), expected);
+    QCOMPARE(fountain_edit_blockers(captured.assets), QStringList{});
+    for (const auto* contract : {"writer-subset-1", "writer-subset-2", "writer-subset-3"})
+      QVERIFY(fountain_edit_blockers(captured.assets, contract).join('\n').contains("character outside the verified writer subset"));
+    const auto assets = editable_fountain_assets(captured.assets);
+    QCOMPARE(initial_fountain_writing(assets), expected);
+    QCOMPARE(*assets.original_fountain, bytes(root + ".fountain"));
+    auto legacy = assets;
+    auto json = QJsonDocument::fromJson(*legacy.imported_material).object();
+    json.insert("contract", "writer-subset-3");
+    legacy.imported_material = QJsonDocument(json).toJson();
+    QVERIFY_THROWS_EXCEPTION(SourceError, validate_fountain_working(legacy));
   }
   void writer_subset_explains_case_it_cannot_present() {
     QTemporaryDir parent;
