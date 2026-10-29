@@ -701,6 +701,15 @@ private slots:
     QCOMPARE(block_element(document_->begin().next()), survivor);
   }
 
+  // Presentation converts ASCII letters only (docs/case-handling.md): é in a
+  // heading is drawn as written, and the scene list agrees with the page.
+  void presentation_capitalizes_ascii_letters_only() {
+    QVERIFY(open_elements({{ElementType::heading, "int. caf\xc3\xa9 - day"}, {ElementType::action, "Rain."}}));
+    QVERIFY(draws(document_->begin(), QString::fromUtf8("INT. CAF\xc3\xa9 - DAY")));
+    QCOMPARE(view_->rootObject()->property("outlineScenes").toStringList(), QStringList{QString::fromUtf8("INT. CAF\xc3\xa9 - DAY")});
+    QCOMPARE(block_element(document_->begin()).text, std::string("int. caf\xc3\xa9 - day"));
+  }
+
   // Tab cycles heading, action, character, parenthetical, dialogue,
   // transition; Shift+Tab goes back. A heading is shown uppercase while the
   // document keeps what was typed, and each change is one undo step.
@@ -1062,22 +1071,30 @@ private slots:
 
   // A typed (CONT'D) where G1 generates one is shown once, as the generated
   // form; the typed suffix stays document text, drawn transparent beneath.
+  // Typed in lowercase it is the same suffix: the cue is presented in capitals.
+  void typed_continuation_is_shown_once_data() {
+    QTest::addColumn<QString>("suffix");
+    QTest::newRow("capitals") << QStringLiteral(" (CONT'D)");
+    QTest::newRow("lowercase") << QStringLiteral(" (cont'd)");
+  }
   void typed_continuation_is_shown_once() {
+    QFETCH(QString, suffix);
     QVERIFY(open(QStringLiteral("08-dual-dialogue-and-contd")));
     const int cue = position_of(QStringLiteral("MARA\nHigher."));
     editor_->setProperty("cursorPosition", cue + 4);
-    type(QStringLiteral(" (CONT'D)"));
-    QVERIFY(document_->toPlainText().contains(QStringLiteral("MARA (CONT'D)\nHigher.")));
+    type(suffix);
+    QVERIFY(document_->toPlainText().contains(QStringLiteral("MARA") + suffix + QStringLiteral("\nHigher.")));
     const auto shown = shown_lines(*document_);
     const auto line = std::find_if(shown.begin(), shown.end(), [](const ShownLine& l) { return l.page == 1 && l.slot == 8; });
     QVERIFY(line != shown.end());
     QCOMPARE(line->text, QStringLiteral("MARA (CONT’D)"));
     QVERIFY(near(line->x, 288));
+    QVERIFY(draws(block_at(cue), QStringLiteral("MARA")));
     bool hidden = false;
     for (const auto& range : block_at(cue).layout()->formats())
       hidden |= range.start == 4 && range.length == 9 && range.format.foreground().color().alpha() == 0;
     QVERIFY(hidden);
-    QCOMPARE(ink_mismatch(QStringLiteral("typed-continuation")), std::make_pair(0, 0));
+    QCOMPARE(ink_mismatch(QStringLiteral("typed-continuation-") + QTest::currentDataTag()), std::make_pair(0, 0));
     // When the engine rejects the document (centered text longer than a page)
     // the unpaginated fallback has no generated text, so nothing stays hidden.
     QTextCursor cursor(document_.get());

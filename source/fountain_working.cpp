@@ -11,7 +11,8 @@ namespace {
 [[noreturn]] void fail(const QString& reason, SourceError::Kind kind = SourceError::Kind::malformed) {
   throw SourceError(kind, "Editable Fountain copy: " + reason);
 }
-ProjectAssets review_assets(const ProjectAssets& assets) {
+struct Review { ProjectAssets assets; QString contract; };
+Review review_of(const ProjectAssets& assets) {
   if (!assets.imported_material || !assets.original_fountain) fail("metadata and original are required");
   if (assets.imported_material->size() > maximum_fountain_metadata_bytes) fail("metadata exceeds its limit");
   QJsonParseError error;
@@ -20,13 +21,27 @@ ProjectAssets review_assets(const ProjectAssets& assets) {
   if (root.value("version").toDouble() > 1) fail("needs a newer Apollo", SourceError::Kind::newer_version);
   if (error.error != QJsonParseError::NoError || !json.isObject() || root.size() != 4 ||
       root.value("format") != "apollo-fountain-working" || root.value("version") != 1 ||
-      root.value("contract") != "writer-subset-1" || !root.value("intake").isObject() ||
-      root.value("intake").toObject().value("version") != 2) fail("unsupported preservation contract");
+      (root.value("contract") != "writer-subset-1" && root.value("contract") != writer_subset_contract) ||
+      !root.value("intake").isObject() || root.value("intake").toObject().value("version") != 2)
+    fail("unsupported preservation contract");
   ProjectAssets review{QJsonDocument(root.value("intake").toObject()).toJson(), assets.original_fountain};
   validate_fountain_intake(review);
-  return review;
+  return {review, root.value("contract").toString()};
 }
-QStringList blockers(const FountainConversion& c, qsizetype size) {
+ProjectAssets review_assets(const ProjectAssets& assets) { return review_of(assets).assets; }
+// Letters in a character name, before any extension, only appear in Fountain
+// in lowercase when the cue is forced (@McCLANE): its author wants mixed case
+// printed, an exception to presenting cues in capitals that is not specified.
+bool mixed_case_name(const Element& e) {
+  if (e.type != ElementType::cue) return false;
+  const auto name = QString::fromUtf8(e.text).section('(', 0, 0);
+  return std::any_of(name.begin(), name.end(), [](QChar c) { return c.isLower(); });
+}
+// writer-subset-1 admitted headings and cues only in ASCII capitals.
+bool ascii_capitals(const Element& e) {
+  return std::none_of(e.text.begin(), e.text.end(), [](char c) { return (c >= 'a' && c <= 'z') || uchar(c) >= 0x80; });
+}
+QStringList blockers(const FountainConversion& c, qsizetype size, const QString& contract) {
   QStringList result;
   if (size > 64 * 1024 || c.elements.empty() || c.elements.size() > 256) result << "Writer subset is bounded to 64 KiB and 1–256 elements.";
   if (c.records.size() > 256) result << "Writer subset is bounded to 256 imported records.";
@@ -35,11 +50,16 @@ QStringList blockers(const FountainConversion& c, qsizetype size) {
     if (gap.code != "authored-case" && gap.code != "deliberate-break-layout")
       result << "Unverified spacing or layout: " + gap.code;
   for (const auto& located : c.elements) {
-    const auto id = QString::fromStdString(located.element.id);
-    for (const auto gap : writer_subset_gaps(located.element))
-      switch (gap) {
+    const auto& e = located.element;
+    const auto id = QString::fromStdString(e.id);
+    const bool legacy_case = contract == "writer-subset-1" && (e.type == ElementType::heading || e.type == ElementType::cue) && !ascii_capitals(e);
+    if (legacy_case) result << id + ": authored case requires review.";
+    else if (mixed_case_name(e)) result << id + ": forced mixed-case character name requires review; Apollo presents cues in capitals.";
+    for (const auto gap : writer_subset_gaps(e))
+      if (!(legacy_case && gap == WriterSubsetGap::uncapitalized_letter)) switch (gap) {
         case WriterSubsetGap::character: result << id + ": character outside the verified writer subset."; break;
         case WriterSubsetGap::authored_case: result << id + ": authored case requires review."; break;
+        case WriterSubsetGap::uncapitalized_letter: result << id + ": a letter that is not presented in capitals requires review."; break;
         case WriterSubsetGap::multiline: result << id + ": this element's multiline layout is unverified."; break;
         case WriterSubsetGap::long_title: result << id + ": long title field requires review."; break;
         case WriterSubsetGap::spacing: result << id + ": empty or significant spacing requires review."; break;
@@ -58,10 +78,14 @@ std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e) {
   const auto text = QString::fromUtf8(e.text);
   for (const auto cp : text.toUcs4())
     if (!((cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9)) { result.push_back(WriterSubsetGap::character); break; }
-  if (e.type == ElementType::cue || e.type == ElementType::heading || e.type == ElementType::title) {
+  if (e.type == ElementType::title) {
     bool ascii_upper = true;
     for (const auto cp : text.toUcs4()) if (cp > 126 || (cp >= 'a' && cp <= 'z')) ascii_upper = false;
     if (!ascii_upper) result.push_back(WriterSubsetGap::authored_case);
+  } else if (presented_in_capitals(e.type)) {
+    const auto shown = QString::fromStdString(presented_text(e.type, e.text));
+    if (std::any_of(shown.begin(), shown.end(), [](QChar c) { return c.isLower(); }))
+      result.push_back(WriterSubsetGap::uncapitalized_letter);
   }
   if (text.contains('\n') && e.type != ElementType::action && e.type != ElementType::dialogue)
     result.push_back(WriterSubsetGap::multiline);
@@ -74,9 +98,9 @@ std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e) {
 bool is_fountain_working(const ProjectAssets& assets) {
   return assets.imported_material && QJsonDocument::fromJson(*assets.imported_material).object().value("format") == "apollo-fountain-working";
 }
-QStringList fountain_edit_blockers(const ProjectAssets& review) {
+QStringList fountain_edit_blockers(const ProjectAssets& review, const QString& contract) {
   const auto c = convert_fountain(review);
-  auto result = blockers(c, review.original_fountain->size());
+  auto result = blockers(c, review.original_fountain->size(), contract);
   if (review.original_fountain->contains('\t')) result << "Tabs are outside the verified writer subset.";
   return result;
 }
@@ -84,12 +108,13 @@ ProjectAssets editable_fountain_assets(const ProjectAssets& review) {
   const auto interpreted = interpreted_fountain_assets(review);
   const auto reasons = fountain_edit_blockers(interpreted);
   if (!reasons.empty()) fail(reasons.join('\n'));
-  const QJsonObject root{{"format", "apollo-fountain-working"}, {"version", 1}, {"contract", "writer-subset-1"},
+  const QJsonObject root{{"format", "apollo-fountain-working"}, {"version", 1}, {"contract", writer_subset_contract},
       {"intake", QJsonDocument::fromJson(*interpreted.imported_material).object()}};
   return {QJsonDocument(root).toJson(), interpreted.original_fountain};
 }
 void validate_fountain_working(const ProjectAssets& assets) {
-  const auto reasons = fountain_edit_blockers(review_assets(assets));
+  const auto review = review_of(assets);
+  const auto reasons = fountain_edit_blockers(review.assets, review.contract);
   if (!reasons.empty()) fail(reasons.join('\n'));
 }
 Screenplay initial_fountain_writing(const ProjectAssets& assets) {

@@ -102,6 +102,9 @@ as follows. These are spike rules for owner review, not confirmed behavior:
 
 - **An empty element** (no text, or only spaces) keeps one blank slot with its element's normal spacing,
   so the caret has a line of its own. In a PDF the slot is blank.
+- **Case** ([case contract](case-handling.md)): headings, cues and the title
+  keep their authored case in the writing and are shown in capitals by
+  converting ASCII letters only; other letters, such as é, are shown as written.
 - **Spaces at the start of an authored line**, such as after Enter before a
   space in dialogue, are kept in the writing but are not shown and do not count
   toward width: the line starts at its column, as wrapping never begins a line

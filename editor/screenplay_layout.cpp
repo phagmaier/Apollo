@@ -44,10 +44,6 @@ struct Utf16Index {
   }
 };
 
-bool uppercase_type(ElementType type) {
-  return type == ElementType::cue || type == ElementType::heading || type == ElementType::title;
-}
-
 QString kind_name(ElementType type, bool continuation) {
   switch (type) {
     case ElementType::heading: return QStringLiteral("heading");
@@ -430,8 +426,8 @@ void ScreenplayLayout::relayout() {
       placements.push_back({0, length + preedit, 0, left_margin, baseline});
       if (elements[index].type == ElementType::page_break) { ++current_page; current_slot = 0; }
     }
-    if (uppercase_type(elements[index].type)) {
-      // Shown uppercase like the engine's text: ASCII letters only.
+    if (presented_in_capitals(elements[index].type)) {
+      // Presented like the engine's text (presented_text): ASCII letters only.
       const auto text = block.text();
       QTextCharFormat caps;
       caps.setFontCapitalization(QFont::AllUppercase);
@@ -583,8 +579,7 @@ std::vector<ShownLine> shown_lines(const QTextDocument& document) {
       text = text.mid(lead);
       while (text.endsWith(QLatin1Char(' '))) text.chop(1);
       if (text.isEmpty()) continue;
-      if (uppercase_type(type))
-        for (auto& c : text) if (c >= QLatin1Char('a') && c <= QLatin1Char('z')) c = c.toUpper();
+      text = QString::fromStdString(presented_text(type, text.toStdString()));
       ShownLine piece{0, 0, kind_name(type, type == ElementType::parenthetical && i > 0),
                       (origin.x() + line.cursorToX(line.textStart() + static_cast<int>(lead))) / px_per_point, text};
       locate(origin.y() + line.y() + line.ascent(), piece);

@@ -40,6 +40,14 @@ private slots:
     QVERIFY(body.blockers.isEmpty());
     const auto expected = bytes(APOLLO_FIXTURE_ROOT "/export/writer-subset.fountain");
     QCOMPARE(body.bytes, expected.mid(expected.indexOf("INT. PLATFORM - DAY\n")));
+    // Authored lowercase headings and cue extensions are written in capitals.
+    const auto cased = parse_screenplay(bytes(APOLLO_FIXTURE_ROOT "/import/case-subset.expected.json"));
+    const auto capitals = export_fountain(cased.elements, true);
+    QVERIFY2(capitals.blockers.isEmpty(), qPrintable(capitals.blockers.join('\n')));
+    QCOMPARE(capitals.bytes, bytes(APOLLO_FIXTURE_ROOT "/export/case-subset.fountain"));
+    QCOMPARE(fountain_case_note(cased.elements),
+             QString("Written in capitals, as Apollo shows and prints them: 3 scene headings and 3 character cues typed in lowercase. "
+                     "The project keeps the case as typed."));
   }
 
   // Action is unforced only when its first line begins with a letter or digit,
@@ -83,6 +91,16 @@ private slots:
         << QByteArray("Author:\n   Ada\n   Bo\nSource: Story\n");
     QTest::newRow("break and centered") << Elements{e(ElementType::page_break, ""), e(ElementType::centered, "THE END")} << true
         << QByteArray("===\n\n> THE END <\n");
+    // Headings and cues are written as presented: ASCII letters in capitals.
+    QTest::newRow("lowercase headings") << Elements{e(H, "int. hall - day"), e(H, "flashback"), e(H, "i/e car")} << true
+        << QByteArray("INT. HALL - DAY\n\n.FLASHBACK\n\nI/E CAR\n");
+    QTest::newRow("lowercase opening heading key") << Elements{e(H, "ext: roof")} << false << QByteArray(".EXT: ROOF\n");
+    QTest::newRow("lowercase cues and extensions") << Elements{e(C, "mara (v.o.)"), e(D, "One."), e(C, "Bo (cont'd)", {}, true), e(D, "Two.")} << true
+        << QByteArray("MARA (V.O.)\nOne.\n\nBO (CONT'D) ^\nTwo.\n");
+    QTest::newRow("emphasized lowercase heading") << Elements{e(H, "int. hall", {{5, 9, Style::underline}})} << true << QByteArray("INT. _HALL_\n");
+    QTest::newRow("lowercase cue punctuation first") << Elements{e(C, "'nick'"), e(D, "Hi.")} << true << QByteArray("@'NICK'\nHi.\n");
+    QTest::newRow("action and dialogue keep their case") << Elements{e(H, "int. a"), e(A, "Mara waits."), e(C, "mara"), e(D, "Here, mara.")} << true
+        << QByteArray("INT. A\n\nMara waits.\n\nMARA\nHere, mara.\n");
   }
   void spelling_forces_only_where_plain_text_would_change_meaning() {
     QFETCH(Elements, snapshot);
@@ -97,8 +115,9 @@ private slots:
   void unsupported_snapshots_are_blocked_with_a_located_reason_data() {
     QTest::addColumn<Elements>("snapshot");
     QTest::addColumn<QString>("reason");
-    QTest::newRow("lowercase cue") << Elements{e(H, "INT. A"), e(C, "mara"), e(D, "Hi.")}
-        << QString("Element 2, Character cue “mara”: is not written in capital ASCII letters, which this export requires for scene headings, character cues and the title.");
+    QTest::newRow("cue letter not shown in capitals") << Elements{e(H, "INT. A"), e(C, "jos\xc3\xa9"), e(D, "Hi.")}
+        << QString("Element 2, Character cue “josé”: contains “é”, which Apollo does not yet show in capitals in scene headings and character cues.");
+    QTest::newRow("heading letter not shown in capitals") << Elements{e(H, "INT. CAF\xc3\xa9")} << QString("Element 1, Scene heading “INT. CAFé”: contains “é”");
     QTest::newRow("unverified character") << Elements{e(A, "Wait—now.")} << QString("Element 1, Action “Wait—now.”: contains “—” (U+2014)");
     QTest::newRow("empty element") << Elements{e(A, "Done."), e(A, "")} << QString("Element 2, Action (empty): is empty; type its text or delete it.");
     QTest::newRow("repeated spaces") << Elements{e(A, "Two  spaces.")} << QString("leading, trailing or repeated spaces");
@@ -161,8 +180,10 @@ private slots:
     auto model = parse_screenplay(bytes(APOLLO_FIXTURE_ROOT "/import/writer-subset.expected.json")).elements;
     QVERIFY(fountain_export_blockers(model, true).isEmpty());
     model[11].text = "June";
+    QVERIFY(export_fountain(model, true).bytes.contains("\nJUNE ^\n"));
+    model[11].text = "Jun\xc3\xa9";
     QCOMPARE(fountain_export_blockers(model, true),
-             QStringList{"Element 12, Character cue “June”: is not written in capital ASCII letters, which this export requires for scene headings, character cues and the title."});
+             QStringList{"Element 12, Character cue “Juné”: contains “é”, which Apollo does not yet show in capitals in scene headings and character cues."});
     model[11].text = "JUNE";
     model[12].text = "At the \nsame time.";
     QVERIFY(fountain_export_blockers(model, true).join('\n').contains("Element 13, Dialogue “At the ”"));
@@ -170,6 +191,17 @@ private slots:
     const auto result = export_fountain(model, true);
     QVERIFY(result.blockers.isEmpty());
     QVERIFY(result.bytes.contains("JUNE ^\nAt the\nsame time.\n\n~A distant song."));
+  }
+
+  // The disclosure counts headings and cues whose authored case differs from
+  // what is written; title fields and other elements keep their text.
+  void case_presentation_is_disclosed() {
+    QVERIFY(fountain_case_note({e(H, "INT. A"), e(C, "MARA"), e(D, "hi.")}).isEmpty());
+    QCOMPARE(fountain_case_note({e(H, "int. a"), e(A, "rain."), e(C, "Mara"), e(D, "hi."), e(C, "BO (v.o.)"), e(D, "yo."), e(ElementType::title, "x")}),
+             QString("Written in capitals, as Apollo shows and prints them: 1 scene heading and 2 character cues typed in lowercase. "
+                     "The project keeps the case as typed."));
+    QCOMPARE(fountain_case_note({e(H, "int. a"), e(H, "ext. b")}),
+             QString("Written in capitals, as Apollo shows and prints them: 2 scene headings typed in lowercase. The project keeps the case as typed."));
   }
 
   // Imported retained material is summarized for the disclosure; ordinary

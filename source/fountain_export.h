@@ -5,9 +5,9 @@
 #include <QStringList>
 
 namespace apollo::source {
-// Contract fountain-canonical-1; see docs/fountain-export.md. These functions
+// Contract fountain-canonical-2; see docs/fountain-export.md. These functions
 // read only their arguments, so an export can run them on a worker thread.
-inline constexpr auto fountain_export_contract = "fountain-canonical-1";
+inline constexpr auto fountain_export_contract = "fountain-canonical-2";
 // The frozen revision-1 reader that verifies each export is bounded to 1 MiB.
 inline constexpr qsizetype maximum_fountain_export_bytes = 1024 * 1024;
 
@@ -22,4 +22,8 @@ QStringList fountain_export_blockers(const std::vector<Element>& snapshot, bool 
 // revision-1 interpreter reads exactly this snapshot back without unresolved
 // syntax or retained records. Bytes are returned only when all of that holds.
 FountainExport export_fountain(const std::vector<Element>& snapshot, bool include_title);
+// Scene headings and character cues are written as presented, in capitals
+// (docs/case-handling.md). Says how many were authored otherwise, for the
+// export disclosure; empty when none were.
+QString fountain_case_note(const std::vector<Element>& snapshot);
 }

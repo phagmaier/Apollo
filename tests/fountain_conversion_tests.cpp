@@ -90,9 +90,41 @@ private slots:
     const auto copy = create_project(parent.filePath("copy"), expected, assets);
     QCOMPARE(open_project(copy.directory).assets, assets);
   }
+  // writer-subset-2: lowercase headings and cue extensions keep their authored
+  // text and original bytes; presentation is in capitals. A copy cannot claim
+  // the older writer-subset-1, which required capitals, to reopen.
+  void writer_subset_admits_authored_lowercase_headings_and_extensions() {
+    const auto root = QStringLiteral(APOLLO_FIXTURE_ROOT "/import/");
+    const auto captured = read_fountain_intake(root + "case-subset.fountain");
+    const auto expected = parse_screenplay(bytes(root + "case-subset.expected.json"));
+    QCOMPARE(canonical(convert_fountain(captured.assets).screenplay()), expected);
+    QCOMPARE(fountain_edit_blockers(captured.assets), QStringList{});
+    QVERIFY(!fountain_edit_blockers(captured.assets, "writer-subset-1").isEmpty());
+    const auto assets = editable_fountain_assets(captured.assets);
+    QCOMPARE(QJsonDocument::fromJson(*assets.imported_material).object().value("contract").toString(), QString("writer-subset-2"));
+    QCOMPARE(*assets.original_fountain, bytes(root + "case-subset.fountain"));
+    QCOMPARE(initial_fountain_writing(assets), expected);
+    auto older = assets;
+    auto json = QJsonDocument::fromJson(*older.imported_material).object();
+    json.insert("contract", "writer-subset-1"); older.imported_material = QJsonDocument(json).toJson();
+    try { validate_fountain_working(older); QFAIL("a writer-subset-1 claim admitted lowercase headings"); }
+    catch (const SourceError& error) { QVERIFY2(QString(error.what()).contains("f1: authored case requires review."), error.what()); }
+    // The writer-subset fixture made under writer-subset-1 still reopens by its rules.
+    auto legacy = editable_fountain_assets(read_fountain_intake(root + "writer-subset.fountain").assets);
+    json = QJsonDocument::fromJson(*legacy.imported_material).object();
+    json.insert("contract", "writer-subset-1"); legacy.imported_material = QJsonDocument(json).toJson();
+    validate_fountain_working(legacy);
+  }
+  void writer_subset_explains_case_it_cannot_present() {
+    QTemporaryDir parent;
+    QCOMPARE(fountain_edit_blockers(intake("@McKay (v.o.)\nWords.", parent.path()).assets),
+             QStringList{"f1: forced mixed-case character name requires review; Apollo presents cues in capitals."});
+    QCOMPARE(fountain_edit_blockers(intake("int. caf\xc3\xa9 - day\n\nAction.", parent.path()).assets),
+             QStringList{"f1: a letter that is not presented in capitals requires review."});
+  }
   void writer_subset_rejects_unverified_material_data() {
     QTest::addColumn<QByteArray>("original");
-    for (const auto& original : {QByteArray("@McKay\nWords."), QByteArray("int. home - day\n\nAction."),
+    for (const auto& original : {QByteArray("@McKay\nWords."), QByteArray("int. caf\xc3\xa9 - day\n\nAction."), QByteArray("@JOS\xc3\xa9\nWords."),
         QByteArray("!  Indented."), QByteArray("!Extra  spaces."), QByteArray("@MARA\n\tWords."), QByteArray("!Before.\n\n\n!After."),
         QByteArray("[[bad"), QByteArray("A\n~Lyric in speech."), QByteArray("!Unsupported \xf0\x9f\x98\x80"),
         QByteArray("A\nFirst.\n  \nLast."), QByteArray("!Cross *one _two* three_"), QByteArray(65537, 'x'),

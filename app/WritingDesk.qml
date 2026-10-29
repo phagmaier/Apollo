@@ -12,6 +12,7 @@ Rectangle {
     property var fountainJob: null
     property string exportFormat: "pdf"
     property string fountainCheck: ""
+    property string fountainCaseNote: ""
     property string lastExport: "pdf"
     property var autosaver: null
     property var projectFlow: null
@@ -43,6 +44,7 @@ Rectangle {
     // The modal panel stops writing, so one check per open/choice is current.
     function refreshExportCheck() {
         fountainCheck = fountainJob && exportFormat === "fountain" ? fountainJob.check(includeTitle) : ""
+        fountainCaseNote = fountainJob && exportFormat === "fountain" ? fountainJob.caseNote() : ""
     }
     function exportFountain() {
         if (fountainJob && !fountainJob.busy && !departing)
@@ -61,6 +63,7 @@ Rectangle {
                     + (reasons.length > 8 ? "\n…and " + (reasons.length - 8) + " more" : "")
         }
         return "Ready. The current writing meets the canonical Fountain contract; later edits are not included in this snapshot."
+                + (fountainCaseNote.length > 0 ? "\n" + fountainCaseNote : "")
                 + (fountainJob.omissions.length > 0 ? "\n" + fountainJob.omissions : "")
     }
     Shortcut { sequence: "Ctrl+E"; onActivated: desk.exportPdf() }

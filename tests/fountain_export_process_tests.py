@@ -24,11 +24,11 @@ def run(*command, expect=0):
     return result
 
 
-def type_at_end(editor, project, log, keys):
+def type_at_end(editor, project, log, keys, element="f21"):
     run(editor, project, "--autosave-typing", log, keys, 20)
     lines = [line.split("\t") for line in pathlib.Path(log).read_text().splitlines()]
     target = next(line for line in lines if line[0] == "target")
-    assert target[1] == "f21", target  # The final action; the subset has no page-crossing block.
+    assert target[1] == element, target  # The final action; these fixtures have no page-crossing block.
     done = next(line for line in lines if line[0] == "done")
     assert done[1] == "saved", done
     return int(target[2])
@@ -108,6 +108,45 @@ def model(screenplay):
     return title, elements
 
 
+def presented(screenplay):
+    """Headings and cue names in capitals (docs/case-handling.md); the fixtures' are ASCII."""
+    result = json.loads(json.dumps(screenplay))
+    for e in result["elements"]:
+        if e["type"] in ("sceneHeading", "character"):
+            e["text"] = e["text"].upper()
+    return result
+
+
+def case_subset(editor, root):
+    """Lowercase headings and cue extensions: import, type, export in capitals."""
+    fixture = FIXTURES / "import/case-subset.fountain"
+    original, project, out = root / "case-subset.fountain", root / "cased", root / "cased.fountain"
+    shutil.copyfile(fixture, original)
+    run(editor, project, "--edit-fountain", original)
+    assert type_at_end(editor, project, root / "typing-case.log", 1, "f13") == len("The lamp turns.")
+    final = "The lamp turns." + TYPED[0]
+    exported = run(editor, project, "--export-fountain", out)
+    assert ("Written in capitals, as Apollo shows and prints them: 3 scene headings and 3 character cues typed in lowercase. "
+            "The project keeps the case as typed.") in exported.stdout, exported.stdout
+    expected = (FIXTURES / "export/case-subset.fountain").read_text()
+    assert out.read_text() == expected.replace("The lamp turns.\n", final + "\n"), out.read_text()
+    # Authored case stays in the writing; the imported original is untouched.
+    writing = json.loads((project / "screenplay.json").read_text())
+    authored = json.loads((FIXTURES / "import/case-subset.expected.json").read_text())
+    assert [(e["type"], e["text"]) for e in writing["elements"][:-1]] == [(e["type"], e["text"]) for e in authored["elements"][:-1]]
+    assert (project / "imports/original.fountain").read_bytes() == fixture.read_bytes()
+    assert original.read_bytes() == fixture.read_bytes()
+    # A forced mixed-case name stays review-only; nothing is published.
+    mixed = root / "mixed.fountain"
+    mixed.write_text("@McKay\nWords.\n")
+    refused = run(editor, root / "mixed", "--edit-fountain", mixed, expect=1)
+    assert "forced mixed-case character name requires review" in refused.stderr, refused.stderr
+    assert not (root / "mixed").exists()
+    authored["elements"][-1]["text"] = final
+    return [(out, presented(authored), True),
+            (FIXTURES / "export/case-subset.fountain", presented(json.loads((FIXTURES / "import/case-subset.expected.json").read_text())), True)]
+
+
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--editor", required=True, type=pathlib.Path)
@@ -156,6 +195,8 @@ def main():
     refused = run(editor, review, "--export-fountain", root / "review.fountain", expect=1)
     assert "review-only" in refused.stderr and not (root / "review.fountain").exists()
 
+    case_cases = case_subset(editor, root)
+
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
         typed = json.loads(json.dumps(subset))
@@ -167,7 +208,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)]
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

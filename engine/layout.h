@@ -44,4 +44,12 @@ struct DocumentLayout { std::vector<Line> lines; std::vector<Page> pages; };
 DocumentLayout layout_document(const std::vector<Element>& elements);
 // Convenience line view for fixture tools and existing engine callers.
 std::vector<Line> layout(const std::vector<Element>& elements);
+
+// Case presentation (docs/case-handling.md). Element text is authored text: it
+// keeps the case that was typed or imported. Scene headings, character cues
+// and the title are presented in capitals by converting ASCII a-z only, so byte
+// offsets and emphasis spans are unchanged. Any other letter, such as é, is
+// presented as authored and therefore not in capitals.
+bool presented_in_capitals(ElementType type);
+std::string presented_text(ElementType type, std::string text);
 }

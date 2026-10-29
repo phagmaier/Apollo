@@ -2,7 +2,7 @@
 
 2026-10-28. This is task **2.6c**, a bounded continuation of 2.6b, not complete
 Fountain compatibility or completion of writing slice 3. Contract `writer-subset-1`
-is an engineering choice within the requested preservation work.
+(now `writer-subset-2`, below) is an engineering choice within the requested preservation work.
 
 Admission requires a verified revision-1 interpretation with no unresolved ranges,
 a nonempty screenplay, at most 64 KiB original, at most 256 elements and 256
@@ -19,6 +19,16 @@ titles, and any other reported layout limitation remain review-only. These bound
 are conservative evidence limits, not a claim that other writing is invalid.
 Notes/stash, section hierarchy, synopses, unknown title metadata and scene numbers
 remain separate read-only records with exact original text, names, IDs and ranges.
+
+**`writer-subset-2` (task 3a)** changes only case, under the
+[case contract](case-handling.md). New copies admit headings in any ASCII case
+and cues whose lowercase letters are only in extensions (`EVE (cont'd)`). Their
+authored text and the original bytes are kept, and they are presented in
+capitals. A forced mixed-case name (`@McKay`), a heading or cue letter that cannot be
+presented in capitals (é), and a title not in capitals remain review-only, each
+with a located reason. Copies created under `writer-subset-1` are still validated
+by its rules (headings and cues in ASCII capitals); older Apollo builds refuse
+`writer-subset-2` copies.
 
 **Edit in a New Copy** creates a staged project with a fresh identity. Neither a
 review project nor the external Fountain is upgraded or rewritten. Publication

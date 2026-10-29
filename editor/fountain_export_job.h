@@ -27,6 +27,8 @@ public:
   ~FountainExportJob() override;
   // The current writing's reasons, one per line; empty when it can be exported.
   Q_INVOKABLE QString check(bool include_title) const;
+  // How the current writing's case is exported (fountain_case_note); may be empty.
+  Q_INVOKABLE QString caseNote() const;
   Q_INVOKABLE bool request(const QString& destination, bool include_title = true);
   void set_project(const QString& project) { project_ = project; }
   bool busy() const { return busy_; }

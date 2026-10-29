@@ -182,7 +182,9 @@ exports must equal these bytes, and aw-parser 0.1.1, the parser inside the
 pinned afterwriting, must read them as the hand-worked semantic models. Install
 it once with `tools/afterwriting-oracle.sh`, then reconfigure so ctest includes
 `fountain_export_oracle_tests`. See [export/README.md](export/README.md) and the
-[export contract](../docs/fountain-export.md).
+[export contract](../docs/fountain-export.md). `import/case-subset.fountain` and
+`export/case-subset.fountain` are the [case contract](../docs/case-handling.md)'s
+lowercase headings and cue extensions, authored and exported in capitals.
 
 ## Edited layout — `editing/`
 

@@ -2,7 +2,6 @@
 #include "engine/wrap.h"
 
 #include <algorithm>
-#include <cctype>
 #include <stdexcept>
 #include <string_view>
 
@@ -155,12 +154,10 @@ void transfer_styles(const Element& element, Line& line, std::size_t start) {
   }
 }
 
-// Cues and headings are shown uppercase (ASCII only, so byte offsets hold).
+// Laid out as presented: same bytes, so offsets and styles still hold.
 std::vector<Element> displayed(const std::vector<Element>& elements) {
   auto shown = elements;
-  for (auto& element : shown)
-    if (element.type == ElementType::cue || element.type == ElementType::heading)
-      for (auto& c : element.text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  for (auto& element : shown) element.text = presented_text(element.type, std::move(element.text));
   return shown;
 }
 
@@ -184,6 +181,15 @@ void discard_prefix(Element& element, std::size_t count) {
 }
 }
 
+bool presented_in_capitals(ElementType type) {
+  return type == ElementType::heading || type == ElementType::cue || type == ElementType::title;
+}
+std::string presented_text(ElementType type, std::string text) {
+  if (presented_in_capitals(type))
+    for (auto& c : text) if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+  return text;
+}
+
 DocumentLayout layout_document(const std::vector<Element>& input) {
   const auto elements = displayed(input);
   std::vector<Line> result;
@@ -205,9 +211,7 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
       default: break;
     }
     if (title_slot) {
-      std::string text = e.text;
-      if (e.type == ElementType::title) for (auto& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-      result.push_back({0, title_slot, e.type, text});
+      result.push_back({0, title_slot, e.type, e.text});
       transfer_styles(e, result.back(), 0);
       result.back().source = source; result.back().source_length = e.text.size();
     }

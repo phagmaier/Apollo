@@ -40,7 +40,8 @@ const char* title_key(ElementType type) {
     default: return "Draft date";
   }
 }
-// "Element 12, Character cue “mara”": numbered in saved order, title page first.
+// "Element 12, Character cue “mara”": numbered in saved order, title page
+// first, quoting the authored text.
 QString describe(const Element& e, std::size_t index) {
   auto first = QString::fromUtf8(e.text).section('\n', 0, 0);
   if (first.size() > 40) first = first.left(40) + QStringLiteral("…");
@@ -150,20 +151,22 @@ private:
   std::vector<QByteArray> lines(std::size_t i, bool& ok);
 };
 
+// The presented lines: headings and cues are written in capitals as shown.
 std::vector<QByteArray> Writer::lines(std::size_t i, bool& ok) {
   const auto& e = written[i];
+  const auto text = presented_text(e.type, e.text);
   for (const auto& span : e.styles)
-    if (e.text.substr(span.start, span.end - span.start).find('\n') != std::string::npos) {
+    if (text.substr(span.start, span.end - span.start).find('\n') != std::string::npos) {
       block(i, "has emphasis that includes a line break"); ok = false; return {};
     }
   std::vector<QByteArray> result;
   std::size_t from = 0;
   while (true) {
-    const auto to = std::min(e.text.find('\n', from), e.text.size());
-    auto line = spell(e.text, from, to, e.styles);
+    const auto to = std::min(text.find('\n', from), text.size());
+    auto line = spell(text, from, to, e.styles);
     if (!line.problem.isEmpty()) { block(i, line.problem); ok = false; return {}; }
     result.push_back(line.text);
-    if (to == e.text.size()) break;
+    if (to == text.size()) break;
     from = to + 1;
   }
   return result;
@@ -192,7 +195,13 @@ Writer::Writer(const std::vector<Element>& snapshot, bool include_title) {
               break;
             }
           break;
-        case WriterSubsetGap::authored_case: block(i, "is not written in capital ASCII letters, which this export requires for scene headings, character cues and the title"); break;
+        case WriterSubsetGap::authored_case: block(i, "is not written in capital ASCII letters, which this export requires for the title"); break;
+        case WriterSubsetGap::uncapitalized_letter: {
+          const auto shown = QString::fromStdString(presented_text(e.type, e.text));
+          const auto lower = std::find_if(shown.begin(), shown.end(), [](QChar c) { return c.isLower(); });
+          block(i, QString("contains “%1”, which Apollo does not yet show in capitals in scene headings and character cues").arg(*lower));
+          break;
+        }
         case WriterSubsetGap::multiline: block(i, "contains a line break; only action and dialogue can"); break;
         case WriterSubsetGap::long_title: block(i, "is longer than 48 characters"); break;
         case WriterSubsetGap::spacing:
@@ -355,7 +364,7 @@ FountainExport export_fountain(const std::vector<Element>& snapshot, bool includ
     if (gap.code != "authored-case" && gap.code != "deliberate-break-layout") problems << at(gap.range.start) + ": Fountain verification: " + gap.message;
   for (const auto& record : read.records) problems << at(record.range.start) + ": Fountain verification: would be read as " + record.kind + ".";
   auto plain = [](std::vector<Element> elements) {
-    for (auto& e : elements) e.id.clear();
+    for (auto& e : elements) { e.id.clear(); e.text = presented_text(e.type, std::move(e.text)); }
     return canonical(Screenplay{0, std::move(elements)}).elements;
   };
   const auto expected = plain(writer.written), actual = plain(read.screenplay().elements);
@@ -367,5 +376,18 @@ FountainExport export_fountain(const std::vector<Element>& snapshot, bool includ
   }
   if (!problems.isEmpty()) return {{}, problems};
   return {writer.bytes, {}};
+}
+
+QString fountain_case_note(const std::vector<Element>& snapshot) {
+  qsizetype headings = 0, cues = 0;
+  for (const auto& e : snapshot)
+    if ((e.type == ElementType::heading || e.type == ElementType::cue) && presented_text(e.type, e.text) != e.text)
+      ++(e.type == ElementType::heading ? headings : cues);
+  QStringList parts;
+  if (headings) parts << QString("%1 scene heading%2").arg(headings).arg(headings == 1 ? "" : "s");
+  if (cues) parts << QString("%1 character cue%2").arg(cues).arg(cues == 1 ? "" : "s");
+  if (parts.isEmpty()) return {};
+  return "Written in capitals, as Apollo shows and prints them: " + parts.join(" and ") +
+         " typed in lowercase. The project keeps the case as typed.";
 }
 }

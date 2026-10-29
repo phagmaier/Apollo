@@ -921,3 +921,38 @@ Editor/PDF agreement on the local Academy transcription (0 and 50 edits) and
 `compare_academy.py` pass; the layout fixtures are unchanged. Logs:
 `build/task-break-space-{release,debug,engine,academy}.log`; native logs are in
 `build/wayland-check-20261028-182633-uXLbC2/`.
+
+### Task 3a — bounded case handling for headings and cues
+
+2026-10-28. The [case contract](case-handling.md) makes the confirmed rule
+explicit. The project keeps authored text, and scene headings, character cues and
+the title are presented in capitals by converting ASCII letters only. One
+definition, `presented_text()`, is used by the engine and PDF, the editor's
+drawn capitals, the opening scene list and the line dump. Clean Fountain
+(`fountain-canonical-2`) writes headings and cues as presented and discloses
+lowercase authoring. New import copies (`writer-subset-2`) admit lowercase
+headings and cue extensions with authored text and original bytes kept. Forced
+mixed-case names, letters that cannot be shown in capitals (é) and lowercase
+titles remain blocked with located reasons. `writer-subset-1` copies are still
+validated by their own rules.
+
+The owner accepted its three choices as the initial case policy (planning round
+24): export presented capitals with disclosure while the project keeps authored
+case; keep forced mixed-case names blocked until a faithful exception is
+designed; present imported lowercase headings and cue extensions in capitals.
+The evidence table and remaining limitations are in the contract.
+
+Checks: release 23/23, ASan/UBSan 23/23 with no sanitizer report (the editor
+suite was rerun under sanitizers after its last change), engine-only 2/2. The
+native Wayland preflight passes: editor 58/58 with OpenGL and fcitx5 input,
+export lifecycle 13/13, project flows 34/34, native PDF snapshots including the
+lowercase case, and first paint. Editor/PDF agreement on the local Academy
+transcription (0 and 50 edits) and `compare_academy.py` pass; layout fixtures
+are unchanged. Logs: `build/task-case-{release,debug,debug-editor,engine,native,academy}.log`;
+native artifacts are in `build/wayland-check-20261028-190734-M1Zis8/`.
+A typed lowercase `(cont'd)` meeting a generated continuation was then tested
+in the editor (`typed_continuation_is_shown_once`, lowercase row) and the PDF
+(`authored-lowercase-contd` against fixture 08's hand-derived page). It exposed
+no defect; removing the ASCII-apostrophe suffix match makes both fail with a
+doubled `MARA (CONT'D) (CONT’D)`. Logs:
+`build/task-case-commit-{release,debug,engine}.log`.

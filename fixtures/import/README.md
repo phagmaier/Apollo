@@ -1,5 +1,10 @@
 # Independent import examples
 
+`case-subset.fountain` (2026-10-28, task 3a) is original test writing with
+lowercase and forced lowercase headings and lowercase cue extensions, as the
+official syntax and Dialogue sample allow. `case-subset.expected.json` is its
+hand-written authored model: types, dual pairing and text in the case written.
+
 `independent.fountain` is original Apollo test material (2026-10-28), written
 from the owner requirements and the official syntax, independently of the
 implementation. It deliberately combines valid syntax and malformed material.

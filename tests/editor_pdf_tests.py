@@ -52,32 +52,58 @@ def agree(editor, source, output, edits=0):
     return len(pages), rows, moved
 
 
-def break_before_space(editor, output):
-    """A saved project whose dialogue has spaces after a deliberate break.
+def edited_fixture(editor, output, name, edits, expected, fixture="01-element-geometry"):
+    """A saved project made from a layout fixture with edits to its saved writing.
 
-    The spike Fountain parser joins dialogue lines, so the edit is made to the
-    saved writing. The editor must lay it out without a QTextLayout mismatch
-    (--check), agree with its PDF, and the PDF must match the hand-derived
-    expectation in fixtures/editing.
+    The spike Fountain parser cannot express these edits (it joins dialogue
+    lines and is not the import path), so they are made to screenplay.json.
+    The editor must lay it out without a QTextLayout mismatch (--check), agree
+    with its PDF, and the PDF must match the hand-derived expectation.
     """
-    project = output / "break-before-space"
+    project = output / name
     shutil.rmtree(project, ignore_errors=True)  # --create never reuses a folder.
-    command(editor, project, "--create", ROOT / "fixtures/layout/01-element-geometry.fountain")
+    command(editor, project, "--create", ROOT / f"fixtures/layout/{fixture}.fountain")
     writing = project / "screenplay.json"
     data = json.loads(writing.read_text())
-    speech = [e for e in data["elements"] if e["text"].startswith("I left the lights on")]
-    assert len(speech) == 1 and speech[0]["type"] == "dialogue", speech
-    speech[0]["text"] = "I left the lights on for you.\n  I always leave the lights on, even when nobody comes."
+    # A key is an element's text, or (text, n) for its nth occurrence.
+    for old, new in edits.items():
+        text, n = old if isinstance(old, tuple) else (old, None)
+        matches = [e for e in data["elements"] if e["text"] == text]
+        assert len(matches) == 1 or (n is not None and n < len(matches)), (old, matches)
+        matches[n or 0]["text"] = new
     writing.write_text(json.dumps(data))
     command(editor, project, "--check")
-    expected = fixture_pages(ROOT / "fixtures/editing/break-before-space.expected")
-    pages, rows, _ = agree(editor, project, output / "break-before-space-agreement")
-    assert (pages, rows) == (1, sum(len(p["rows"]) for p in expected)), (pages, rows)
-    snapshot = output / "break-before-space-snapshot"
+    expected = fixture_pages(expected)
+    pages, rows, _ = agree(editor, project, output / f"{name}-agreement")
+    assert (pages, rows) == (len(expected), sum(len(p["rows"]) for p in expected)), (pages, rows)
+    snapshot = output / f"{name}-snapshot"
     command(editor, project, "--snapshot", snapshot)
     check_pdf(snapshot / "editor.pdf", expected)
     check_styles(snapshot / "editor.pdf", expected)
+
+
+def break_before_space(editor, output):
+    """Spaces after a deliberate break: fixtures/editing/break-before-space."""
+    edited_fixture(editor, output, "break-before-space", {
+        "I left the lights on for you. I always leave the lights on.":
+            "I left the lights on for you.\n  I always leave the lights on, even when nobody comes."},
+        ROOT / "fixtures/editing/break-before-space.expected")
     print("PASS deliberate break before spaces: editor/PDF agreement and independent expectation")
+
+
+def authored_lowercase(editor, output):
+    """Headings and cues authored in lowercase print exactly as fixture 01."""
+    edited_fixture(editor, output, "authored-lowercase", {
+        "INT. LIGHTHOUSE KITCHEN - NIGHT": "int. lighthouse kitchen - night", "MARA": "mara",
+        "THEO (V.O.)": "Theo (v.o.)", "EXT. LIGHTHOUSE GALLERY - CONTINUOUS": "ext. Lighthouse gallery - continuous"},
+        ROOT / "fixtures/layout/01-element-geometry.expected")
+    print("PASS authored lowercase headings and cues: presented in capitals in editor and PDF")
+    # A typed lowercase (cont'd) where G1 generates one prints the generated
+    # suffix once, as fixture 08's hand-derived page does.
+    edited_fixture(editor, output, "authored-lowercase-contd", {
+        ("MARA", 1): "mara (cont'd)", "THEO": "theo", "JUNE": "june"},
+        ROOT / "fixtures/layout/08-dual-dialogue-and-contd.expected", "08-dual-dialogue-and-contd")
+    print("PASS typed lowercase (cont'd): printed once, as the generated continuation")
 
 
 def main():
@@ -102,6 +128,7 @@ def main():
     command(args.editor, title, "--snapshot", no_title, "--no-title-page")
     check_pdf(no_title / "editor.pdf", fixture_pages(title.with_suffix(".expected"))[1:])
     break_before_space(args.editor, args.output)
+    authored_lowercase(args.editor, args.output)
     sources = []
     for scenes in (175, 444):
         source = args.output / f"workload-{scenes}.fountain"

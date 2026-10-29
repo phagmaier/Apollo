@@ -15,6 +15,7 @@
 #include <QKeyEvent>
 #include <QQuickItem>
 #include <QQuickView>
+#include <QRawFont>
 #include <QTemporaryDir>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -42,6 +43,12 @@ QQuickItem* find_item(QQuickItem* root, const QString& name) {
   for (auto* child : root->childItems())
     if (auto* found = find_item(child, name)) return found;
   return nullptr;
+}
+// The glyphs a block draws are those of the given text, from its start.
+bool draws(const QFont& font, const QTextBlock& block, const QString& text) {
+  QList<quint32> drawn;
+  for (const auto& run : block.layout()->glyphRuns(0, static_cast<int>(text.size()))) drawn += run.glyphIndexes();
+  return drawn == QRawFont::fromFont(font).glyphIndexesForString(text);
 }
 struct Window {
   QQuickView view;
@@ -366,8 +373,9 @@ private slots:
       QCOMPARE(bytes(exported), expected("writer-subset.fountain"));
       QTest::keyClick(&window.view, Qt::Key_Delete);
       QVERIFY(job->check(true).isEmpty());
-      // New writing: an empty element, then a mixed-case cue, are explained
-      // until corrected with ordinary keys.
+      // New writing: an empty element is explained until corrected with
+      // ordinary keys. A cue typed in mixed case is presented, and exported, in
+      // capitals; the document keeps what was typed.
       const auto last = window.flow.document()->lastBlock();
       window.flow.editor()->setProperty("cursorPosition", last.position() + last.length() - 1);
       QTest::keyClick(&window.view, Qt::Key_Return);
@@ -381,13 +389,10 @@ private slots:
       window.type("Mara");
       QTest::keyClick(&window.view, Qt::Key_Return);
       window.type("Here.");
-      QCOMPARE(job->check(true), QString("Element 24, Character cue “Mara”: is not written in capital ASCII letters, "
-                                         "which this export requires for scene headings, character cues and the title."));
-      auto cue = window.flow.document()->findBlockByNumber(23);
-      window.flow.editor()->setProperty("cursorPosition", cue.position() + cue.length() - 1);
-      for (int i = 0; i < 3; ++i) QTest::keyClick(&window.view, Qt::Key_Backspace);
-      window.type("ARA");
       QVERIFY(job->check(true).isEmpty());
+      QCOMPARE(block_element(window.flow.document()->findBlockByNumber(23)).text, std::string("Mara"));
+      QCOMPARE(job->caseNote(), QString("Written in capitals, as Apollo shows and prints them: 1 character cue typed in lowercase. "
+                                        "The project keeps the case as typed."));
       // The accepted snapshot is fixed: typing continues while the worker is
       // held, and the later words are saved but not exported.
       std::mutex mutex;
@@ -406,6 +411,7 @@ private slots:
       QVERIFY(window.click("exportButton"));
       QTRY_VERIFY(window.popup_open("exportPanel"));
       QVERIFY(eligibility().startsWith("Ready."));
+      QVERIFY(eligibility().contains("1 character cue typed in lowercase"));
       QVERIFY(window.click("exportConfirm"));
       QTRY_VERIFY(entered.load());
       QVERIFY(job->busy());
@@ -531,12 +537,81 @@ private slots:
     check(reopened);
   }
 
+  // Headings and cues typed in lowercase are drawn and exported in capitals;
+  // the document, undo, autosave and reopen keep what was typed.
+  void typed_case_is_kept_and_presented_in_capitals() {
+    const auto p = create_project(path("project"), {1, {{ElementType::action, "Rain.", false, {}, "first"}}});
+    const auto output = path("cased") + ".fountain";
+    // Hand-written: the authored text with the heading and cue in capitals.
+    const QByteArray expected("Rain.\n\nINT. DEPOT - DAY\n\nMara waits.\n\nMARA (V.O.)\nHere.\n");
+    auto block = [](Window& window, int n) { return window.flow.document()->findBlockByNumber(n); };
+    {
+      Window window(font_, path("session"), p.directory);
+      QTRY_VERIFY(window.flow.document());
+      window.flow.editor()->setProperty("cursorPosition", 5);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_Backtab, Qt::ShiftModifier);
+      window.type("int. depot - day");
+      QCOMPARE(element_type(block(window, 1)), ElementType::heading);
+      QCOMPARE(block_element(block(window, 1)).text, std::string("int. depot - day"));
+      QVERIFY(draws(font_, block(window, 1), "INT. DEPOT - DAY"));
+      // Editing inside the heading, then undoing it, keeps authored case.
+      window.flow.editor()->setProperty("cursorPosition", block(window, 1).position() + 10);
+      for (int i = 0; i < 5; ++i) QTest::keyClick(&window.view, Qt::Key_Backspace);
+      window.type("Pier");
+      QCOMPARE(block_element(block(window, 1)).text, std::string("int. Pier - day"));
+      QVERIFY(draws(font_, block(window, 1), "INT. PIER - DAY"));
+      for (int i = 0; i < 4 && block_element(block(window, 1)).text != "int. depot - day"; ++i)
+        QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(block_element(block(window, 1)).text, std::string("int. depot - day"));
+      QVERIFY(draws(font_, block(window, 1), "INT. DEPOT - DAY"));
+      window.flow.editor()->setProperty("cursorPosition", block(window, 1).position() + block(window, 1).length() - 1);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      window.type("Mara waits.");
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_Tab);
+      window.type("mara (v.o.)");
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      window.type("Here.");
+      QCOMPARE(element_type(block(window, 3)), ElementType::cue);
+      QVERIFY(draws(font_, block(window, 3), "MARA (V.O.)"));
+      QVERIFY(draws(font_, block(window, 2), "Mara waits."));
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      const auto saved = open_project(p.directory).screenplay.elements;
+      QCOMPARE(saved.at(1).text, std::string("int. depot - day"));
+      QCOMPARE(saved.at(3).text, std::string("mara (v.o.)"));
+      // The export panel states the presentation; the file has the capitals.
+      QVERIFY(window.click("exportButton"));
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(window.click("exportFormatFountain"));
+      const auto eligibility = window.item("exportEligibility")->property("text").toString();
+      QVERIFY2(eligibility.contains("Written in capitals, as Apollo shows and prints them: 1 scene heading and 1 character cue typed in lowercase."),
+               qPrintable(eligibility));
+      window.item("fountainDestination")->setProperty("text", output);
+      QVERIFY(window.click("exportConfirm"));
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(output), expected);
+      QVERIFY(job->status().contains("The project keeps the case as typed."));
+    }
+    QFile::remove(output);
+    Window reopened(font_, path("session"), p.directory);
+    QTRY_VERIFY(reopened.flow.document());
+    QCOMPARE(block_element(block(reopened, 1)).text, std::string("int. depot - day"));
+    QVERIFY(draws(font_, block(reopened, 1), "INT. DEPOT - DAY"));
+    QVERIFY(draws(font_, block(reopened, 3), "MARA (V.O.)"));
+    auto* job = qobject_cast<FountainExportJob*>(reopened.view.rootObject()->property("fountainJob").value<QObject*>());
+    QVERIFY(job->request(output));
+    QTRY_VERIFY(!job->busy());
+    QCOMPARE(bytes(output), expected);
+  }
+
   void unsupported_import_keeps_editable_control_and_publication_gated() {
     const auto input = path("unsupported-input"); replace_file(input, "@McKay\nA mixed-case cue.\n");
     Window window(font_, path("unsupported-state"), {}, {}, input);
     QTRY_VERIFY(window.flow.intake_preview()); QTRY_VERIFY(!window.flow.busy());
     QVERIFY(!window.flow.intake_edit_supported());
-    QVERIFY(window.flow.intake_edit_blockers().contains("authored case"));
+    QVERIFY(window.flow.intake_edit_blockers().contains("forced mixed-case character name requires review"));
     window.item("intakeProjectName")->setProperty("text", "Unsupported");
     window.item("intakeProjectParent")->setProperty("text", root_.path());
     QVERIFY(!window.item("editIntake")->isEnabled());

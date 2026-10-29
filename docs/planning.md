@@ -386,6 +386,22 @@ Raise newly discovered consequential product choices rather than silently
 changing confirmed behavior. The next implementation task, when requested,
 is the source adapter and save/reopen/crash-recovery foundation (slice 1).
 
+## Round 24 — case policy for headings and cues (settled, 2026-10-28)
+
+After task 3a ([case-handling.md](case-handling.md)), the owner accepted its
+three choices as the initial case policy:
+
+1. Clean Fountain export writes scene headings and character cues in capitals,
+   as Apollo displays and prints them. The project retains the authored case,
+   and the export discloses the transformation.
+2. Forced mixed-case names such as `@McKay` stay blocked until an explicit,
+   faithful mixed-case exception is designed.
+3. Imported lowercase headings and cue extensions are presented in capitals,
+   consistent with typed headings and cues.
+
+Diagnostics, suggested corrections and the mixed-case exception itself remain to
+be specified.
+
 ## Subsequent decision branches
 
 Visual exploration: [editor prototype](../prototype/editor.html) presents three

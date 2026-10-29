@@ -1,0 +1,21 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [],
+  "elements": [
+    {"id":"f1","type":"sceneHeading","text":"int. lighthouse kitchen - night"},
+    {"id":"f2","type":"action","text":"Mara crosses the room."},
+    {"id":"f3","type":"character","text":"MARA (cont'd)"},
+    {"id":"f4","type":"dialogue","text":"I left the lights on."},
+    {"id":"f5","type":"sceneHeading","text":"flashback - the pier"},
+    {"id":"f6","type":"action","text":"Theo waits."},
+    {"id":"f7","type":"character","text":"THEO (v.o.)"},
+    {"id":"f8","type":"parenthetical","text":"(quietly)"},
+    {"id":"f9","type":"dialogue","text":"Not tonight."},
+    {"id":"f10","type":"character","text":"JUNE (o.s.)","dual":true},
+    {"id":"f11","type":"dialogue","text":"Tonight."},
+    {"id":"f12","type":"sceneHeading","text":"ext. gallery - continuous"},
+    {"id":"f13","type":"action","text":"The lamp turns."}
+  ]
+}

@@ -1,4 +1,4 @@
-# Canonical Fountain export (`fountain-canonical-1`)
+# Canonical Fountain export (`fountain-canonical-2`)
 
 2026-10-28. This is task **2.6d**, a bounded first step of the slice 3/5
 Fountain export gate. It exports clean Fountain for **editable projects** —
@@ -9,6 +9,9 @@ compatibility, and it does not enable PDF export of imported writing. The
 contract, spelling choices and bounds are engineering choices within the
 delegated compatibility work; the owner-confirmed requirements are those in the
 [build plan](writing-build-plan.md#import-and-export-compatibility-gate).
+Revision 2 (task 3a) writes scene headings and character cues as presented, in
+capitals, under the [case contract](case-handling.md); revision 1 refused them
+unless authored in capitals.
 
 ## Eligibility: checked on every snapshot
 
@@ -18,8 +21,9 @@ later eligible again; saving is never restricted by it. Every element in the
 snapshot (title fields only when the title page is included) must satisfy:
 
 - **The writer-subset content rules**, shared in code with import admission
-  (`writer_subset_gaps`): printable ASCII and é only; scene headings, character
-  cues and the title in ASCII capitals; line breaks only in action and dialogue;
+  (`writer_subset_gaps`): printable ASCII and é only; scene headings and
+  character cues in any ASCII case but with no letter that presentation leaves
+  lowercase (é); the title in ASCII capitals; line breaks only in action and dialogue;
   title fields of at most 48 characters; no empty element/line and no leading,
   trailing or repeated spaces. A page break carries no text. The generated
   `(MORE)` type is refused.
@@ -54,9 +58,9 @@ marker spelling are not byte-identical to an imported original.
 | Element | Spelling |
 | --- | --- |
 | Title page | `Title:`, `Credit:`, `Author:`, `Source:`, `Contact:`, `Draft date:` in saved order; a run of one field uses `Key:` and three-space continuation lines; a blank line follows |
-| Scene heading | Unforced with a standard prefix (`INT`, `EXT`, `EST`, `INT./EXT`, `INT/EXT`, `I/E`, then `.` or space), otherwise `.`-forced when it starts with a letter/digit |
+| Scene heading | Presented text (ASCII capitals). Unforced with a standard prefix (`INT`, `EXT`, `EST`, `INT./EXT`, `INT/EXT`, `I/E`, then `.` or space), otherwise `.`-forced when it starts with a letter/digit |
 | Action | Unforced when the first line starts with a letter/digit, has lowercase before any `(`, and is neither heading-like nor an opening `Key:`; otherwise `!`-forced. Authored breaks are lines |
-| Character cue | As written; `@`-forced when it starts with punctuation or would open a title page; ` ^` marks the second speech of a dual pair |
+| Character cue | Presented text (ASCII capitals, extensions included); `@`-forced when it starts with punctuation or would open a title page; ` ^` marks the second speech of a dual pair |
 | Parenthetical / dialogue | Lines directly after the cue; authored breaks are lines |
 | Lyric | `~text` |
 | Transition | `>text` |
@@ -91,6 +95,11 @@ Fountain: 1 imported note, 1 stash passage, 1 unsupported title-page field, 1
 section, 2 synopses, 1 production scene number.` A title page left out by choice
 is also stated. Ordinary projects have no retained imported material.
 
+When a heading or cue was authored in lowercase, the same places say that it is
+written in capitals and that the project keeps the typed case, for example
+`Written in capitals, as Apollo shows and prints them: 1 scene heading and 2
+character cues typed in lowercase. The project keeps the case as typed.`
+
 ## Snapshot, files and departure
 
 - The request captures the document on the GUI thread and runs the linear
@@ -120,10 +129,10 @@ Independent expectations are in [fixtures/export](../fixtures/export/README.md).
 
 | Check | What it establishes |
 | --- | --- |
-| `fountain_export_tests` | Hand-written canonical text for the whole writer-subset model, with and without title page; 23 hand-written spelling cases (forcing, prefixes, cues, dual, nested emphasis, escapes, multi-value title fields); 30 refusal cases with located reasons; per-snapshot eligibility changes; omission counts; size bound; explanation coverage |
-| `project_access_flow_tests` | Real QML controls: import → Edit in a New Copy → panel disclosure → export equal to hand-written text; real-key edits that block (leading space after a break, empty element, mixed-case cue) and recover; export while the worker is held and typing continues, autosaved later words excluded; PDF still blocked; reopen and export without title page; failed write and refused destinations keep files; ordinary project export and Home waiting for it |
-| `fountain_export_process_tests` | Executables: `--edit-fountain`, real typing with autosave that blocks then permits export in a new process, exact bytes, disclosure, no-title body, refusals of project/original/review-only |
-| `fountain_export_oracle_tests` | aw-parser 0.1.1 (afterwriting's MIT parser, via the pinned afterwriting 1.17.3) reads both process exports and all three hand-written expected files as the hand-worked semantic models: types, text, decoded emphasis, dual pairing, title fields and breaks. Its one representation difference is explicit: it reads a lyric as italic action. Mutating a dual marker or emphasis makes the comparison fail |
+| `fountain_export_tests` | Hand-written canonical text for the whole writer-subset model, with and without title page, and of the lowercase case model; 29 hand-written spelling cases (forcing, prefixes, cues, dual, nested emphasis, escapes, multi-value title fields, lowercase headings and cues); 31 refusal cases with located reasons; case disclosure counts; per-snapshot eligibility changes; omission counts; size bound; explanation coverage |
+| `project_access_flow_tests` | Real QML controls: import → Edit in a New Copy → panel disclosure → export equal to hand-written text; real-key edits that block (leading space after a break, empty element) and recover; a cue typed in mixed case exported in capitals with the case disclosure; a separate ordinary-project flow types, edits, undoes, saves and reopens lowercase headings/cues and exports hand-written capitals; export while the worker is held and typing continues, autosaved later words excluded; PDF still blocked; reopen and export without title page; failed write and refused destinations keep files; ordinary project export and Home waiting for it |
+| `fountain_export_process_tests` | Executables: `--edit-fountain`, real typing with autosave that blocks then permits export in a new process, exact bytes, disclosure, no-title body, refusals of project/original/review-only; the lowercase case fixture imported, typed into and exported as hand-written capitals with disclosure, original bytes and authored source unchanged, `@McKay` refused |
+| `fountain_export_oracle_tests` | aw-parser 0.1.1 (afterwriting's MIT parser, via the pinned afterwriting 1.17.3) reads the process exports and the hand-written expected files, including the case fixture, as the hand-worked semantic models: types, text, decoded emphasis, dual pairing, title fields and breaks. Its one representation difference is explicit: it reads a lyric as italic action. Mutating a dual marker or emphasis makes the comparison fail |
 
 The oracle test is configured only when aw-parser and node are present; run
 `tools/afterwriting-oracle.sh` once (it needs network, node and pnpm), then
@@ -137,10 +146,11 @@ is not a representative-workload measurement.
 
 ## Remaining gates
 
-- Mixed-case headings/cues/titles, other Unicode, meaningful spacing, empty
-  elements, multiline title/lyric/centered text, lyric within speech, adjacent
-  dialogue elements and complex emphasis remain refused, not exported lossily.
-  Typing headings in lowercase, which the editor shows uppercase, is refused.
+- Headings/cues with letters not shown in capitals (é), titles not in
+  capitals, other Unicode, meaningful spacing, empty elements, multiline
+  title/lyric/centered text, lyric within speech, adjacent dialogue elements and
+  complex emphasis remain refused, not exported lossily. See
+  [case-handling.md](case-handling.md) for the remaining case limitations.
 - Complete Fountain grammar and corrections remain 2.6b work. aw-parser was
   checked on these fixtures only; it differs from Fountain 1.1 where it reads
   inner action lines as headings/transitions or `Key:` lines anywhere before the
