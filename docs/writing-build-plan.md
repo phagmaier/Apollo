@@ -46,6 +46,13 @@ whole-element/speech-safe controls, marker-only deletion, undo, autosave/reopen
 and independently checked PDF/Fountain output. Final release, sanitizer,
 engine and native evidence follows below; imported PDF remains blocked.
 
+**Dual-dialogue authoring is done for its bounded slice 3 task.**
+Format → Toggle Dual Dialogue / Ctrl+Shift+D pairs complete adjacent speeches
+from the second speech. The owner chose explicit unpairing before structural
+changes; incomplete/oversized groups retain writing with visible diagnostics.
+See the [contract and evidence](dual-dialogue.md). Other milestone work and
+imported PDF remain gated.
+
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
 the accepted Qt/Writing desk foundation, measurements, and known limitations.
@@ -1484,3 +1491,27 @@ imported PDF remain separate work. Automated native input is not physical-key
 latency or owner appearance/comfort acceptance. No new crash-loss, copying-loss
 or power-loss guarantee follows from these checks.
 
+
+### Dual-dialogue authoring — bounded slice 3
+
+2026-10-29. This task implements the confirmed second-speech interaction and
+the owner's selected complete-speeches/explicit-unpairing policy. See
+[dual-dialogue.md](dual-dialogue.md) for all boundary cases, verification and
+remaining limits. The blank-row source-mapping regression is independently
+reproduced against the pre-task engine. Existing tests that deleted a boundary
+beside a pair now explicitly unpair first. Snapshot instrumentation likewise
+unpairs through real commands before its destructive live edit and restores
+all original words, types, styles, identities and flags in one Undo.
+
+The pre-existing uncommitted multiline-title additions to `tests/layout_tests.cpp`
+are preserved outside this task's commit. `prompt.md` and private references are
+unchanged. No later milestone slice is authorized by this task.
+
+Final verification: release **24/24**, address/undefined/leak sanitizer
+**24/24**, engine **2/2**; native preflight passed **100 editor / 13 export /
+43 project-flow** checks without skips, fcitx/compositor input, all four wtype
+smoke checks and native workload editor/PDF agreement/rendering. The new
+independent Fountain/PDF fixture passes, including fresh-process output and
+retained imported-PDF refusal. See the [final evidence and limits](dual-dialogue.md#final-check-results--2026-10-29).
+Sustained typing performance and owner appearance/comfort acceptance were not
+re-evaluated. This completes only the bounded dual-authoring task.

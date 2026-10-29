@@ -433,6 +433,142 @@ private slots:
       QCOMPARE(bytes(input), original);
     }
   }
+  void imported_dual_authoring_retains_original_and_pdf_gate() {
+    const auto input = path("dual-import") + ".fountain";
+    const auto original = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/dual-dialogue-authoring.fountain");
+    replace_file(input, original);
+    Window window(font_, path("dual-import-state"), {}, {}, input);
+    QTRY_VERIFY(window.flow.intake_preview()); QTRY_VERIFY(!window.flow.busy());
+    window.item("intakeProjectName")->setProperty("text", "Dual import " + QString::number(count_));
+    window.item("intakeProjectParent")->setProperty("text", root_.path());
+    QVERIFY(window.click("editIntake")); QTRY_VERIFY(window.flow.document());
+    const auto directory = window.flow.autosaver()->location();
+    const auto metadata = bytes(directory + "/imported-material.json");
+    const auto before = document_elements(*window.flow.document());
+    QVERIFY(before[6].dual_right);
+    window.flow.editor()->setProperty("cursorPosition", window.flow.document()->findBlockByNumber(7).position());
+    window.flow.editor()->forceActiveFocus();
+    QTest::keyClick(&window.view, Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+    auto sequential = before; sequential[6].dual_right = false;
+    QCOMPARE(document_elements(*window.flow.document()), sequential);
+    QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*window.flow.document()), before);
+    QTest::keyClick(&window.view, Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*window.flow.document()), sequential);
+    QTest::keyClick(&window.view, Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*window.flow.document()), before);
+    QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+    auto* pdf_job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(pdf_job);
+    const auto output = path("dual-import-blocked") + ".pdf";
+    replace_file(output, "Existing PDF");
+    QVERIFY(!pdf_job->request(output));
+    QVERIFY(pdf_job->status().contains("remain blocked"));
+    QCOMPARE(bytes(output), QByteArray("Existing PDF"));
+    QCOMPARE(bytes(directory + "/imports/original.fountain"), original);
+    QCOMPARE(bytes(directory + "/imported-material.json"), metadata);
+    QCOMPARE(bytes(input), original);
+  }
+
+  void dual_authoring_survives_save_reopen_and_export() {
+    const auto initial = parse_screenplay(bytes(APOLLO_IMPORT_FIXTURE_DIR "/../editing/dual-dialogue-authoring.screenplay.json"));
+    const auto expected_fountain = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/dual-dialogue-authoring.fountain");
+    const auto requested = qEnvironmentVariable("APOLLO_DUAL_OUTPUT");
+    const auto output_root = requested.isEmpty() ? path("dual-output") : requested;
+    QVERIFY(QDir().mkpath(output_root));
+    const auto project = create_project(output_root + "/project", initial);
+    const auto state = path("dual-state");
+    auto writing = [](const QTextDocument* document) { return canonical(Screenplay{0, document_elements(*document)}); };
+    auto paired = initial; paired.elements[6].dual_right = true;
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      auto* document = window.flow.document();
+      auto* editor = window.flow.editor();
+      editor->setProperty("cursorPosition", document->findBlockByNumber(7).position() + 2);
+      QVERIFY(window.click("emphasisButton"));
+      QTRY_VERIFY(window.popup_open("emphasisMenu"));
+      QVERIFY(window.click("dualDialogueToggle"));
+      QTRY_VERIFY(editor->hasActiveFocus());
+      QCOMPARE(writing(document), paired);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), initial);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(writing(document), paired);
+      // A new break from inside the right speech goes before the WHOLE pair,
+      // in addition to the existing adjacent marker; undo keeps both IDs.
+      editor->setProperty("cursorPosition", document->findBlockByNumber(7).position() + 2);
+      QTest::keyClick(&window.view, Qt::Key_Return, Qt::ControlModifier);
+      auto with_break = writing(document);
+      QCOMPARE(with_break.elements[3].type, ElementType::page_break);
+      with_break.elements.erase(with_break.elements.begin() + 3);
+      QCOMPARE(with_break, paired);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), paired);
+      // Ordinary words and emphasis stay editable; no new identity or flag.
+      editor->setProperty("cursorPosition", document->findBlockByNumber(7).position() + 4);
+      window.type("X");
+      auto edited = paired; edited.elements[7].text = "I amX here.";
+      edited.elements[7].styles = {{6, 10, Style::underline}};
+      QCOMPARE(writing(document), edited);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), paired);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      auto saved = open_project(project.directory).screenplay; saved.revision = 0;
+      QCOMPARE(saved, paired);
+    }
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      auto* document = window.flow.document();
+      QCOMPARE(writing(document), paired);
+      window.flow.editor()->setProperty("cursorPosition", document->findBlockByNumber(7).position());
+      QTest::keyClick(&window.view, Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(writing(document), initial);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(document), paired);
+      auto* fountain_job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      auto* pdf_job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+      QVERIFY(fountain_job && pdf_job);
+      QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      window.item("fountainDestination")->setProperty("text", output_root + "/authored.fountain");
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!fountain_job->busy());
+      QCOMPARE(bytes(output_root + "/authored.fountain"), expected_fountain);
+      QVERIFY(window.click("exportButton"));
+      QVERIFY(window.click("exportFormatPdf"));
+      window.item("exportDestination")->setProperty("text", output_root + "/authored.pdf");
+      QSignalSpy completed(pdf_job, &PdfExportJob::completed);
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!pdf_job->busy());
+      QCOMPARE(completed.size(), 1); QVERIFY(completed[0][0].toBool());
+      QVERIFY(bytes(output_root + "/authored.pdf").startsWith("%PDF-"));
+      // Grow an actual paired speech beyond the profile, preserving its flag.
+      // The PDF worker must refuse without replacing the previous output.
+      const auto previous_pdf = bytes(output_root + "/authored.pdf");
+      QTextCursor cursor(document->findBlockByNumber(5));
+      cursor.movePosition(QTextCursor::EndOfBlock);
+      cursor.insertText(QString(28 * 56, 'x'));
+      const auto oversized = writing(document);
+      QVERIFY(oversized.elements[6].dual_right);
+      QVERIFY(window.item("dualDialogueNotice")->isVisible());
+      QVERIFY(window.item("dualDialogueNotice")->property("text").toString().contains("one-page limit"));
+      QVERIFY(pdf_job->request(output_root + "/authored.pdf"));
+      QTRY_VERIFY(!pdf_job->busy());
+      QCOMPARE(completed.size(), 2); QVERIFY(!completed[1][0].toBool());
+      QVERIFY(pdf_job->status().contains("dual dialogue exceeds one page"));
+      QCOMPARE(bytes(output_root + "/authored.pdf"), previous_pdf);
+      QCOMPARE(writing(document), oversized);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      auto saved = open_project(project.directory).screenplay; saved.revision = 0;
+      QCOMPARE(saved, oversized);
+      document->undo();
+      QCOMPARE(writing(document), paired);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+    }
+  }
+
   void manual_page_break_authoring_survives_save_reopen_and_export() {
     const auto initial = parse_screenplay(bytes(APOLLO_IMPORT_FIXTURE_DIR "/../editing/page-break-authoring.screenplay.json"));
     const auto expected_fountain = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/page-break-authoring.fountain");
@@ -790,7 +926,16 @@ private slots:
       QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
       QCOMPARE(writing(window.flow.document()), expected);
       QCOMPARE(association(window, "f8"), QString("Present: f8"));
-      // A whole-element deletion detaches the note instead of retargeting it.
+      // Whole-element deletion ending at the first paired cue is protected.
+      // Explicitly unpair before removing that structural boundary.
+      action = window.flow.document()->findBlockByNumber(7);
+      QMetaObject::invokeMethod(window.flow.editor(), "select", Q_ARG(int, action.position()), Q_ARG(int, action.next().position()));
+      QTest::keyClick(&window.view, Qt::Key_Delete);
+      QCOMPARE(writing(window.flow.document()), expected);
+      window.flow.editor()->setProperty("cursorPosition", window.flow.document()->findBlockByNumber(11).position());
+      QTest::keyClick(&window.view, Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+      auto sequential = expected; sequential.elements[11].dual_right = false;
+      QCOMPARE(writing(window.flow.document()), sequential);
       action = window.flow.document()->findBlockByNumber(7);
       QMetaObject::invokeMethod(window.flow.editor(), "select", Q_ARG(int, action.position()), Q_ARG(int, action.next().position()));
       QTest::keyClick(&window.view, Qt::Key_Delete);
@@ -801,6 +946,8 @@ private slots:
       QVERIFY(window.item("intakeFindingText")->property("text").toString().contains("Remember the blue door."));
       QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/import-working-reader.png")));
       QVERIFY(window.click("intakeHome"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(writing(window.flow.document()), sequential);
       QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
       QCOMPARE(writing(window.flow.document()), expected);
       QCOMPARE(association(window, "f8"), QString("Present: f8"));

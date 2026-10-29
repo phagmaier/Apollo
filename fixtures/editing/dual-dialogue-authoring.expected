@@ -1,0 +1,14 @@
+# Hand-derived: pair changes only right-cue dual; adjacent markers keep whole group.
+page title number=none
+4	title@center	THE DUAL SIGNAL
+page 1 number=none
+1	action	A bell waits.
+page 2 number=2.
+1	dual-cue-L	MARA (V.O.)
+1	dual-cue-R	THEO (O.S.)
+2	dual-paren-L	(quietly)
+2	dual-dialogue-R	I am here.
+3	dual-dialogue-L	Hold.	bold=Hold
+5	dual-dialogue-L	Listen.
+page 3 number=3.
+1	action	The lamp dims.

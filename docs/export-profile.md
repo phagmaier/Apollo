@@ -117,7 +117,10 @@ as follows. These are spike rules for owner review, not confirmed behavior:
   spacing, moved whole with a preceding heading; a cue longer than one page
   is rejected like other unsplittable elements.
 - **A right dual cue without a left speech, or without its own speech,** is an
-  ordinary cue; the pair is not dual.
+  ordinary cue in an incomplete preview; the pair is not laid out as dual.
+  Its saved flag remains intact and authoring shows a warning. Complete pairs
+  never silently fall back to sequential cues; oversized groups retain text
+  in a visibly diagnosed reading preview and refuse PDF ([contract](dual-dialogue.md)).
 - **Parentheticals or dialogue without a cue** keep the speech spacing (one
   blank line before the run, none inside it) and move whole.
 - **A typed `(CONT'D)`** on a cue where G1 generates one is replaced by the

@@ -16,6 +16,13 @@ serializer produced any output; none is captured from Apollo.
 | `scene-spacing.fountain` | [`../import/scene-spacing.expected.json`](../import/scene-spacing.expected.json) after an explicit normal-scene-spacing choice and type-only corrections of the two cue/parenthetical-only speeches to action; text, styles and IDs remain authored, but neither spacing nor speech meaning is claimed unchanged |
 | `emphasis-authoring.fountain` | [`../import/emphasis-authoring.authored.expected.json`](../import/emphasis-authoring.authored.expected.json), with keyboard/menu-authored bold Café, italic bells and underlined red; words, authored breaks and identities unchanged |
 
+`dual-dialogue-authoring.fountain` is hand-written from
+[`../editing/dual-dialogue-authoring.screenplay.json`](../editing/dual-dialogue-authoring.screenplay.json)
+after only `right-cue` gains `dual: true`. Its extensions, emphasis, internal
+blank dialogue line and adjacent page breaks remain unchanged. Real QML
+commands, fresh-process re-export, aw-parser and the hand-derived companion
+`.expected` PDF slots/columns verify that authored pair.
+
 The original imported Fountain spells the same meaning differently (`!` before
 plain action, notes, stash, sections, synopses, scene number and an unknown title
 field). The clean exports omit those retained records; the tests check the

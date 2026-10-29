@@ -420,6 +420,9 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
               transfer_styles(part, out.back(), pos);
               set_source(out.back(), cue_source + 1 + k, pos);
               offset = pos + text.size(); continuation = true;
+              auto next = offset;
+              while (next < part.text.size() && part.text[next] == ' ') ++next;
+              if (next < part.text.size() && part.text[next] == '\n') offset = next + 1;
             }
           }
           return out;

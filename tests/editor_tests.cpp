@@ -1958,6 +1958,181 @@ private slots:
     QCOMPARE(document_elements(*document_), original);
   }
 
+  void dual_authoring_from_every_speech_part_and_undo() {
+    const std::vector<Element> original = {
+        {ElementType::cue, "MARA (V.O.)", false, {}, "left"},
+        {ElementType::dialogue, "Hold.\n\nListen.", false, {{0, 4, Style::bold}}, "words"},
+        {ElementType::cue, "THEO (O.S.)", false, {{0, 4, Style::italic}}, "right"},
+        {ElementType::parenthetical, "(quietly)", false, {}, "aside"},
+        {ElementType::dialogue, "I am here.", false, {{5, 9, Style::underline}}, "reply"}};
+    for (int index : {2, 3, 4}) {
+      QVERIFY(open_elements(original));
+      editor_->setProperty("cursorPosition", document_->findBlockByNumber(index).position() + 2);
+      press(Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+      auto paired = original;
+      paired[2].dual_right = true;
+      QCOMPARE(document_elements(*document_), paired);
+      QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+      const auto lines = apollo::layout(paired);
+      // Independent profile slots: both cues at 1; right aside/dialogue at
+      // 2/3; left authored lines at 2/3(blank)/4. Columns 1.5 / 4.6 in.
+      QCOMPARE(lines.size(), std::size_t(7));
+      QCOMPARE(lines[0].slot, 1); QCOMPARE(lines[0].column, 'L');
+      QCOMPARE(lines[1].slot, 1); QCOMPARE(lines[1].column, 'R');
+      QCOMPARE(lines[0].geometry.x, 180.0); QCOMPARE(lines[1].geometry.x, 403.2);
+      QCOMPARE(lines.back().text, std::string("Listen."));
+      QCOMPARE(lines.back().slot, 4); QCOMPARE(lines.back().geometry.x, 108.0);
+      press(Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), original);
+      press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*document_), paired);
+      editor_->setProperty("cursorPosition", document_->lastBlock().position());
+      press(Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*document_), original);
+      press(Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), paired);
+    }
+  }
+
+  void dual_authoring_refuses_invalid_contexts() {
+    const std::vector<Element> base = {{ElementType::cue, "MARA"}, {ElementType::dialogue, "Left."},
+                                     {ElementType::cue, "THEO"}, {ElementType::dialogue, "Right."}};
+    for (int scenario = 0; scenario < 11; ++scenario) {
+      auto elements = base;
+      int target = 2;
+      if (scenario < 3) { elements.insert(elements.begin() + 2, {scenario == 0 ? ElementType::action :
+          scenario == 1 ? ElementType::heading : ElementType::page_break, scenario == 2 ? "" : "Barrier"}); target = 3; }
+      if (scenario == 3) elements[1].text = " ";
+      if (scenario == 4) elements[3].text = "";
+      if (scenario == 5) elements[2].text = " ";
+      if (scenario == 6) target = 0;
+      if (scenario == 7) { elements[2].dual_right = true; target = 0; }
+      if (scenario == 10) { elements[2].dual_right = true; elements.push_back({ElementType::cue, "JUNE", true});
+        elements.push_back({ElementType::dialogue, "Third."}); }
+      if (scenario == 8) { elements[2].dual_right = true; elements.push_back({ElementType::cue, "JUNE"});
+        elements.push_back({ElementType::dialogue, "Third."}); target = 4; }
+      QVERIFY(open_elements(elements));
+      const auto original = document_elements(*document_);
+      const int at = document_->findBlockByNumber(target).position();
+      editor_->setProperty("cursorPosition", at);
+      if (scenario == 9) QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, at), Q_ARG(int, at + 2));
+      press(Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*document_), original);
+      QVERIFY(!document_->isUndoAvailable());
+      const auto* commands = document_->findChild<EditorCommands*>();
+      QVERIFY(commands && !commands->dualMessage().isEmpty());
+      if (scenario == 9) QCOMPARE(editor_->property("selectionEnd").toInt(), at + 2);
+    }
+  }
+
+  void dual_structure_is_protected_but_words_remain_editable() {
+    const std::vector<Element> elements = {{ElementType::cue, "MARA", false, {}, "left"},
+        {ElementType::dialogue, "Hold. Listen.", false, {}, "words"},
+        {ElementType::cue, "THEO", true, {}, "right"}, {ElementType::dialogue, "Reply.", false, {}, "reply"}};
+    for (int scenario = 0; scenario < 10; ++scenario) {
+      QVERIFY(open_elements(elements));
+      auto* commands = document_->findChild<EditorCommands*>();
+      const int boundary = document_->findBlockByNumber(2).position();
+      editor_->setProperty("cursorPosition", boundary);
+      if (scenario == 0) press(Qt::Key_Backspace);
+      if (scenario == 1) { editor_->setProperty("cursorPosition", boundary - 1); press(Qt::Key_Delete); }
+      if (scenario == 2) press(Qt::Key_Tab);
+      if (scenario == 3) { editor_->setProperty("cursorPosition", boundary - 1); press(Qt::Key_Return); }
+      if (scenario == 4) { editor_->setProperty("cursorPosition", boundary + 1); press(Qt::Key_Return); }
+      if (scenario >= 5 && scenario <= 7) {
+        QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, boundary - 2), Q_ARG(int, boundary + 2));
+        if (scenario == 5) type("X");
+        if (scenario == 6) press(Qt::Key_X, Qt::ControlModifier);
+        if (scenario == 7) { QInputMethodEvent input; input.setCommitString("X"); QGuiApplication::sendEvent(editor_, &input); }
+        QCOMPARE(editor_->property("selectionStart").toInt(), boundary - 2);
+        QCOMPARE(editor_->property("selectionEnd").toInt(), boundary + 2);
+      }
+      if (scenario == 8) { QGuiApplication::clipboard()->setText("New.\nParagraph."); press(Qt::Key_V, Qt::ControlModifier); }
+      if (scenario == 9) { QInputMethodEvent input; input.setCommitString("X", -1, 2); QGuiApplication::sendEvent(editor_, &input); }
+      QCOMPARE(document_elements(*document_), elements);
+      QVERIFY(!document_->isUndoAvailable());
+      QVERIFY(!commands->dualMessage().isEmpty());
+    }
+    QVERIFY(open_elements(elements));
+    auto* commands = document_->findChild<EditorCommands*>();
+    const auto words = document_->findBlockByNumber(1);
+    editor_->setProperty("cursorPosition", words.position() + 5);
+    press(Qt::Key_Return);
+    auto edited = elements; edited[1].text = "Hold.\n Listen.";
+    QCOMPARE(document_elements(*document_), edited);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), elements);
+    // Clearing dialogue is unfinished writing, never an implicit unpair.
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, words.position()), Q_ARG(int, words.position() + words.length() - 1));
+    press(Qt::Key_Backspace);
+    auto empty = elements; empty[1].text.clear();
+    QCOMPARE(document_elements(*document_), empty);
+    QVERIFY(!commands->dualWarning().isEmpty());
+    press(Qt::Key_Return); // Empty-dialogue -> action would break the pair.
+    QCOMPARE(document_elements(*document_), empty);
+    type("New.");
+    QVERIFY(commands->dualWarning().isEmpty());
+    QVERIFY(document_elements(*document_)[2].dual_right);
+  }
+
+  void dual_input_method_at_adjacent_marker_preserves_pair() {
+    const std::vector<Element> elements = {{ElementType::page_break, "", false, {}, "marker"},
+        {ElementType::cue, "MARA", false, {}, "left"}, {ElementType::dialogue, "Left.", false, {}, "words"},
+        {ElementType::cue, "THEO", true, {}, "right"}, {ElementType::dialogue, "Right.", false, {}, "reply"}};
+    QVERIFY(open_elements(elements));
+    // A marker-only selection beside the first cue removes only the marker,
+    // even though its endpoint is on a paired cue. Pair protection must not
+    // override the explicit safe marker-removal contract.
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 0), Q_ARG(int, 1));
+    press(Qt::Key_Delete);
+    auto without_marker = elements; without_marker.erase(without_marker.begin());
+    QCOMPARE(document_elements(*document_), without_marker);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), elements);
+    editor_->setProperty("cursorPosition", 0);
+    QInputMethodEvent input;
+    input.setCommitString("New\nCue");
+    QGuiApplication::sendEvent(editor_, &input);
+    QCOMPARE(document_elements(*document_), elements);
+    QVERIFY(!document_->isUndoAvailable());
+    // A normal composed character still lands in the adjacent cue, preserving
+    // both cue IDs and the pairing flag; one Undo restores the exact source.
+    input.setCommitString(QString::fromUtf8("é"));
+    QGuiApplication::sendEvent(editor_, &input);
+    auto composed = elements; composed[1].text = "éMARA";
+    QCOMPARE(document_elements(*document_), composed);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), elements);
+  }
+
+  void oversized_and_incomplete_dual_keep_source_and_show_warning() {
+    const std::vector<Element> elements = {{ElementType::cue, "MARA"},
+        {ElementType::dialogue, std::string(56 * 28, 'x')},
+        {ElementType::cue, "THEO"}, {ElementType::dialogue, "Reply."}};
+    QVERIFY(open_elements(elements));
+    editor_->setProperty("cursorPosition", document_->lastBlock().position());
+    press(Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+    auto paired = document_elements(*document_);
+    QVERIFY(paired[2].dual_right);
+    QCOMPARE(paired[1].text, elements[1].text);
+    QVERIFY(layout()->error().contains("dual dialogue exceeds one page"));
+    auto* notice = view_->rootObject()->findChild<QQuickItem*>("dualDialogueNotice");
+    QVERIFY(notice && notice->isVisible());
+    QVERIFY(notice->property("text").toString().contains("PDF export is refused"));
+    press(Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+    QVERIFY(!document_elements(*document_)[2].dual_right);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), paired);
+    QVERIFY(layout()->error().contains("dual dialogue"));
+    // Legacy missing partner/parts remains flagged until explicitly unpaired.
+    QVERIFY(open_elements({{ElementType::cue, "THEO", true}}));
+    auto* commands = document_->findChild<EditorCommands*>();
+    QVERIFY(!commands->dualWarning().isEmpty());
+    press(Qt::Key_D, Qt::ControlModifier | Qt::ShiftModifier);
+    QVERIFY(commands->dualWarning().isEmpty());
+    QVERIFY(!document_elements(*document_)[0].dual_right);
+  }
+
   void manual_break_removal_refuses_ambiguous_speech_attachment() {
     for (const auto elements : {
         std::vector<Element>{{ElementType::cue, "MARA"}, {ElementType::page_break, ""},

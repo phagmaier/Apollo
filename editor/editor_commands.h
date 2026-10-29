@@ -16,6 +16,8 @@ class EditorCommands : public QObject {
   Q_PROPERTY(QVariantList emptySpeeches READ emptySpeeches NOTIFY emptySpeechesChanged)
   Q_PROPERTY(QString titleText READ titleText NOTIFY titleTextChanged)
   Q_PROPERTY(QString pageBreakMessage READ pageBreakMessage NOTIFY pageBreakMessageChanged)
+  Q_PROPERTY(QString dualMessage READ dualMessage NOTIFY dualStateChanged)
+  Q_PROPERTY(QString dualWarning READ dualWarning NOTIFY dualStateChanged)
 public:
   // Clipboard format that keeps element types, emphasis, and dual flags.
   static inline const QString mime_type = QStringLiteral("application/x-apollo-elements");
@@ -26,6 +28,10 @@ public:
   Q_INVOKABLE int typeText(int position, int selectionStart, int selectionEnd, const QString& text);
   Q_INVOKABLE int enter(int position, int selectionStart, int selectionEnd);
   Q_INVOKABLE void cycleType(int position, bool backward);
+  // Single caret in the second speech; changes only its cue flag, undoably.
+  Q_INVOKABLE void toggleDualDialogue(int position, int selectionStart, int selectionEnd);
+  const QString& dualMessage() const { return dual_message_; }
+  const QString& dualWarning() const { return dual_warning_; }
   // Selection only; a mixed selection gains the style, full coverage removes
   // it. Names are bold, italic, underline. Breaks are not styled.
   Q_INVOKABLE void toggleEmphasis(int selectionStart, int selectionEnd, const QString& style);
@@ -62,6 +68,7 @@ signals:
   void emptySpeechesChanged();
   void titleTextChanged();
   void pageBreakMessageChanged();
+  void dualStateChanged();
 
 private:
   QTextDocument* document_;
@@ -69,9 +76,12 @@ private:
   QVariantList empty_speeches_;
   QString title_text_;
   QString page_break_message_;
+  QString dual_message_, dual_warning_;
   bool forwarding_input_ = false;
   void setPageBreakMessage(const QString& message);
   bool refuseMarkerSelection(int start, int end);
+  bool refuseDualSelection(int start, int end);
+  void setDualMessage(const QString& message);
   void moveToWriting(QTextCursor& cursor, bool skipTitle = false);
   void refreshDocumentState();
 };

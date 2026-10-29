@@ -15,6 +15,11 @@ Rectangle {
     color: "#d4d9df"
     function focusEditor() { editor.forceActiveFocus() }
     readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
+    function toggleDualDialogue() {
+        if (enabled)
+            commands.toggleDualDialogue(editor.cursorPosition, editor.selectionStart, editor.selectionEnd)
+        editor.forceActiveFocus()
+    }
     function toggleEmphasis(style) {
         if (enabled)
             commands.toggleEmphasis(editor.selectionStart, editor.selectionEnd, style)
@@ -113,6 +118,11 @@ Rectangle {
                     const shift = event.modifiers & Qt.ShiftModifier
                     const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
                     const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
+                    if (event.modifiers === (Qt.ControlModifier | Qt.ShiftModifier) && event.key === Qt.Key_D) {
+                        root.toggleDualDialogue()
+                        event.accepted = true
+                        return
+                    }
                     if ((event.modifiers & Qt.ControlModifier)
                             && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
                         if (shift)

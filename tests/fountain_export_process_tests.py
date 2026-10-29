@@ -276,6 +276,46 @@ def emphasis_authoring(editor, flow_tests, root):
             (canonical, presented(expected), True)]
 
 
+def dual_authoring(editor, flow_tests, root):
+    """Real command-authored pairs reach independent parsing and PDF geometry."""
+    from pdf_tests import check_pdf, check_styles, fixture_pages
+    output = root / "dual-authored"
+    run(flow_tests, "dual_authoring_survives_save_reopen_and_export",
+        env=dict(os.environ, APOLLO_DUAL_OUTPUT=str(output)))
+    project, actual = output / "project", output / "authored.fountain"
+    expected = json.loads((FIXTURES / "editing/dual-dialogue-authoring.screenplay.json").read_text())
+    expected["elements"][5]["dual"] = True
+    saved_bytes = (project / "screenplay.json").read_bytes()
+    saved = json.loads(saved_bytes)
+    saved["revision"] = 0
+    assert saved == expected, (saved, expected)
+    canonical = FIXTURES / "export/dual-dialogue-authoring.fountain"
+    assert actual.read_bytes() == canonical.read_bytes()
+    reopened = output / "reopened.fountain"
+    run(editor, project, "--export-fountain", reopened)
+    assert reopened.read_bytes() == canonical.read_bytes()
+    assert (project / "screenplay.json").read_bytes() == saved_bytes
+    pages = fixture_pages(FIXTURES / "editing/dual-dialogue-authoring.expected")
+    check_pdf(output / "authored.pdf", pages)
+    check_styles(output / "authored.pdf", pages)
+    imported = output / "bounded-reimport"
+    run(editor, imported, "--edit-fountain", reopened)
+    # Fountain spells the blank dialogue row with two spaces. The frozen
+    # importer keeps those authored spaces; presentation remains one blank row.
+    reimport_expected = json.loads(json.dumps(expected))
+    reimport_expected["elements"][4]["text"] = "Hold.\n  \nListen."
+    assert model(json.loads((imported / "screenplay.json").read_text())) == model(reimport_expected)
+    # Independent authoring on an editable import keeps the original and PDF gate.
+    snapshot = output / "blocked-pdf"
+    snapshot.mkdir()
+    (snapshot / "editor.pdf").write_bytes(b"Existing PDF")
+    refused = run(editor, imported, "--snapshot", snapshot, expect=1)
+    assert "blocked" in refused.stderr.lower()
+    assert (snapshot / "editor.pdf").read_bytes() == b"Existing PDF"
+    assert (imported / "imports/original.fountain").read_bytes() == canonical.read_bytes()
+    return [(path, expected, True) for path in (actual, reopened, canonical)]
+
+
 def page_break_authoring(editor, flow_tests, root):
     """Real authored markers survive fresh-process export and bounded reimport."""
     output = root / "page-break-authored"
@@ -437,6 +477,7 @@ def main():
     emphasis_cases = emphasis_authoring(editor, options.flow_tests, root)
     title_cases = title_authoring(editor, options.flow_tests, root)
     page_break_cases = page_break_authoring(editor, options.flow_tests, root)
+    dual_cases = dual_authoring(editor, options.flow_tests, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -449,7 +490,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases + page_break_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases + page_break_cases + dual_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

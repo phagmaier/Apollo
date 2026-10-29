@@ -43,6 +43,36 @@ int main() {
   check(dual[5], 367.2, 105, 115.125);
   check(dual[6], 108, 117, 28.78125);
   check(dual[7], 331.2, 117, 28.78125);
+  // Hand-counted authored offsets, including blank lines and a repeated
+  // word after a deliberate break. Both columns retain their own mapping.
+  const auto breaks = layout({{ElementType::cue, "MARA"},
+      {ElementType::dialogue, "Hold.\n\nHold.", false, {{7, 11, Style::bold}}},
+      {ElementType::cue, "THEO", true},
+      {ElementType::dialogue, "Right. \n  \nAgain."}});
+  const std::vector<std::size_t> offsets{0, 0, 0, 0, 6, 8, 7, 11};
+  const std::vector<std::string> texts{"MARA", "THEO", "Hold.", "Right.", "", "", "Hold.", "Again."};
+  if (breaks.size() != offsets.size()) return 1;
+  for (std::size_t i = 0; i < breaks.size(); ++i) {
+    const auto& line = breaks[i];
+    if (line.source_offset != offsets[i] || line.text != texts[i] ||
+        line.source_length != texts[i].size() || line.slot != static_cast<int>(i / 2 + 1) ||
+        line.column != (i % 2 ? 'R' : 'L')) {
+      std::cerr << "dual authored line mapping failed at " << i << '\n'; ++failures;
+    }
+  }
+  if (breaks[6].styles != std::vector<StyleSpan>{{0, 4, Style::bold}}) {
+    std::cerr << "dual emphasis after blank line lost\n"; ++failures;
+  }
+  // One cue + 55 deliberately separated lines exactly fills 56 slots.
+  // A 56th dialogue line exceeds the indivisible group's profile limit.
+  auto boundary = std::vector<Element>{{ElementType::cue, "MARA"},
+      {ElementType::dialogue, std::string(54, '\n') + "End."},
+      {ElementType::cue, "THEO", true}, {ElementType::dialogue, "Reply."}};
+  const auto fits = layout(boundary);
+  if (fits.back().slot != 56 || fits.back().page != 1) { std::cerr << "dual 56-slot boundary failed\n"; ++failures; }
+  boundary[1].text.insert(0, "\n");
+  try { (void)layout(boundary); std::cerr << "oversized dual accepted\n"; ++failures; }
+  catch (const std::runtime_error&) {}
   const auto title = layout_document(import_fountain(
       "Title: The Lamp Room\nCredit: Written by\nAuthor: R. Example\n"
       "Contact: 555-0100\nDraft date: Today\n\nA lamp.\n\n===\n\n===\n"));

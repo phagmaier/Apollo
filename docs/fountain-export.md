@@ -108,6 +108,13 @@ action created after a final marker remains unexportable until written or
 explicitly removed. Legacy marker text is retained in source and refused by
 both clean Fountain and PDF, not exported as a blank marker.
 
+Dual-dialogue authoring uses the existing second-cue ` ^` spelling and keeps
+all current snapshot eligibility checks. The real-controls
+`dual-dialogue-authoring` fixture adds only that cue's flag, saves/reopens,
+exports hand-written bytes, and is read by aw-parser. Poppler independently
+checks ordinary-project dual columns and adjacent-break pages; oversized pairs
+still refuse PDF and imported PDF stays blocked. See [dual-dialogue.md](dual-dialogue.md).
+
 ## Verification of each export
 
 After the explicit checks pass, the worker reads the produced text with the

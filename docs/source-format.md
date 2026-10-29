@@ -232,6 +232,15 @@ allowed and clean export reports the located refusal. The
 [task 3c record](writing-build-plan.md#task-3c--emphasis-authoring) holds evidence
 and remaining limits.
 
+### Dual-dialogue authoring (bounded slice 3)
+
+**Format → Toggle Dual Dialogue / Ctrl+Shift+D** changes the second cue's
+existing flag in one undo step. Complete adjacent speeches are required for
+new pairing; invalid/incomplete saved flags remain intact with a visible
+warning. Structural edits that could detach a partner require explicit
+unpairing. See the [interaction and boundary table](dual-dialogue.md).
+Autosave/reopen, IDs, emphasis and authored breaks use the unchanged v1 mapping.
+
 ### Manual page-break authoring (slice 3)
 
 **Page break → Insert page break / Remove page break**, **Ctrl+Enter /

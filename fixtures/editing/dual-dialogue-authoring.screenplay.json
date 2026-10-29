@@ -1,0 +1,73 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [
+    {
+      "id": "title",
+      "field": "title",
+      "text": "THE DUAL SIGNAL"
+    }
+  ],
+  "elements": [
+    {
+      "id": "opening",
+      "type": "action",
+      "text": "A bell waits."
+    },
+    {
+      "id": "before",
+      "type": "pageBreak",
+      "text": ""
+    },
+    {
+      "id": "left-cue",
+      "type": "character",
+      "text": "MARA (V.O.)"
+    },
+    {
+      "id": "aside",
+      "type": "parenthetical",
+      "text": "(quietly)"
+    },
+    {
+      "id": "left-dialogue",
+      "type": "dialogue",
+      "text": "Hold.\n\nListen.",
+      "styles": [
+        {
+          "start": 0,
+          "end": 4,
+          "style": "bold"
+        }
+      ]
+    },
+    {
+      "id": "right-cue",
+      "type": "character",
+      "text": "THEO (O.S.)"
+    },
+    {
+      "id": "right-dialogue",
+      "type": "dialogue",
+      "text": "I am here.",
+      "styles": [
+        {
+          "start": 5,
+          "end": 9,
+          "style": "underline"
+        }
+      ]
+    },
+    {
+      "id": "after",
+      "type": "pageBreak",
+      "text": ""
+    },
+    {
+      "id": "tail",
+      "type": "action",
+      "text": "The lamp dims."
+    }
+  ]
+}

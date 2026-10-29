@@ -519,14 +519,26 @@ Rectangle {
                 text: "Format"
                 ink: "#303843"; fill: "#e9edf0"
                 enabled: editorPage.enabled
-                Accessible.name: "Format selected text: Bold, Italic, Underline"
-                ToolTip.text: editorPage.hasSelection ? "Format selected text" : "Select text to change emphasis"
+                Accessible.name: "Format screenplay: Dual Dialogue, Bold, Italic, Underline"
+                ToolTip.text: "Dual Dialogue: Ctrl+Shift+D in the second speech. Select text for Bold, Italic or Underline."
                 onClicked: emphasisMenu.open()
                 Menu {
                     id: emphasisMenu
                     objectName: "emphasisMenu"
                     y: emphasisButton.height
                     onClosed: editorPage.focusEditor()
+                    MenuItem {
+                        objectName: "dualDialogueToggle"
+                        text: "Toggle Dual Dialogue\tCtrl+Shift+D"
+                        enabled: editorPage.enabled
+                        onTriggered: editorPage.toggleDualDialogue()
+                    }
+                    Label {
+                        width: 310; padding: 12; wrapMode: Text.Wrap
+                        text: "Dual Dialogue: put the caret in the second complete speech to pair it with the preceding speech, or turn the pair off. Page breaks cannot separate the speeches."
+                        font.pixelSize: 12
+                    }
+                    MenuSeparator {}
                     MenuItem {
                         objectName: "emphasisBold"
                         text: "Bold\tCtrl+B"
@@ -595,9 +607,26 @@ Rectangle {
         ScreenplayEditor {
             id: editorPage
             enabled: (!desk.autosaver || !desk.autosaver.reloadBusy) && !desk.departing
-            anchors { left: parent.left; right: parent.right; top: emptySpeechBar.bottom; bottom: parent.bottom }
+            anchors { left: parent.left; right: parent.right; top: dualNotice.bottom; bottom: parent.bottom }
             screenplayLayout: desk.screenplayLayout
             commands: desk.commands
+        }
+        Rectangle {
+            id: dualNotice
+            anchors { left: parent.left; right: parent.right; top: emptySpeechBar.bottom }
+            visible: notice.text.length > 0
+            height: visible ? notice.implicitHeight + 20 : 0
+            color: "#f4e4cf"
+            Text {
+                id: notice
+                objectName: "dualDialogueNotice"
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
+                text: desk.screenplayLayout.error.indexOf("dual dialogue exceeds one page") >= 0
+                      ? "Dual Dialogue exceeds this profile's one-page limit. All writing and pairing are kept in a reading preview; PDF export is refused. Shorten the speeches or explicitly turn Dual Dialogue off."
+                      : desk.commands.dualMessage || desk.commands.dualWarning
+                textFormat: Text.PlainText; wrapMode: Text.Wrap
+                color: "#6b3d13"; font { family: "Liberation Sans"; pixelSize: 12 }
+            }
         }
     }
     Rectangle {

@@ -470,3 +470,14 @@ Further export work must extend verification of the selected submission profile
 beyond the spike's exercised inputs. Qt/C++/QML is retained following the
 accepted spike (round 17); no production source schema or merge algorithm has
 been selected.
+
+## Bounded dual-dialogue authoring policy — 2026-10-29
+
+During the authorized slice 3 dual-dialogue task, the owner selected:
+**require complete speeches; explicitly unpair before structural changes**.
+New pairing requires adjacent nonblank cues and dialogue. Text/emphasis editing
+remains available within paired elements; edits that would detach a partner are
+refused until Dual Dialogue is turned off. Incomplete existing pairs keep their
+flags and show a warning. See [the implemented boundary table](dual-dialogue.md).
+This confirmation does not authorize remaining milestone slices or widen the
+Fountain/imported-PDF gates.

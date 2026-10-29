@@ -369,14 +369,22 @@ int agreement(const char* path, const QString& directory, int edits, bool snapsh
   if (!job.request(destination, include_title)) throw std::runtime_error(job.status().toStdString());
   if (snapshot) {
     const auto original_elements = apollo::editor::document_elements(*document);
-    // Select-all replacement deliberately cannot cross non-text markers.
-    // Explicitly remove safe markers first, through the same command as the
-    // gap control, grouping the entire live mutation as one undo step.
+    // Select-all replacement deliberately cannot cross pairs or markers.
+    // Explicitly unpair from the last cue first, then remove safe markers,
+    // using authoring commands and one undo step for the live mutation.
     auto* commands = document->findChild<apollo::editor::EditorCommands*>();
     QTextCursor live(document.get());
     live.beginEditBlock();
     for (auto block = document->lastBlock(); block.isValid();) {
       const auto previous = block.previous();
+      if (block.blockFormat().boolProperty(apollo::editor::dual_right_property)) {
+        const int at = block.position();
+        commands->toggleDualDialogue(at, at, at);
+        if (block.blockFormat().boolProperty(apollo::editor::dual_right_property)) {
+          live.endEditBlock();
+          throw std::runtime_error("snapshot instrumentation cannot unpair: " + commands->dualMessage().toStdString());
+        }
+      }
       if (apollo::editor::element_type(block) == apollo::ElementType::page_break) {
         const int at = block.position();
         const int caret = commands->removePageBreak(at, at, at);

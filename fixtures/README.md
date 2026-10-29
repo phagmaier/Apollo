@@ -248,3 +248,15 @@ Tab focus/scroll, Apply/Cancel, one-step Undo/Redo, autosave/reopen, PDF text an
 exact Fountain. It refuses key delivery if its child loses compositor focus.
 Native virtual input is not physical-input latency or owner visual acceptance.
 
+
+`dual-dialogue-authoring.screenplay.json` / `.expected` is an original public
+synthetic model with cue extensions, emphasis, an internal blank dialogue row
+and adjacent manual breaks. Real QML controls add only the second cue's dual
+flag, save/reopen, and export against hand-derived pages/columns and
+`export/dual-dialogue-authoring.fountain`. The process/oracle checks also verify
+fresh-process output, bounded reimport and the retained imported-PDF gate.
+The frozen importer retains the two spaces spelling the blank Fountain row;
+the authored Apollo row remains empty. These have the same presented blank slot.
+`tests/dual_dialogue_native_smoke.py`, integrated in the native runner, verifies
+compositor-delivered authoring, protected boundaries, Undo/Redo, exact saved
+identities, reopen and both export formats on separate synthetic writing.

@@ -168,6 +168,34 @@ std::pair<QTextBlock, QTextBlock> writing_group(QTextBlock block) {
   return {first, last};
 }
 
+QTextBlock speech_cue(QTextBlock block) {
+  while (block.isValid() && speech_part(element_type(block))) block = block.previous();
+  return block.isValid() && element_type(block) == ElementType::cue ? block : QTextBlock{};
+}
+
+bool complete_speech(QTextBlock cue) {
+  if (!cue.isValid() || cue.text().trimmed().isEmpty()) return false;
+  for (auto block = cue.next(); block.isValid() && speech_part(element_type(block)); block = block.next())
+    if (element_type(block) == ElementType::dialogue && !block.text().trimmed().isEmpty()) return true;
+  return false;
+}
+
+bool dual_member(QTextBlock block) {
+  if (!block.isValid() || !speech_cue(block).isValid()) return false;
+  const auto [first, last] = writing_group(block);
+  for (auto current = first; current.isValid(); current = current.next()) {
+    if (current.blockFormat().boolProperty(dual_right_property)) return true;
+    if (current == last) break;
+  }
+  return false;
+}
+
+const auto unpair_first = QStringLiteral("Turn Dual Dialogue off in the second speech before changing the pair's structure. Text and emphasis can still be edited.");
+
+bool paragraph_break(const QString& text) {
+  return text.contains('\n') || text.contains('\r') || text.contains(QChar::ParagraphSeparator);
+}
+
 QTextBlockFormat element_format(ElementType type) {
   QTextBlockFormat format;
   format.setProperty(element_type_property, static_cast<int>(type));
@@ -309,12 +337,18 @@ EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObje
 
 void EditorCommands::refreshDocumentState() {
   QVariantList issues;
-  QString title;
+  QString title, dual_warning;
   for (auto block = document_->begin(); block.isValid();) {
     if (element_type(block) == ElementType::title)
       title = QString(block.text()).replace(QChar::LineSeparator, QLatin1Char(' '));
     if (element_type(block) != ElementType::cue) { block = block.next(); continue; }
     const auto state = speech_state(block);
+    if (block.blockFormat().boolProperty(dual_right_property)) {
+      const auto left = speech_cue(block.previous());
+      if (!left.isValid() || left.blockFormat().boolProperty(dual_right_property) ||
+          !complete_speech(left) || !complete_speech(block))
+        dual_warning = QStringLiteral("Incomplete or invalid Dual Dialogue: the pairing is retained. Complete both adjacent speeches, or turn Dual Dialogue off in the second speech. Fountain export may be refused; incomplete layout is a preview.");
+    }
     if (!state.has_dialogue) {
       issues.push_back(QVariantMap{
           {"id", block.blockFormat().stringProperty(element_id_property)},
@@ -326,6 +360,10 @@ void EditorCommands::refreshDocumentState() {
     }
     block = state.end;
   }
+  if (dual_warning != dual_warning_) {
+    dual_warning_ = dual_warning;
+    emit dualStateChanged();
+  }
   if (title != title_text_) {
     title_text_ = std::move(title);
     emit titleTextChanged();
@@ -333,6 +371,52 @@ void EditorCommands::refreshDocumentState() {
   if (issues == empty_speeches_) return;
   empty_speeches_ = std::move(issues);
   emit emptySpeechesChanged();
+}
+
+void EditorCommands::setDualMessage(const QString& message) {
+  if (dual_message_ == message) return;
+  dual_message_ = message;
+  emit dualStateChanged();
+}
+
+bool EditorCommands::refuseDualSelection(int start, int end) {
+  const auto [from, to] = std::minmax(start, end);
+  if (document_->findBlock(from) == document_->findBlock(to)) return false;
+  for (auto block = document_->findBlock(from); block.isValid() && block.position() <= to; block = block.next()) {
+    if (dual_member(block)) { setDualMessage(unpair_first); return true; }
+  }
+  return false;
+}
+
+void EditorCommands::toggleDualDialogue(int position, int start, int end) {
+  setPageBreakMessage({});
+  if (start != end) { setDualMessage(QStringLiteral("Place a single caret in the second speech to change Dual Dialogue; selected writing is kept.")); return; }
+  const auto cue = speech_cue(document_->findBlock(position));
+  if (!cue.isValid()) { setDualMessage(QStringLiteral("Place the caret in the second character cue, parenthetical or dialogue to change Dual Dialogue.")); return; }
+  const bool paired = cue.blockFormat().boolProperty(dual_right_property);
+  const auto following = speech_state(cue).end;
+  if (paired && following.isValid() && element_type(following) == ElementType::cue &&
+      following.blockFormat().boolProperty(dual_right_property)) {
+    setDualMessage(QStringLiteral("This invalid chain has another dual cue after it. Turn Dual Dialogue off in the last speech first, so no partner is silently reassigned.")); return;
+  }
+  if (!paired) {
+    const auto previous = speech_cue(cue.previous());
+    if (!previous.isValid() || !complete_speech(previous) || !complete_speech(cue)) {
+      setDualMessage(QStringLiteral("Dual Dialogue needs two complete, immediately adjacent speeches, each with a nonblank cue and dialogue. It cannot cross action, scenes or page breaks.")); return;
+    }
+    if (dual_member(previous) || dual_member(cue)) {
+      setDualMessage(QStringLiteral("A speech is already paired. Place the caret in that pair's second speech and turn Dual Dialogue off first.")); return;
+    }
+  }
+  QTextCursor cursor(cue);
+  cursor.beginEditBlock();
+  auto format = cue.blockFormat();
+  if (paired) format.clearProperty(dual_right_property);
+  else format.setProperty(dual_right_property, true);
+  cursor.setBlockFormat(format);
+  cursor.endEditBlock();
+  typed_end_ = typed_steps_ = -1;
+  setDualMessage({});
 }
 
 int EditorCommands::locateEmptySpeech(const QString& id) const {
@@ -587,15 +671,26 @@ int EditorCommands::removePageBreak(int position, int start, int end) {
 }
 
 int EditorCommands::deleteText(int position, int start, int end, bool backward) {
+  setDualMessage({});
   if (start != end) {
     if (const auto marker = selected_marker(document_, start, end); marker.isValid()) {
       const int caret = removePageBreak(marker.position(), start, end);
       return caret < 0 ? -2 : caret;
     }
+    if (refuseDualSelection(start, end)) return -2;
     return refuseMarkerSelection(start, end) ? -2 : -1;
   }
   const auto block = document_->findBlock(position);
   if (!block.isValid()) return -1;
+  if (start == end && ((backward && position == block.position()) ||
+      (!backward && position == block.position() + block.length() - 1))) {
+    const auto adjacent = backward ? block.previous() : block.next();
+    if (adjacent.isValid() && element_type(adjacent) != ElementType::page_break &&
+        element_type(block) != ElementType::page_break && (dual_member(block) || dual_member(adjacent))) {
+      setDualMessage(unpair_first);
+      return -2;
+    }
+  }
   auto marker = block;
   if (element_type(marker) != ElementType::page_break) {
     if (backward && position == block.position()) marker = block.previous();
@@ -625,7 +720,13 @@ bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
     auto original_position = [&](int at) { return at < left ? at : at + right - left; };
     const int from = original_position(base + input->replacementStart());
     const int to = original_position(base + input->replacementStart() + input->replacementLength());
-    if (refuseMarkerSelection(start, end) || (input->replacementLength() && refuseMarkerSelection(from, to))) {
+    if (refuseMarkerSelection(start, end) || refuseDualSelection(start, end) ||
+        (input->replacementLength() && (refuseMarkerSelection(from, to) || refuseDualSelection(from, to)))) {
+      event->accept();
+      return true;
+    }
+    if (dual_member(document_->findBlock(editablePosition(position))) && paragraph_break(input->commitString())) {
+      setDualMessage(unpair_first);
       event->accept();
       return true;
     }
@@ -661,6 +762,11 @@ bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
   } else {
     const auto* mouse = static_cast<QMouseEvent*>(event);
     const int target = document_->documentLayout()->hitTest(mouse->position(), Qt::FuzzyHit);
+    if (dual_member(document_->findBlock(target)) || dual_member(document_->findBlock(position)) || refuseDualSelection(start, end)) {
+      setDualMessage(QStringLiteral("Use Paste (Ctrl+V) to preserve the Dual Dialogue structure; primary-selection paste is unavailable in a pair."));
+      event->accept();
+      return true;
+    }
     if (mouse->button() == Qt::MiddleButton &&
         (isPageBreak(position) || isPageBreak(target) || refuseMarkerSelection(start, end))) {
       setPageBreakMessage(QStringLiteral("Use Paste (Ctrl+V) beside a page break; primary-selection paste is unavailable on markers."));
@@ -672,7 +778,11 @@ bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
 }
 
 int EditorCommands::typeText(int position, int selectionStart, int selectionEnd, const QString& text) {
-  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setDualMessage({});
+  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
+  if (dual_member(document_->findBlock(editablePosition(position))) && paragraph_break(text)) {
+    setDualMessage(unpair_first); return -1;
+  }
   setPageBreakMessage({});
   auto cursor = selection(document_, position, selectionStart, selectionEnd);
   const bool word_start = !text.isEmpty() && !text.front().isSpace() &&
@@ -698,9 +808,25 @@ int EditorCommands::typeText(int position, int selectionStart, int selectionEnd,
 }
 
 int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
-  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setDualMessage({});
+  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
   setPageBreakMessage({});
   auto cursor = selection(document_, position, selectionStart, selectionEnd);
+  if (dual_member(cursor.block())) {
+    const auto block = cursor.block();
+    const auto type = element_type(block);
+    auto remaining = block.text();
+    remaining.remove(cursor.selectionStart() - block.position(), cursor.selectionEnd() - cursor.selectionStart());
+    const bool at_end = cursor.selectionEnd() == block.position() + block.length() - 1;
+    const auto last = writing_group(block).second;
+    // Enter within dialogue is an authored break. Cue/parenthetical at end
+    // may add dialogue, and the pair's final end may add following action.
+    const bool safe = (!remaining.isEmpty() && type == ElementType::dialogue && !at_end) ||
+                      (type == ElementType::parenthetical && (remaining.isEmpty() || at_end)) ||
+                      (type == ElementType::cue && !remaining.isEmpty() && at_end) ||
+                      (type == ElementType::dialogue && !remaining.isEmpty() && at_end && block == last);
+    if (!safe) { setDualMessage(unpair_first); return -1; }
+  }
   cursor.beginEditBlock();
   if (isPageBreak(position) && !cursor.hasSelection()) {
     moveToWriting(cursor);
@@ -741,6 +867,8 @@ int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
 }
 
 void EditorCommands::cycleType(int position, bool backward) {
+  setDualMessage({});
+  if (dual_member(document_->findBlock(position))) { setDualMessage(unpair_first); return; }
   if (isPageBreak(position)) {
     setPageBreakMessage(QStringLiteral("A page break is not a text element. Move to adjacent writing to change its type."));
     return;
@@ -837,7 +965,8 @@ void EditorCommands::copy(int selectionStart, int selectionEnd) {
 }
 
 int EditorCommands::cut(int selectionStart, int selectionEnd) {
-  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setDualMessage({});
+  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
   setPageBreakMessage({});
   copy(selectionStart, selectionEnd);
   auto cursor = selection(document_, selectionStart, selectionStart, selectionEnd);
@@ -848,7 +977,8 @@ int EditorCommands::cut(int selectionStart, int selectionEnd) {
 }
 
 int EditorCommands::paste(int position, int selectionStart, int selectionEnd) {
-  if (refuseMarkerSelection(selectionStart, selectionEnd)) return -1;
+  setDualMessage({});
+  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
   setPageBreakMessage({});
   const auto* data = QGuiApplication::clipboard()->mimeData();
   if (!data) return position;
@@ -876,6 +1006,11 @@ int EditorCommands::paste(int position, int selectionStart, int selectionEnd) {
     }
   }
   if (elements.empty()) return position;
+  const auto destination = document_->findBlock(selectionStart != selectionEnd ? std::min(selectionStart, selectionEnd) : editablePosition(position));
+  if (dual_member(destination) && (elements.size() != 1 || (apollo_selection &&
+      (elements.front().type != element_type(destination) || elements.front().dual_right != block_element(destination).dual_right)))) {
+    setDualMessage(unpair_first); return -1;
+  }
   auto cursor = selection(document_, position, selectionStart, selectionEnd);
   cursor.beginEditBlock();
   moveToWriting(cursor);
