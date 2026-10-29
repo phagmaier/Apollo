@@ -12,6 +12,8 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   settled product decisions, proposed implementation slices, and verification.
 - [Spike brief](docs/spike-brief.md): current feasibility work, scope, tool pins,
   order, and pass/fail checks.
+- [Fountain export](docs/fountain-export.md): the bounded canonical Fountain
+  export contract, its per-snapshot eligibility, evidence and remaining gates.
 - [Export profile](docs/export-profile.md) and [fixture guide](fixtures/README.md):
   layout rules, independent expectations, and verification procedures.
 - [Stack recommendation](docs/stack-recommendation.md): technical
@@ -91,9 +93,15 @@ frozen every visual detail.
   are never upgraded in place. Task 2.6c adds **Edit in a New Copy**
   (`NEW_DIR --edit-fountain FILE`) only for the independently tested
   [bounded writer subset](docs/editable-fountain-subset.md). Its imported reader
-  stays available while writing; all clean imported exports remain gated. See
+  stays available while writing; imported PDF export remains gated. See
   [fountain-compatibility.md](docs/fountain-compatibility.md): full editable
-  conversion and round-trip compatibility remain pending. The explicit spike
+  conversion and round-trip compatibility remain pending. Task 2.6d exports
+  clean Fountain from editable projects whose current snapshot meets
+  [fountain-export.md](docs/fountain-export.md) (Export panel, Ctrl+Shift+E, or
+  `apollo_editor PROJECT --export-fountain OUT [--no-title-page]`); PDF of
+  imported writing stays blocked. `fountain_export_oracle_tests` uses aw-parser
+  from `tools/afterwriting-oracle.sh` as the independent parser and is configured
+  only once that is installed. The explicit spike
   `--create [FILE]`/instrumentation paths retain their limited parser.
   `autosave_crash_tests` kills continuous typing at each save phase;
   the format document has the workload measurement command.

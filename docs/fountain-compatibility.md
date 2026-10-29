@@ -17,7 +17,8 @@ indentation and transition-significant trailing spaces, accepts ellipses as
 forced headings, lacks forced mixed-case cues and several heading forms, rejects
 notes/organization, and does not implement Fountain's emphasis fallback rules.
 Existing engine/editor gaps for deliberate breaks and case preservation also
-prevent claiming faithful editing or PDF. There is no Fountain serializer yet.
+prevent claiming faithful editing or PDF. At that investigation there was no
+Fountain serializer; task 2.6d adds the bounded one described below.
 
 **2.6a implements lossless intake and read-only review only.** The whole original
 is pending conversion, including ordinary screenplay text. The preview labels
@@ -50,8 +51,19 @@ placeholder screenplay and manifest are never upgraded in place.
 [writer preservation contract](editable-fountain-subset.md). It supports a
 representative subset through actual editing, undo/redo, autosave, reopen,
 recovery and Save a Copy, with independent expected content and associations.
-Unsupported cases remain in review. Clean Fountain and PDF exports stay blocked
-for every imported working project; complete Fountain compatibility is pending.
+Unsupported cases remain in review. PDF export stays blocked for every imported
+working project; complete Fountain compatibility is pending.
+**2.6d adds bounded canonical Fountain export** for editable projects, ordinary
+and imported, under [`fountain-canonical-1`](fountain-export.md). Each request
+checks the current snapshot, including edits after import, against the writer
+subset's content rules, speech structure, unambiguous spelling and emphasis
+rules; refusals name the element and reason. Output is verified by reading it
+back with the frozen revision-1 interpreter, written atomically from a fixed
+snapshot while writing continues, and accompanied by a disclosure of omitted
+retained material. Hand-written expected text and the independent aw-parser
+check import → real edits → autosave/reopen → export. Unsupported content stays
+blocked; nothing is exported lossily.
+
 The frozen revision-1 interpretation remains the immutable historical baseline,
 including its original conservative limitation messages. The working wrapper
 validates its separate subset contract without rewriting that baseline.
@@ -193,10 +205,14 @@ These are intake assertions, not layout or complete parser acceptance.
   contract; it does not relax review-only permissions or enable clean exports.
 - **2.6c bounded step implemented; remaining slice 3:** complete authoring/layout contracts, title form, case,
   spacing and deliberate breaks; expose unresolved imported material in context.
-- **Slice 3/5 compatibility gate:** canonical Fountain serializer, independent
-  parsing of import → edit → save/reopen → export, semantic expected fixtures
-  and output-specific blocking/disclosure. Correct PDF still needs independent
-  layout references, not just agreement with Apollo's engine.
+- **2.6d bounded step implemented:** canonical serializer, independent parsing
+  of import → edit → save/reopen → export, semantic expected fixtures and
+  Fountain-specific blocking/disclosure, for the writer subset only.
+- **Slice 3/5 compatibility gate, remaining:** widen export with each authoring
+  contract (mixed case, Unicode, spacing, multiline title/lyric/centered,
+  lyric within speech, complex emphasis) and independent examples for each;
+  correct PDF still needs independent layout references, not just agreement
+  with Apollo's engine.
 
 The published syntax has examples that exceed the older parser samples; neither
 corpus alone is exhaustive. Intake tests cannot establish font fidelity,

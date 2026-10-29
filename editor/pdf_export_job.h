@@ -17,12 +17,15 @@ class PdfExportJob : public QObject {
   Q_OBJECT
   Q_PROPERTY(bool busy READ busy NOTIFY changed)
   Q_PROPERTY(QString status READ status NOTIFY changed)
+  Q_PROPERTY(QString unavailable READ unavailable CONSTANT)
 public:
   PdfExportJob(QTextDocument* document, QString fonts, QString worker, QString source = {}, QObject* parent = nullptr);
   ~PdfExportJob() override;
   Q_INVOKABLE bool request(const QString& destination, bool include_title = true);
   bool busy() const { return busy_; }
   QString status() const { return status_; }
+  // Why this document can never export PDF, such as imported writing.
+  QString unavailable() const { return unavailable_; }
   double capture_ms() const { return capture_ms_; }
   double total_ms() const { return total_ms_; }
   qint64 worker_pid() const { return process_ ? process_->processId() : 0; }
@@ -35,7 +38,7 @@ private:
   void collect(bool notify = true);
   void finish(bool success, const QString& error = {});
   QPointer<QTextDocument> document_;
-  QString fonts_, worker_, source_, destination_, status_ = QStringLiteral("PDF export ready");
+  QString fonts_, worker_, source_, destination_, unavailable_, status_ = QStringLiteral("PDF export ready");
   QProcess* process_ = nullptr;
   std::unique_ptr<QTemporaryFile> staged_;
   QElapsedTimer clock_;

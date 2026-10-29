@@ -2,6 +2,7 @@
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
 #include "editor/pdf_export_job.h"
+#include "editor/fountain_export_job.h"
 #include "editor/project_access_flow.h"
 #include "source/fountain_conversion.h"
 #include "source/fountain_working.h"
@@ -387,6 +388,26 @@ int agreement(const char* path, const QString& directory, int edits, bool snapsh
   return 0;
 }
 
+// Exports a project's saved writing through the editor's Fountain job, with
+// its destination refusals, worker verification and atomic replacement. The
+// project is read without a lock: a live writer's unsaved edits are not seen.
+// Exit 0 exported, 3 blocked or refused, 1 failed.
+int export_fountain(const char* path, const QString& destination, bool include_title) {
+  const auto opened = apollo::source::open_project(QString::fromLocal8Bit(path));
+  if (opened.project.import_review)
+    throw std::runtime_error("Fountain intake is review-only; use Edit in a New Copy before exporting its writing.");
+  auto document = apollo::editor::screenplay_document(opened.screenplay.elements, apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+  apollo::editor::FountainExportJob job(document.get(), opened.project.directory, apollo::source::fountain_export_omissions(opened.assets),
+                                        {apollo::source::imported_origin(opened.assets)});
+  bool success = false;
+  QEventLoop loop;
+  QObject::connect(&job, &apollo::editor::FountainExportJob::completed, &loop, [&](bool ok) { success = ok; loop.quit(); });
+  if (!job.request(destination, include_title)) { std::cerr << job.status().toStdString() << '\n'; return 3; }
+  loop.exec();
+  (success ? std::cout : std::cerr) << job.status().toStdString() << '\n';
+  return success ? 0 : job.status().startsWith(QStringLiteral("Fountain export blocked")) ? 3 : 1;
+}
+
 // Appends whole lines with one write each, so a line is complete in the
 // file even if the process is killed straight after.
 class EventLog {
@@ -487,6 +508,7 @@ int autosave_typing(const char* path, const QString& log_path, int keys, int int
 // times synthetic typing at a page boundary; see docs/spike-progress.md for
 // what that does and does not establish. --agreement writes the editor's
 // line dump and an asynchronous PDF snapshot after optional scripted edits.
+// --export-fountain writes clean Fountain of a project's saved writing.
 // --snapshot changes/undoes/redoes the live document after requesting export;
 // --measure-export repeats real exports while measuring typing and overlap.
 int main(int argc, char** argv) {
@@ -495,18 +517,20 @@ int main(int argc, char** argv) {
   const bool check = mode == "--check", measuring = mode == "--measure", comparing = mode == "--agreement",
              snapshot = mode == "--snapshot", export_measuring = mode == "--measure-export", creating = mode == "--create",
              typing = mode == "--autosave-typing", interpreting = mode == "--interpret-fountain",
-             editing_import = mode == "--edit-fountain", retaining = mode == "--retain-fountain" || interpreting || editing_import;
-  if ((check || comparing || typing || creating || retaining) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
+             editing_import = mode == "--edit-fountain", retaining = mode == "--retain-fountain" || interpreting || editing_import,
+             fountain_export = mode == "--export-fountain";
+  if ((check || comparing || typing || creating || retaining || fountain_export) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   QGuiApplication application(argc, argv);
   const bool usage = retaining ? argc != 4 : check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
       : typing ? argc < 4 || argc > 7
-      : (comparing || snapshot || export_measuring) ? argc != 4 && argc != 5 : argc != 1 && argc != 2;
+      : (comparing || snapshot || export_measuring || fountain_export) ? argc != 4 && argc != 5 : argc != 1 && argc != 2;
   if (usage) {
     std::cerr << "usage: apollo_editor [FILE.fountain|PROJECT] [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n"
                  "       apollo_editor PROJECT --create [FILE.fountain]\n"
                  "       apollo_editor PROJECT --retain-fountain FILE\n"
                  "       apollo_editor NEW_PROJECT --interpret-fountain FILE\n"
                  "       apollo_editor NEW_PROJECT --edit-fountain FILE\n"
+                 "       apollo_editor PROJECT --export-fountain OUTPUT.fountain [--no-title-page]\n"
                  "       apollo_editor PROJECT --autosave-typing LOG [KEYS [INTERVAL_MS [PHASE:N]]]\n";
     return 2;
   }
@@ -518,7 +542,7 @@ int main(int argc, char** argv) {
       const auto writing = editing_import ? apollo::source::initial_fountain_writing(assets)
           : apollo::source::Screenplay{0, {{apollo::ElementType::action, ""}}};
       const auto project = apollo::source::create_project(QString::fromLocal8Bit(argv[1]), writing, assets);
-      std::cout << (editing_import ? "editable copy (clean exports gated) at " : "retained for read-only review at ") << project.directory.toStdString() << '\n';
+      std::cout << (editing_import ? "editable copy (PDF gated; Fountain export checks each snapshot) at " : "retained for read-only review at ") << project.directory.toStdString() << '\n';
       return 0;
     }
     if (creating) {
@@ -527,6 +551,10 @@ int main(int argc, char** argv) {
       const auto project = apollo::source::create_project(QString::fromLocal8Bit(argv[1]), {1, elements});
       std::cout << "created " << project.directory.toStdString() << '\n';
       return 0;
+    }
+    if (fountain_export) {
+      if (argc == 5 && std::string(argv[4]) != "--no-title-page") throw std::runtime_error("unknown export option");
+      return export_fountain(argv[1], QString::fromLocal8Bit(argv[3]), argc != 5);
     }
     if (typing)
       return autosave_typing(argv[1], QString::fromLocal8Bit(argv[3]), argc >= 5 ? std::stoi(argv[4]) : 100,

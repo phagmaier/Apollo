@@ -16,8 +16,10 @@ collision handling/selectable locations, and lossless in-window switching.
 Task 2.5 is finalized as `be35108`. **2.6a — lossless intake and read-only
 review is done**, as a bounded first subtask; full editable import remains
 incomplete. Initial **2.6b** interpretation/copy work is finalized in `d140a1b`.
-The next bounded **2.6c** step admits an independently tested writer subset;
-all clean imported exports remain gated. See its
+The next bounded **2.6c** step admits an independently tested writer subset
+(`e80e331`). **2.6d** adds bounded canonical Fountain export for editable
+projects whose current snapshot meets the [export contract](fountain-export.md);
+PDF of imported writing remains gated. See the
 [preservation contract](editable-fountain-subset.md), evidence below and the
 [compatibility table](fountain-compatibility.md).
 Crash loss during copying remains unverified. The other slice 2
@@ -812,8 +814,9 @@ working metadata. Existing reviews stay read-only. Current writing is source v1;
 imported records retain historical IDs/provenance and show present, detached or
 type-changed associations. The reader stays accessible from the writer, including
 after Save a Copy. Immutable dependency changes pause saving and cannot be adopted
-by Reload. Clean Fountain and PDF exports stay blocked in writers, copies,
-recovery forks and executable snapshot paths.
+by Reload. At this step clean Fountain and PDF exports stayed blocked in writers,
+copies, recovery forks and executable snapshot paths; task 2.6d below enables
+contract-checked Fountain export, and PDF remains blocked.
 
 The smallest editing/layout work makes LF a real engine break and makes Enter
 inside dialogue preserve one speech element. Empty dialogue parenthetical Enter
@@ -829,3 +832,48 @@ Full release, ASan/UBSan with leak detection and engine-only checks pass, with
 independent Academy/layout references retained. Final activation and association
 regressions also pass in related sanitizer and native Wayland flows. This closes
 the bounded preservation step, not full task 2.6 or slice 3 compatibility.
+
+### Task 2.6d — bounded canonical Fountain export
+
+Implemented as requested under [fountain-export.md](fountain-export.md), contract
+`fountain-canonical-1`. Ordinary projects and 2.6c editable import copies
+export clean Fountain when the snapshot captured by the request meets the
+writer-subset content rules (shared code with admission), speech/dual structure,
+unambiguous spelling and spellable emphasis. Eligibility is re-evaluated for
+every snapshot, so edits after import can block and later permit export. Each
+refusal names the element, type, text and reason; nothing is exported lossily.
+
+The serializer's output is read back by the frozen revision-1 interpreter before
+the worker replaces the destination through `QSaveFile`; refusals and failures
+leave existing files intact, and the project folder and import original are
+protected. The snapshot is fixed at request while typing, autosave and undo
+continue; status names the capture time. Imported notes, stash, organization,
+scene numbers, unknown title fields and whitespace-only source lines are omitted
+and counted in the panel, status and CLI. Home/close wait for an accepted export.
+The Writing desk export panel gains a PDF/Fountain choice, Ctrl+Shift+E, and an
+eligibility/disclosure text; `apollo_editor PROJECT --export-fountain OUT
+[--no-title-page]` exports saved writing through the same job. PDF export of
+imported writing stays blocked.
+
+| Area | Evidence |
+| --- | --- |
+| Serializer | `fountain_export_tests` 62/62: hand-written canonical text for the full subset model with/without title page, 23 spelling and 30 located-refusal cases, per-snapshot eligibility, omission counts, size bound, and a 40,000-snapshot explanation-coverage property |
+| Real controls | `project_access_flow_tests` (32 total): import → edit copy → disclosed export equal to hand-written text; real-key edits that block and recover; export held on its worker while typing and autosave continue, later words excluded; PDF blocked; reopen + no-title export; failed write and refused destinations keep files; ordinary project export with Home waiting |
+| Executables | `fountain_export_process_tests`: real typing with autosave makes a new process block (trailing space, existing file kept) then export exact expected bytes after one more key; disclosure, no-title body, project/original/review-only refusals |
+| Independent parser | `fountain_export_oracle_tests`: aw-parser 0.1.1 reads 5 exports/expected files as hand-worked semantic models (types, text, emphasis, dual, title fields, breaks); lyric-as-italic-action is the explicit representation difference; mutations are detected |
+| Required suites | Release 23/23, ASan/UBSan 23/23 with no sanitizer report, engine-only 2/2. Native Wayland preflight passes: editor 56/56, export lifecycle 13/13, project flows 32/32 (both new Fountain tests natively), first paint and PDF export while typing |
+
+Exploratory fuzzing (2.4 million random snapshots) found four refusals that only
+the read-back guard caught; each now has an explicit reason and a regression row.
+Three hand-written unit expectations were corrected after the first run because
+they had misapplied the written forcing rule (action starting with emphasis
+markup is `!`-forced); the fixture files under `fixtures/export/` were unchanged. Measured GUI
+check/worker times are recorded in the contract; representative full-length
+scripts mostly fall outside the subset and were not measured.
+
+Logs: `build/task-fountain-export-{release,debug,engine,native}.log`; native
+artifacts are under `build/wayland-check-20261028-175021-KkLE8e/`. Panel captures
+are `build/release/project-access-tests/fountain-export-{ready,blocked}.png`.
+The Academy comparison was not rerun: the engine, profile and PDF path are
+unchanged. Remaining gates are listed in the contract; this closes the bounded
+export step, not slice 3 or slice 5 compatibility.

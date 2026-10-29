@@ -9,6 +9,10 @@ Rectangle {
     required property var screenplayLayout
     required property var commands
     property var exportJob: null
+    property var fountainJob: null
+    property string exportFormat: "pdf"
+    property string fountainCheck: ""
+    property string lastExport: "pdf"
     property var autosaver: null
     property var projectFlow: null
     property bool departing: projectFlow !== null && projectFlow.leaving
@@ -31,7 +35,36 @@ Rectangle {
         exportPanel.close()
         editorPage.focusEditor()
     }
+    function openExport(format) {
+        exportFormat = fountainJob ? format : "pdf"
+        refreshExportCheck()
+        exportPanel.open()
+    }
+    // The modal panel stops writing, so one check per open/choice is current.
+    function refreshExportCheck() {
+        fountainCheck = fountainJob && exportFormat === "fountain" ? fountainJob.check(includeTitle) : ""
+    }
+    function exportFountain() {
+        if (fountainJob && !fountainJob.busy && !departing)
+            fountainJob.request(fountainDestination.text, includeTitle)
+        exportPanel.close()
+        editorPage.focusEditor()
+    }
+    function exportEligibility() {
+        if (exportFormat === "pdf")
+            return exportJob && exportJob.unavailable.length > 0 ? exportJob.unavailable : ""
+        if (!fountainJob)
+            return ""
+        if (fountainCheck.length > 0) {
+            const reasons = fountainCheck.split("\n")
+            return "Not exportable as clean Fountain yet:\n• " + reasons.slice(0, 8).join("\n• ")
+                    + (reasons.length > 8 ? "\n…and " + (reasons.length - 8) + " more" : "")
+        }
+        return "Ready. The current writing meets the canonical Fountain contract; later edits are not included in this snapshot."
+                + (fountainJob.omissions.length > 0 ? "\n" + fountainJob.omissions : "")
+    }
     Shortcut { sequence: "Ctrl+E"; onActivated: desk.exportPdf() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: desk.fountainJob !== null && !desk.departing; onActivated: desk.openExport("fountain") }
     Shortcut { sequence: "Ctrl+\\"; onActivated: desk.toggleOutline() }
     Shortcut { sequence: "Ctrl+Shift+S"; enabled: !desk.departing && desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
     Shortcut { sequence: "Ctrl+Shift+H"; enabled: desk.projectFlow !== null && !desk.departing; onActivated: desk.projectFlow.home() }
@@ -49,6 +82,7 @@ Rectangle {
         function onLocationChanged() {
             desk.exportDestination = desk.autosaver.location + ".pdf"
             destination.text = desk.exportDestination
+            fountainDestination.text = desk.autosaver.location + ".fountain"
             copyDestination.text = desk.autosaver.location + " copy"
         }
         function onCopyCompleted(success) {
@@ -67,7 +101,11 @@ Rectangle {
     }
     Connections {
         target: desk.exportJob
-        function onChanged() { desk.showReloadStatus = false }
+        function onChanged() { desk.showReloadStatus = false; desk.lastExport = "pdf" }
+    }
+    Connections {
+        target: desk.fountainJob
+        function onChanged() { desk.showReloadStatus = false; desk.lastExport = "fountain" }
     }
 
     component DeskButton: Button {
@@ -188,12 +226,12 @@ Rectangle {
             id: exportButton
             objectName: "exportButton"
             anchors { right: parent.right; rightMargin: 28; verticalCenter: parent.verticalCenter }
-            text: desk.exportJob && desk.exportJob.busy ? "Exporting…" : "Export"
+            text: (desk.exportJob && desk.exportJob.busy) || (desk.fountainJob && desk.fountainJob.busy) ? "Exporting…" : "Export"
             fill: "#e9edf0"; ink: "#303843"
             font.weight: Font.DemiBold
-            enabled: desk.exportJob !== null && !desk.exportJob.busy
-            Accessible.name: "Export PDF options"
-            onClicked: exportPanel.open()
+            enabled: (desk.exportJob !== null && !desk.exportJob.busy) || (desk.fountainJob !== null && !desk.fountainJob.busy)
+            Accessible.name: desk.fountainJob ? "Export PDF or Fountain options" : "Export PDF options"
+            onClicked: desk.openExport(desk.exportFormat)
         }
     }
 
@@ -353,7 +391,7 @@ Rectangle {
         Text {
             anchors { left: parent.left; right: parent.right; margins: 20; verticalCenter: parent.verticalCenter }
             objectName: "operationStatus"
-            text: desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.exportJob ? desk.exportJob.status : "")
+            text: desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.lastExport === "fountain" && desk.fountainJob ? desk.fountainJob.status : desk.exportJob ? desk.exportJob.status : "")
             elide: Text.ElideMiddle
             ToolTip.visible: footerArea.containsMouse
             ToolTip.text: text
@@ -545,29 +583,86 @@ Rectangle {
         objectName: "exportPanel"
         parent: desk
         x: Math.max(8, desk.width - width - 28); y: header.height + 8
-        width: Math.min(460, desk.width - 16); height: 200
+        width: Math.min(520, desk.width - 16)
+        height: Math.min(desk.height - y - 8, exportColumn.implicitHeight + 40)
         padding: 20
         modal: true; focus: true
         onClosed: editorPage.focusEditor()
         background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
-        Text { text: "Export PDF snapshot"; color: "#303843"; font { family: "Liberation Sans"; pixelSize: 16; weight: Font.DemiBold } }
-        TextField {
-            id: destination
-            objectName: "exportDestination"
-            y: 36; width: parent.width
-            text: desk.exportDestination
-            selectByMouse: true; font.pixelSize: 12
-            Accessible.name: "PDF destination"
-        }
-        CheckBox {
-            y: 77; text: "Include title page"; checked: desk.includeTitle
-            onToggled: desk.includeTitle = checked
-        }
-        DeskButton {
-            anchors { right: parent.right; bottom: parent.bottom }
-            text: "Export PDF"; fill: "#3c434d"; ink: "#eff1f3"
-            enabled: desk.exportJob !== null && !desk.exportJob.busy
-            onClicked: desk.exportPdf()
+        Column {
+            id: exportColumn
+            width: parent.width
+            spacing: 10
+            Text {
+                text: desk.fountainJob ? "Export snapshot" : "Export PDF snapshot"
+                color: "#303843"; font { family: "Liberation Sans"; pixelSize: 16; weight: Font.DemiBold }
+            }
+            Row {
+                spacing: 8
+                visible: desk.fountainJob !== null
+                DeskButton {
+                    objectName: "exportFormatPdf"
+                    text: "PDF"
+                    fill: desk.exportFormat === "pdf" ? "#3c434d" : "#dfe3e7"; ink: desk.exportFormat === "pdf" ? "#eff1f3" : "#303843"
+                    Accessible.name: "PDF format"
+                    Accessible.checkable: true; Accessible.checked: desk.exportFormat === "pdf"
+                    onClicked: { desk.exportFormat = "pdf"; desk.refreshExportCheck() }
+                }
+                DeskButton {
+                    objectName: "exportFormatFountain"
+                    text: "Fountain"
+                    fill: desk.exportFormat === "fountain" ? "#3c434d" : "#dfe3e7"; ink: desk.exportFormat === "fountain" ? "#eff1f3" : "#303843"
+                    Accessible.name: "Clean Fountain format (Ctrl+Shift+E)"
+                    Accessible.checkable: true; Accessible.checked: desk.exportFormat === "fountain"
+                    onClicked: { desk.exportFormat = "fountain"; desk.refreshExportCheck() }
+                }
+            }
+            TextField {
+                id: destination
+                objectName: "exportDestination"
+                visible: desk.exportFormat === "pdf"
+                width: parent.width
+                text: desk.exportDestination
+                selectByMouse: true; font.pixelSize: 12
+                Accessible.name: "PDF destination"
+            }
+            TextField {
+                id: fountainDestination
+                objectName: "fountainDestination"
+                visible: desk.exportFormat === "fountain"
+                width: parent.width
+                text: desk.exportDestination.replace(/\.pdf$/, "") + ".fountain"
+                selectByMouse: true; font.pixelSize: 12
+                Accessible.name: "Fountain destination"
+            }
+            CheckBox {
+                objectName: "includeTitle"
+                text: "Include title page"; checked: desk.includeTitle
+                onToggled: { desk.includeTitle = checked; desk.refreshExportCheck() }
+            }
+            Text {
+                objectName: "exportEligibility"
+                width: parent.width
+                visible: text.length > 0
+                text: desk.exportEligibility()
+                wrapMode: Text.Wrap
+                color: desk.exportFormat === "fountain" && desk.fountainCheck.length === 0 ? "#3f5a45" : "#8a3b2c"
+                font { family: "Liberation Sans"; pixelSize: 12 }
+            }
+            Item {
+                width: parent.width; height: exportConfirm.height
+                DeskButton {
+                    id: exportConfirm
+                    objectName: "exportConfirm"
+                    anchors.right: parent.right
+                    text: desk.exportFormat === "fountain" ? "Export Fountain" : "Export PDF"
+                    fill: "#3c434d"; ink: "#eff1f3"
+                    enabled: desk.exportFormat === "fountain"
+                             ? desk.fountainJob !== null && !desk.fountainJob.busy && desk.fountainCheck.length === 0
+                             : desk.exportJob !== null && !desk.exportJob.busy
+                    onClicked: desk.exportFormat === "fountain" ? desk.exportFountain() : desk.exportPdf()
+                }
+            }
         }
     }
 }

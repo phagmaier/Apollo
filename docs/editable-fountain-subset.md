@@ -43,12 +43,15 @@ writing. Section/synopsis hierarchy and project-wide records remain available.
 This does not implement anchored notes or automatic tracking of edited passages.
 
 The imported-material reader remains accessible from the writer, with the full
-original source, named records and current association state. Clean Fountain and
-PDF exports stay blocked for every imported working project, including copies
-and recovery forks. Canonical Fountain serialization, an independent exported
-round-trip, complete case/spacing/font contracts, full authoring controls and
-import performance remain blockers. Saving unfinished or unrenderable later
-edits remains allowed; admission is not a restriction on preserving new writing.
+original source, named records and current association state. PDF export stays
+blocked for every imported working project, including copies and recovery forks.
+At 2.6c clean Fountain was blocked too; task **2.6d** now exports it when the
+*current* snapshot meets the same content rules plus the
+[canonical export contract](fountain-export.md), with an independent exported
+round-trip on these fixtures. Complete case/spacing/font contracts, full
+authoring controls and import performance remain blockers. Saving unfinished or
+unrenderable later edits remains allowed; admission is not a restriction on
+preserving new writing.
 
 Independent examples live in `fixtures/import/writer-subset*`: original authored
 Fountain, hand-written source semantics and retained-record expectations. Actual
@@ -111,12 +114,13 @@ full and related runs were outside that restriction with leak detection enabled.
 
 Still unverified: complete Fountain grammar, mixed authored case, meaningful
 spacing/empty-dialogue layout beyond this subset, full font coverage, correction
-UI, title and dual authoring controls, exported independent semantic round-trip,
-realistic import/typing performance with the complete milestone, staging-kill or
+UI, title and dual authoring controls, exported independent semantic round-trip
+(added for the subset by 2.6d), realistic import/typing performance with the complete milestone, staging-kill or
 simultaneous-source-mutation guarantees, power-loss durability and subjective
 writing comfort. Historical associations do not follow edited text passages;
 that limitation is explicit rather than silently retargeting records. No clean
-Fountain or PDF compatibility promise is made for these imported projects.
+Fountain or PDF compatibility promise was made for these imported projects at
+2.6c; [fountain-export.md](fountain-export.md) records the later bounded Fountain step.
 
 Final focused checks after the initial export-status correction pass: release
 3/3 and ASan/UBSan with leak detection 3/3 (actual intake processes, full project

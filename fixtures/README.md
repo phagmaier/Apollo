@@ -171,6 +171,15 @@ The original Fountain and hand-written source/record expectations exercise a
 representative, explicitly gated writer subset. The checks cover content and
 historical imported associations through actual editing, undo, autosave,
 reopen, recovery and Save a Copy, plus executable crash/restart flows. These do
-not establish full grammar or exported Fountain round-trip compatibility. See
-[import/README.md](import/README.md) and the
+not establish full grammar. See [import/README.md](import/README.md) and the
 [writer contract](../docs/editable-fountain-subset.md).
+
+## Canonical Fountain export — `export/`
+
+Hand-written expected clean Fountain for the writer-subset model, before and
+after the flow test's real edits, with and without the title page. Apollo's
+exports must equal these bytes, and aw-parser 0.1.1, the parser inside the
+pinned afterwriting, must read them as the hand-worked semantic models. Install
+it once with `tools/afterwriting-oracle.sh`, then reconfigure so ctest includes
+`fountain_export_oracle_tests`. See [export/README.md](export/README.md) and the
+[export contract](../docs/fountain-export.md).

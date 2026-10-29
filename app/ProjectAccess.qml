@@ -71,7 +71,7 @@ Rectangle {
                 width: parent.width; spacing: 12; visible: page.importing
                 Label {
                     width: parent.width; wrapMode: Text.Wrap; color: "#303843"
-                    text: "Retain and read an exact copy of your Fountain file in a new project. Editable conversion and screenplay exports are still pending. Review the source before retaining it."
+                    text: "Retain and read an exact copy of your Fountain file in a new project. Review the source before retaining it. Writing in the verified subset can then be edited in a new copy and exported as clean Fountain; PDF export of imported writing is still pending."
                 }
                 TextField {
                     id: importSource; objectName: "importSourcePath"

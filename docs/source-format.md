@@ -982,7 +982,10 @@ Reload check immutable dependencies; changed import evidence pauses saving and
 cannot be adopted by Reload. Cached evidence remains available for Save a Copy
 and emergency protection.
 
-Imported documents carry an export block for their lifetime. The PDF request
+Imported documents carry a PDF export block for their lifetime. The PDF request
 checks it before staging or replacing output, including instrumentation, reopened
-copies and recovery writers. No canonical Fountain export path exists yet. Both
-clean exports remain gated even after editing or removing all imported text.
+copies and recovery writers, even after editing or removing all imported text.
+Clean Fountain export (task 2.6d) is separate: each request checks the current
+writing snapshot against [`fountain-canonical-1`](fountain-export.md), for these
+copies and ordinary projects alike. It writes no project file and does not change
+the stored `fountainExport: false` of the frozen review interpretation.

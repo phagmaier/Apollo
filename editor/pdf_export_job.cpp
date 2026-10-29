@@ -12,8 +12,8 @@
 namespace apollo::editor {
 PdfExportJob::PdfExportJob(QTextDocument* document, QString fonts, QString worker, QString source, QObject* parent)
     : QObject(parent), document_(document), fonts_(std::move(fonts)), worker_(std::move(worker)), source_(std::move(source)) {
-  if (document_ && !document_->property(export_block_property).toString().isEmpty())
-    status_ = "PDF export unavailable: " + document_->property(export_block_property).toString();
+  if (document_) unavailable_ = document_->property(export_block_property).toString();
+  if (!unavailable_.isEmpty()) status_ = "PDF export unavailable: " + unavailable_;
 }
 PdfExportJob::~PdfExportJob() {
   if (process_) {

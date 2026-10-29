@@ -471,6 +471,7 @@ FountainConversion convert_fountain(const ProjectAssets& assets) {
   validate_fountain_intake(assets);
   return Converter(*assets.original_fountain).run();
 }
+FountainConversion interpret_fountain(const QByteArray& bytes) { return Converter(bytes).run(); }
 ProjectAssets interpreted_fountain_assets(const ProjectAssets& assets) {
   validate_fountain_intake(assets);
   auto result = assets;

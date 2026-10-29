@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMap>
+#include <algorithm>
 
 namespace apollo::source {
 namespace {
@@ -34,26 +35,15 @@ QStringList blockers(const FountainConversion& c, qsizetype size) {
     if (gap.code != "authored-case" && gap.code != "deliberate-break-layout")
       result << "Unverified spacing or layout: " + gap.code;
   for (const auto& located : c.elements) {
-    const auto& e = located.element;
-    const auto text = QString::fromUtf8(e.text);
-    const auto id = QString::fromStdString(e.id);
-    for (const auto cp : text.toUcs4())
-      if (!((cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9)) {
-        result << id + ": character outside the verified writer subset."; break;
+    const auto id = QString::fromStdString(located.element.id);
+    for (const auto gap : writer_subset_gaps(located.element))
+      switch (gap) {
+        case WriterSubsetGap::character: result << id + ": character outside the verified writer subset."; break;
+        case WriterSubsetGap::authored_case: result << id + ": authored case requires review."; break;
+        case WriterSubsetGap::multiline: result << id + ": this element's multiline layout is unverified."; break;
+        case WriterSubsetGap::long_title: result << id + ": long title field requires review."; break;
+        case WriterSubsetGap::spacing: result << id + ": empty or significant spacing requires review."; break;
       }
-    if (e.type == ElementType::cue || e.type == ElementType::heading || e.type == ElementType::title) {
-      bool ascii_upper = true;
-      for (const auto cp : text.toUcs4()) if (cp > 126 || (cp >= 'a' && cp <= 'z')) ascii_upper = false;
-      if (!ascii_upper) result << id + ": authored case requires review.";
-    }
-    if (text.contains('\n') && e.type != ElementType::action && e.type != ElementType::dialogue)
-      result << id + ": this element's multiline layout is unverified.";
-    if (is_title_field(e.type) && text.size() > 48) result << id + ": long title field requires review.";
-    if (e.type != ElementType::page_break)
-      for (const auto& line : text.split('\n'))
-        if (line.isEmpty() || line != line.trimmed() || line.contains("  ")) {
-          result << id + ": empty or significant spacing requires review."; break;
-        }
   }
   if (result.isEmpty()) {
     try { (void)layout_document(c.screenplay().elements); }
@@ -62,6 +52,24 @@ QStringList blockers(const FountainConversion& c, qsizetype size) {
   result.removeDuplicates();
   return result;
 }
+}
+std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e) {
+  std::vector<WriterSubsetGap> result;
+  const auto text = QString::fromUtf8(e.text);
+  for (const auto cp : text.toUcs4())
+    if (!((cp >= 32 && cp <= 126) || cp == '\n' || cp == 0xe9)) { result.push_back(WriterSubsetGap::character); break; }
+  if (e.type == ElementType::cue || e.type == ElementType::heading || e.type == ElementType::title) {
+    bool ascii_upper = true;
+    for (const auto cp : text.toUcs4()) if (cp > 126 || (cp >= 'a' && cp <= 'z')) ascii_upper = false;
+    if (!ascii_upper) result.push_back(WriterSubsetGap::authored_case);
+  }
+  if (text.contains('\n') && e.type != ElementType::action && e.type != ElementType::dialogue)
+    result.push_back(WriterSubsetGap::multiline);
+  if (is_title_field(e.type) && text.size() > 48) result.push_back(WriterSubsetGap::long_title);
+  if (e.type != ElementType::page_break)
+    for (const auto& line : text.split('\n'))
+      if (line.isEmpty() || line != line.trimmed() || line.contains("  ")) { result.push_back(WriterSubsetGap::spacing); break; }
+  return result;
 }
 bool is_fountain_working(const ProjectAssets& assets) {
   return assets.imported_material && QJsonDocument::fromJson(*assets.imported_material).object().value("format") == "apollo-fountain-working";
@@ -98,7 +106,7 @@ FountainIntake open_working_fountain(const ProjectAssets& assets) {
   result.summary = QString("Editable import copy. %1 screenplay elements; %2 retained records.\n"
       "The original and imported records are read-only. Associations refer to original elements, not tracked text ranges; removed anchors are shown as Detached. "
       "Notes, stash, organization and production metadata stay outside screenplay output.\n%3")
-      .arg(c.elements.size()).arg(c.records.size()).arg(fountain_export_block);
+      .arg(c.elements.size()).arg(c.records.size()).arg(imported_pdf_block);
   result.findings.clear();
   QMap<QString, int> types;
   for (const auto& e : c.elements) types.insert(QString::fromStdString(e.element.id), int(e.element.type));
@@ -108,5 +116,28 @@ FountainIntake open_working_fountain(const ProjectAssets& assets) {
       {"message", "Retained " + r.kind + "; original association: " + r.anchor},
       {"anchor", r.anchor}, {"anchorType", types.value(r.anchor, -1)}});
   return result;
+}
+QString fountain_export_omissions(const ProjectAssets& assets) {
+  if (!is_fountain_working(assets)) return {};
+  // The frozen interpretation is the record of what the import retained.
+  const auto records = convert_fountain(review_assets(assets)).records;
+  const std::pair<const char*, std::pair<const char*, const char*>> labels[] = {
+      {"note", {"imported note", "imported notes"}}, {"stash", {"stash passage", "stash passages"}},
+      {"titleMetadata", {"unsupported title-page field", "unsupported title-page fields"}},
+      {"section", {"section", "sections"}}, {"synopsis", {"synopsis", "synopses"}},
+      {"sceneNumber", {"production scene number", "production scene numbers"}},
+      {"spacing", {"whitespace-only source line", "whitespace-only source lines"}}};
+  QStringList parts;
+  for (const auto& [kind, names] : labels) {
+    const auto count = std::count_if(records.begin(), records.end(), [&](const FountainRecord& r) { return r.kind == kind; });
+    if (count) parts << QString("%1 %2").arg(count).arg(count == 1 ? names.first : names.second);
+  }
+  if (parts.isEmpty()) return {};
+  return "Not included in clean Fountain: " + parts.join(", ") + ". They stay in this project's imported material and original.";
+}
+QString imported_origin(const ProjectAssets& assets) {
+  if (!assets.imported_material) return {};
+  const auto root = QJsonDocument::fromJson(*assets.imported_material).object();
+  return (is_fountain_working(assets) ? root.value("intake").toObject() : root).value("origin").toString();
 }
 }

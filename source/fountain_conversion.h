@@ -37,6 +37,9 @@ struct FountainConversion {
 // Validates its intake. No filesystem writes and no use of the spike
 // importer. Revision 1 is frozen for reopening versioned interpretation copies.
 FountainConversion convert_fountain(const ProjectAssets& assets);
+// The same frozen revision-1 interpreter for text that is not an intake, such
+// as Apollo's own canonical export when verifying that it reads back.
+FountainConversion interpret_fountain(const QByteArray& bytes);
 // Makes v2 intake metadata with a complete, deterministic interpretation. The
 // original byte array, origin, length and digest are carried forward unchanged.
 // Callers publish through staged create_project, never update a review in place.

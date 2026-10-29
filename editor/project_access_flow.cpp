@@ -4,6 +4,7 @@
 #include "editor/autosave.h"
 #include "editor/editor_view.h"
 #include "editor/pdf_export_job.h"
+#include "editor/fountain_export_job.h"
 #include "editor/screenplay_layout.h"
 #include "source/project_creation.h"
 
@@ -65,6 +66,7 @@ ProjectAccessFlow::~ProjectAccessFlow() {
   // Destroy the TextEdit before the document/commands it references.
   view_.setSource({});
   export_job_.reset();
+  fountain_job_.reset();
   saver_.reset();
 }
 
@@ -320,7 +322,7 @@ void ProjectAccessFlow::select(int index, const QString& destination) {
       }
       catch (const std::exception& error) {
         error_ = QString::fromUtf8(error.what());
-        view_.setSource({}); export_job_.reset(); saver_.reset(); document_.reset(); review_session_.reset(); intake_.reset();
+        view_.setSource({}); export_job_.reset(); fountain_job_.reset(); saver_.reset(); document_.reset(); review_session_.reset(); intake_.reset();
         show_access();
         current_available_ = false; candidates_.clear();
         emit changed();
@@ -331,11 +333,14 @@ void ProjectAccessFlow::select(int index, const QString& destination) {
 
 void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session) {
   const auto project = session->opened().project;
+  const auto assets = session->opened().assets;
   document_ = screenplay_document(session->opened().screenplay.elements, font_);
   saver_ = std::make_unique<Autosaver>(document_.get(), std::move(session));
   export_job_ = std::make_unique<PdfExportJob>(document_.get(), font_directory_, exporter_, project.directory);
+  fountain_job_ = std::make_unique<FountainExportJob>(document_.get(), project.directory, source::fountain_export_omissions(assets),
+                                                      QStringList{source::imported_origin(assets)});
   view_.setSource({});
-  editor_ = show_editor(view_, *document_, export_job_.get(), project.directory + ".pdf", saver_.get());
+  editor_ = show_editor(view_, *document_, export_job_.get(), project.directory + ".pdf", saver_.get(), fountain_job_.get());
   view_.rootObject()->setProperty("projectFlow", QVariant::fromValue<QObject*>(this));
   view_.rootObject()->setProperty("sessionNotice", notice_);
   saver_->guard_close(view_);
@@ -345,7 +350,10 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   connect(editor_, SIGNAL(cursorPositionChanged()), this, SLOT(schedule_session()));
   connect(document_.get(), &QTextDocument::contentsChanged, this, &ProjectAccessFlow::schedule_session);
   if (intake_ && intake_->working) connect(document_.get(), &QTextDocument::contentsChanged, this, &ProjectAccessFlow::changed);
-  connect(saver_.get(), &Autosaver::locationChanged, this, [this] { library_dirty_ = true; schedule_session(); emit changed(); });
+  connect(saver_.get(), &Autosaver::locationChanged, this, [this] {
+    fountain_job_->set_project(saver_->location());
+    library_dirty_ = true; schedule_session(); emit changed();
+  });
   connect(saver_.get(), &Autosaver::leaveReady, this, [this](bool success) {
     if (!success) {
       leaving_ = false; leave_failed_ = true;
@@ -357,12 +365,13 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   });
   connect(saver_.get(), &Autosaver::released, this, [this] {
     view_.setSource({});
-    export_job_.reset(); saver_.reset(); document_.reset(); intake_.reset();
+    export_job_.reset(); fountain_job_.reset(); saver_.reset(); document_.reset(); intake_.reset();
     leaving_ = false; saver_drained_ = false; leave_failed_ = false;
     location_.clear(); error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
     show_access(); emit changed();
   });
   connect(export_job_.get(), &PdfExportJob::completed, this, [this](bool) { finish_leave(); });
+  connect(fountain_job_.get(), &FountainExportJob::completed, this, [this](bool) { finish_leave(); });
   library_dirty_ = true;
   schedule_session();
   emit activated();
@@ -398,8 +407,8 @@ void ProjectAccessFlow::begin_leave(bool retry) {
   saver_->prepare_leave(retry);
 }
 void ProjectAccessFlow::finish_leave() {
-  if (!leaving_ || !saver_drained_ || state_writing_ || export_job_->busy()) return;
-  // The saver has drained including recovery I/O, and PDF export is finished.
+  if (!leaving_ || !saver_drained_ || state_writing_ || export_job_->busy() || fountain_job_->busy()) return;
+  // The saver has drained including recovery I/O, and both exports are finished.
   // Persist the final cursor on the access worker before releasing this writer.
   state_dirty_ = true;
   persist_session();
@@ -442,7 +451,7 @@ void ProjectAccessFlow::persist_session() {
       if (record_library) library_notice_ = library_error;
       if (recents) recents_ = std::move(*recents);
       set_notice(failure);
-      if (departing && leaving_ && saver_drained_ && !export_job_->busy() && !state_dirty_) {
+      if (departing && leaving_ && saver_drained_ && !export_job_->busy() && !fountain_job_->busy() && !state_dirty_) {
         // Validate again after export and app-state I/O, then release the
         // project lock on the saver worker. Failure retains the live writer.
         saver_->release_for_leave();

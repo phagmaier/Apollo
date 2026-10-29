@@ -21,6 +21,7 @@ class QTextDocument;
 namespace apollo::editor {
 class Autosaver;
 class PdfExportJob;
+class FountainExportJob;
 
 // Home, safe access and one active writer. A writer is retained until its
 // latest writing and accepted background work have drained successfully.
@@ -123,6 +124,7 @@ private:
   std::unique_ptr<QTextDocument> document_;
   std::unique_ptr<Autosaver> saver_;
   std::unique_ptr<PdfExportJob> export_job_;
+  std::unique_ptr<FountainExportJob> fountain_job_;
   QPointer<QQuickItem> editor_;
   QTimer state_timer_;
   std::thread worker_;

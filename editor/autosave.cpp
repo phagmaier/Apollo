@@ -16,7 +16,7 @@ Autosaver::Autosaver(QTextDocument* document, std::unique_ptr<source::ProjectSes
       captured_(revision_), saved_(revision_) {
   if (session_->opened().project.import_review)
     throw source::SourceError(source::SourceError::Kind::malformed, QStringLiteral("Fountain intake is read-only; screenplay conversion is pending"));
-  if (session_->opened().project.import_working) document->setProperty(export_block_property, source::fountain_export_block);
+  if (session_->opened().project.import_working) document->setProperty(export_block_property, source::imported_pdf_block);
   timer_.setSingleShot(true);
   // Measured from the first unsaved change, not restarted by later ones, so
   // continuous typing cannot postpone a capture.

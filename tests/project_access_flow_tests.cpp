@@ -1,6 +1,7 @@
 #include "editor/project_access_flow.h"
 #include "editor/autosave.h"
 #include "editor/pdf_export_job.h"
+#include "editor/fountain_export_job.h"
 #include "editor/screenplay_layout.h"
 #include "source/recovery.h"
 #include "source/fountain_conversion.h"
@@ -63,6 +64,10 @@ struct Window {
       QCoreApplication::sendEvent(&view, &press);
       QCoreApplication::sendEvent(&view, &release);
     }
+  }
+  bool popup_open(const char* name) {
+    const auto* popup = view.rootObject()->findChild<QObject*>(QString::fromLatin1(name));
+    return popup && popup->property("opened").toBool();
   }
   bool click(const char* name) {
     QTest::qWait(30); // Let one frame polish changed form/Popup geometry.
@@ -304,6 +309,191 @@ private slots:
     QCOMPARE(bytes(input), original);
     QCOMPARE(*preserved_assets.original_fountain, original);
   }
+  // Import → real edits → autosave → reopen → clean Fountain, compared with
+  // hand-written expected text. Eligibility follows each snapshot, refusals
+  // and failures keep existing files, and writing continues during export.
+  void editable_import_exports_clean_fountain_snapshots_through_real_controls() {
+    const auto input = path("fountain-input");
+    replace_file(input, bytes(APOLLO_IMPORT_FIXTURE_DIR "/writer-subset.fountain"));
+    const auto review = create_project(path("fountain-review"), {0, {{ElementType::action, ""}}},
+                                       interpreted_fountain_assets(read_fountain_intake(input).assets));
+    const auto state = path("fountain-state");
+    const auto exported = path("exported") + ".fountain";
+    const auto pdf = path("blocked") + ".pdf";
+    replace_file(pdf, "Existing PDF evidence");
+    auto expected = [](const char* name) { return bytes(QStringLiteral(APOLLO_IMPORT_FIXTURE_DIR "/../export/") + name); };
+    QString working;
+    {
+      Window window(font_, state, review.directory);
+      QTRY_VERIFY(window.flow.intake_interpreted()); QTRY_VERIFY(!window.flow.busy());
+      window.item("intakeProjectName")->setProperty("text", "Exporting " + QString::number(count_));
+      window.item("intakeProjectParent")->setProperty("text", root_.path());
+      QVERIFY(window.click("editIntake")); QTRY_VERIFY(window.flow.document());
+      working = window.flow.autosaver()->location();
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QVERIFY(job);
+      auto eligibility = [&] { return window.item("exportEligibility")->property("text").toString(); };
+      auto close_panel = [&] { QTest::keyClick(&window.view, Qt::Key_Escape); QTRY_VERIFY(window.flow.editor()->hasActiveFocus()); };
+      // The panel discloses the PDF block and, for Fountain, what is omitted.
+      QVERIFY(window.click("exportButton"));
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(eligibility().contains("PDF exports remain blocked"));
+      QVERIFY(window.click("exportFormatFountain"));
+      QVERIFY(eligibility().startsWith("Ready."));
+      QVERIFY(eligibility().contains("Not included in clean Fountain: 1 imported note, 1 stash passage"));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/fountain-export-ready.png")));
+      window.item("fountainDestination")->setProperty("text", exported);
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(exported), expected("writer-subset.fountain"));
+      QVERIFY(job->status().contains("exported to " + exported));
+      QVERIFY(job->status().contains("2 synopses, 1 production scene number"));
+      // A deliberate break typed after a space leaves one; the explanation
+      // names the element, the button stays disabled and nothing is written.
+      auto speech = window.flow.document()->findBlockByNumber(12);
+      QCOMPARE(block_element(speech).text, std::string("At the same time."));
+      window.flow.editor()->setProperty("cursorPosition", speech.position() + 6);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY2(eligibility().contains("Element 13, Dialogue “At the”: has an empty line or leading, trailing or repeated spaces."), qPrintable(eligibility()));
+      QVERIFY(!window.click("exportConfirm"));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/fountain-export-blocked.png")));
+      close_panel();
+      QVERIFY(!job->request(exported));
+      QVERIFY(job->status().startsWith("Fountain export blocked: Element 13"));
+      QCOMPARE(bytes(exported), expected("writer-subset.fountain"));
+      QTest::keyClick(&window.view, Qt::Key_Delete);
+      QVERIFY(job->check(true).isEmpty());
+      // New writing: an empty element, then a mixed-case cue, are explained
+      // until corrected with ordinary keys.
+      const auto last = window.flow.document()->lastBlock();
+      window.flow.editor()->setProperty("cursorPosition", last.position() + last.length() - 1);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QCOMPARE(job->check(true), QString("Element 22, Action (empty): is empty; type its text or delete it."));
+      QTest::keyClick(&window.view, Qt::Key_Backtab, Qt::ShiftModifier);
+      window.type("INT. DEPOT - DAY");
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      window.type("Mara waits.");
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_Tab);
+      window.type("Mara");
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      window.type("Here.");
+      QCOMPARE(job->check(true), QString("Element 24, Character cue “Mara”: is not written in capital ASCII letters, "
+                                         "which this export requires for scene headings, character cues and the title."));
+      auto cue = window.flow.document()->findBlockByNumber(23);
+      window.flow.editor()->setProperty("cursorPosition", cue.position() + cue.length() - 1);
+      for (int i = 0; i < 3; ++i) QTest::keyClick(&window.view, Qt::Key_Backspace);
+      window.type("ARA");
+      QVERIFY(job->check(true).isEmpty());
+      // The accepted snapshot is fixed: typing continues while the worker is
+      // held, and the later words are saved but not exported.
+      std::mutex mutex;
+      std::condition_variable condition;
+      bool released = false;
+      std::atomic<bool> entered = false;
+      job->set_worker_hook([&] {
+        std::unique_lock lock(mutex);
+        entered = true;
+        condition.wait(lock, [&] { return released; });
+      });
+      const auto release = qScopeGuard([&] {
+        { std::lock_guard lock(mutex); released = true; }
+        condition.notify_all();
+      });
+      QVERIFY(window.click("exportButton"));
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(eligibility().startsWith("Ready."));
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(entered.load());
+      QVERIFY(job->busy());
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+      const auto end = window.flow.document()->lastBlock();
+      window.flow.editor()->setProperty("cursorPosition", end.position() + end.length() - 1);
+      window.type(" Later.");
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(open_project(working).screenplay.elements.back().text, std::string("Here. Later."));
+      QVERIFY(window.item("operationStatus")->property("text").toString().startsWith("Exporting Fountain snapshot from"));
+      { std::lock_guard lock(mutex); released = true; }
+      condition.notify_all();
+      QTRY_VERIFY(!job->busy());
+      job->set_worker_hook({});
+      QCOMPARE(bytes(exported), expected("writer-subset-edited.fountain"));
+      QVERIFY(window.item("operationStatus")->property("text").toString().startsWith("Fountain snapshot from"));
+      for (int i = 0; i < 7; ++i) QTest::keyClick(&window.view, Qt::Key_Backspace);
+      // PDF remains separately blocked for imported writing.
+      QVERIFY(!qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>())->request(pdf));
+      QCOMPARE(bytes(pdf), QByteArray("Existing PDF evidence"));
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+    }
+    QFile::remove(exported);
+    {
+      Window window(font_, state);
+      QTRY_VERIFY(window.flow.document());
+      QCOMPARE(window.flow.autosaver()->location(), working);
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      // Reopened writing, title page left out through the real checkbox.
+      QVERIFY(window.click("exportButton"));
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      QVERIFY(window.click("exportFormatFountain"));
+      QVERIFY(window.click("includeTitle"));
+      window.item("fountainDestination")->setProperty("text", exported);
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(exported), expected("writer-subset-edited-no-title.fountain"));
+      QVERIFY(job->status().contains("Title page left out by choice."));
+      // A write failure leaves the previous export complete.
+      const auto locked = path("locked-folder");
+      QVERIFY(QDir().mkpath(locked));
+      replace_file(locked + "/script.fountain", "Existing Fountain evidence");
+      QVERIFY(QFile::setPermissions(locked, QFile::ReadOwner | QFile::ExeOwner));
+      const auto restore = qScopeGuard([&] { QFile::setPermissions(locked, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner); });
+      QVERIFY(job->request(locked + "/script.fountain"));
+      QTRY_VERIFY(!job->busy());
+      QVERIFY(job->status().startsWith("Fountain export failed:"));
+      QVERIFY(job->status().endsWith("Any existing file there is unchanged."));
+      QCOMPARE(bytes(locked + "/script.fountain"), QByteArray("Existing Fountain evidence"));
+      // Neither the project folder nor the external original can be replaced.
+      QVERIFY(!job->request(working + "/screenplay.json"));
+      QVERIFY(job->status().contains("outside the project folder"));
+      QVERIFY(!job->request(input));
+      QVERIFY(job->status().contains("never replaces it"));
+      QCOMPARE(bytes(input), bytes(APOLLO_IMPORT_FIXTURE_DIR "/writer-subset.fountain"));
+    }
+  }
+
+  // Ordinary projects export too; leaving waits for an accepted export.
+  void native_project_exports_fountain_and_leaving_waits_for_it() {
+    const auto p = project();
+    Window window(font_, path("session"), p.directory);
+    QTRY_VERIFY(window.flow.document());
+    auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+    QVERIFY(job && job->omissions().isEmpty());
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool released = false;
+    job->set_worker_hook([&] { std::unique_lock lock(mutex); condition.wait(lock, [&] { return released; }); });
+    const auto release = qScopeGuard([&] {
+      { std::lock_guard lock(mutex); released = true; }
+      condition.notify_all();
+    });
+    const auto output = path("native") + ".fountain";
+    QVERIFY(job->request(output));
+    window.type(QStringLiteral("Later "));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(window.flow.leaving());
+    bool heartbeat = false;
+    QTimer::singleShot(0, [&] { heartbeat = true; });
+    QTRY_VERIFY(heartbeat);
+    QVERIFY(window.flow.document());
+    { std::lock_guard lock(mutex); released = true; }
+    condition.notify_all();
+    QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(bytes(output), QByteArray("Current writing.\n\nSecond paragraph.\n"));
+    QCOMPARE(open_project(p.directory).screenplay.elements.front().text, std::string("Later Current writing."));
+  }
+
   void unsupported_import_keeps_editable_control_and_publication_gated() {
     const auto input = path("unsupported-input"); replace_file(input, "@McKay\nA mixed-case cue.\n");
     Window window(font_, path("unsupported-state"), {}, {}, input);
