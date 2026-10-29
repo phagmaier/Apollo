@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QMimeData>
 #include <QRegularExpression>
+#include <QSet>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <algorithm>
@@ -33,6 +34,65 @@ QTextCursor selection(QTextDocument* document, int position, int start, int end)
 }
 
 QString new_id() { return QString::fromStdString(source::new_element_id()); }
+
+constexpr std::array title_types{ElementType::title, ElementType::credit, ElementType::author,
+                                 ElementType::source, ElementType::contact, ElementType::draft_date};
+const std::array title_fields{QStringLiteral("title"), QStringLiteral("credit"), QStringLiteral("author"),
+                              QStringLiteral("source"), QStringLiteral("contact"), QStringLiteral("draftDate")};
+
+int title_index(ElementType type) {
+  const auto found = std::find(title_types.begin(), title_types.end(), type);
+  return found == title_types.end() ? -1 : static_cast<int>(found - title_types.begin());
+}
+
+QTextBlock block_with_id(QTextDocument* document, const QString& id) {
+  for (auto block = document->begin(); block.isValid(); block = block.next())
+    if (block.blockFormat().stringProperty(element_id_property) == id) return block;
+  return {};
+}
+
+// Keep the identical prefix and suffix in place, including their character
+// formats. Only the changed middle is plain text. Never split a surrogate pair.
+void replace_title_text(QTextCursor& cursor, const QTextBlock& block, const QString& text) {
+  const auto old = block.text();
+  qsizetype prefix = 0;
+  while (prefix < old.size() && prefix < text.size() && old[prefix] == text[prefix]) ++prefix;
+  if (prefix && old[prefix - 1].isHighSurrogate()) --prefix;
+  qsizetype suffix = 0;
+  while (suffix < old.size() - prefix && suffix < text.size() - prefix &&
+         old[old.size() - suffix - 1] == text[text.size() - suffix - 1]) ++suffix;
+  if (suffix && old[old.size() - suffix].isLowSurrogate()) --suffix;
+  cursor.setPosition(block.position() + static_cast<int>(prefix));
+  cursor.setPosition(block.position() + static_cast<int>(old.size() - suffix), QTextCursor::KeepAnchor);
+  cursor.removeSelectedText();
+  cursor.insertText(text.mid(prefix, text.size() - prefix - suffix), QTextCharFormat());
+}
+
+void remove_title_block(QTextCursor& cursor, const QTextBlock& block) {
+  if (const auto next = block.next(); next.isValid()) {
+    const auto format = next.blockFormat();
+    const auto characters = next.charFormat();
+    cursor.setPosition(block.position());
+    cursor.setPosition(next.position(), QTextCursor::KeepAnchor);
+    cursor.removeSelectedText();
+    // Removing a paragraph at its start retains that paragraph's format;
+    // the surviving next element must retain its own identity and type.
+    cursor.setBlockFormat(format);
+    cursor.setBlockCharFormat(characters);
+  } else if (const auto previous = block.previous(); previous.isValid()) {
+    cursor.setPosition(previous.position() + previous.length() - 1);
+    cursor.setPosition(block.position() + block.length() - 1, QTextCursor::KeepAnchor);
+    cursor.removeSelectedText();
+  } else {
+    cursor.select(QTextCursor::BlockUnderCursor);
+    cursor.removeSelectedText();
+    QTextBlockFormat format;
+    format.setProperty(element_type_property, static_cast<int>(ElementType::action));
+    format.setProperty(element_id_property, new_id());
+    cursor.setBlockFormat(format);
+    cursor.setBlockCharFormat(QTextCharFormat());
+  }
+}
 
 void set_type(QTextCursor& cursor, ElementType type) {
   QTextBlockFormat format;
@@ -162,13 +222,16 @@ int insert_between(QTextCursor& cursor, const std::vector<Element>& inserted) {
 }
 
 EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObject(parent), document_(document) {
-  connect(document_, &QTextDocument::contentsChanged, this, &EditorCommands::refreshEmptySpeeches);
-  refreshEmptySpeeches();
+  connect(document_, &QTextDocument::contentsChanged, this, &EditorCommands::refreshDocumentState);
+  refreshDocumentState();
 }
 
-void EditorCommands::refreshEmptySpeeches() {
+void EditorCommands::refreshDocumentState() {
   QVariantList issues;
+  QString title;
   for (auto block = document_->begin(); block.isValid();) {
+    if (element_type(block) == ElementType::title)
+      title = QString(block.text()).replace(QChar::LineSeparator, QLatin1Char(' '));
     if (element_type(block) != ElementType::cue) { block = block.next(); continue; }
     const auto state = speech_state(block);
     if (!state.has_dialogue) {
@@ -181,6 +244,10 @@ void EditorCommands::refreshEmptySpeeches() {
               : QStringLiteral("This cue has no dialogue. Add dialogue, or explicitly treat the cue and its parentheticals as action.")}});
     }
     block = state.end;
+  }
+  if (title != title_text_) {
+    title_text_ = std::move(title);
+    emit titleTextChanged();
   }
   if (issues == empty_speeches_) return;
   empty_speeches_ = std::move(issues);
@@ -206,6 +273,110 @@ int EditorCommands::treatSpeechAsAction(const QString& id) {
   }
   cursor.endEditBlock();
   return position;
+}
+
+QVariantList EditorCommands::titlePage() const {
+  QVariantList entries;
+  for (auto block = document_->begin(); block.isValid(); block = block.next()) {
+    const int index = title_index(element_type(block));
+    if (index < 0) continue;
+    entries.append(QVariantMap{{"id", block.blockFormat().stringProperty(element_id_property)},
+                              {"field", title_fields[index]},
+                              {"text", QString(block.text()).replace(QChar::LineSeparator, QLatin1Char('\n'))}});
+  }
+  return entries;
+}
+
+bool EditorCommands::setTitlePage(const QVariantList& entries) {
+  struct Entry { QString id; ElementType type; QString text; };
+  std::vector<Entry> desired;
+  desired.reserve(static_cast<std::size_t>(entries.size()));
+  QSet<QString> retained;
+  int last_existing = -1;
+  bool changed = false;
+  // Validate the complete submission against the live document before opening
+  // an edit block. No string coercion, stale references, or type retargeting.
+  for (const auto& value : entries) {
+    if (value.metaType() != QMetaType::fromType<QVariantMap>()) return false;
+    const auto entry = value.toMap();
+    for (const auto* key : {"id", "field", "text"})
+      if (entry.value(key).metaType() != QMetaType::fromType<QString>()) return false;
+    const auto id = entry.value("id").toString();
+    const auto field = entry.value("field").toString();
+    auto text = entry.value("text").toString();
+    const auto found = std::find(title_fields.begin(), title_fields.end(), field);
+    if (found == title_fields.end() || !text.isValidUtf16()) return false;
+    for (const auto character : text)
+      if (character == QLatin1Char('\r') || character == QChar::LineSeparator ||
+          character == QChar::ParagraphSeparator || character == QChar(0xfdd0) || character == QChar(0xfdd1))
+        return false;
+    const auto type = title_types[static_cast<std::size_t>(found - title_fields.begin())];
+    text.replace(QLatin1Char('\n'), QChar::LineSeparator);
+    if (!id.isEmpty()) {
+      const auto block = block_with_id(document_, id);
+      if (retained.contains(id) || !block.isValid() || element_type(block) != type ||
+          block.blockNumber() <= last_existing) return false;
+      last_existing = block.blockNumber();
+      retained.insert(id);
+      changed |= block.text() != text;
+    } else changed = true;
+    desired.push_back({id, type, std::move(text)});
+  }
+  QStringList removed;
+  for (auto block = document_->begin(); block.isValid(); block = block.next()) {
+    if (title_index(element_type(block)) < 0) continue;
+    const auto id = block.blockFormat().stringProperty(element_id_property);
+    if (!retained.contains(id)) removed.append(id);
+  }
+  if (!changed && removed.isEmpty()) return true;
+
+  QTextCursor cursor(document_);
+  cursor.beginEditBlock();
+  typed_end_ = typed_steps_ = -1;
+  for (std::size_t i = 0; i < desired.size(); ++i) {
+    const auto& entry = desired[i];
+    if (!entry.id.isEmpty()) {
+      const auto block = block_with_id(document_, entry.id);
+      if (block.text() != entry.text) replace_title_text(cursor, block, entry.text);
+      continue;
+    }
+    // Insert before the next retained title, or the first body element,
+    // whichever comes first. With no body or following title, append.
+    QTextBlock before;
+    for (auto block = document_->begin(); block.isValid(); block = block.next()) {
+      if (title_index(element_type(block)) < 0) { before = block; break; }
+    }
+    for (std::size_t next = i + 1; next < desired.size(); ++next) {
+      if (desired[next].id.isEmpty()) continue;
+      const auto block = block_with_id(document_, desired[next].id);
+      if (!before.isValid() || block.position() < before.position()) before = block;
+      break;
+    }
+    QTextBlockFormat format;
+    format.setProperty(element_type_property, static_cast<int>(entry.type));
+    format.setProperty(element_id_property, new_id());
+    if (before.isValid()) {
+      const int position = before.position();
+      cursor.setPosition(position);
+      cursor.insertBlock(before.blockFormat(), before.charFormat());
+      cursor.setPosition(position);
+      cursor.setBlockFormat(format);
+      cursor.setBlockCharFormat(QTextCharFormat());
+    } else {
+      cursor.movePosition(QTextCursor::End);
+      cursor.insertBlock(format, QTextCharFormat());
+    }
+    cursor.insertText(entry.text, QTextCharFormat());
+  }
+  // Descending removal avoids disturbing earlier title positions. Looking up
+  // ids afresh also handles Qt merging a removed block with its successor.
+  for (auto id = removed.crbegin(); id != removed.crend(); ++id) {
+    const auto block = block_with_id(document_, *id);
+    cursor.setPosition(block.position());
+    remove_title_block(cursor, block);
+  }
+  cursor.endEditBlock();
+  return true;
 }
 
 int EditorCommands::typeText(int position, int selectionStart, int selectionEnd, const QString& text) {

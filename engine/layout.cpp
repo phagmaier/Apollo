@@ -227,24 +227,58 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
   int page = 1, slot = 0;
   std::string last_speaker;
   bool interrupted = false;
-  int authors = 0, contacts = 0;
-  for (const auto& e : elements) if (e.type == ElementType::contact) ++contacts;
+  // Title fields do not wrap or normalize authored spaces. Each deliberate
+  // break, including an empty first/last line, occupies one title-page slot.
+  auto title_lines = [](const Element& element) {
+    const auto count = 1 + std::count(element.text.begin(), element.text.end(), '\n');
+    if (count > page_slots) throw std::runtime_error("title-page field exceeds one page");
+    return static_cast<int>(count);
+  };
+  int authors = 0, contacts = 0, dates = 0;
   for (const auto& e : elements) {
-    const auto source = static_cast<std::size_t>(&e - elements.data());
-    int title_slot = 0;
+    if (e.type == ElementType::author) authors += title_lines(e);
+    if (e.type == ElementType::contact) contacts += title_lines(e);
+    if (e.type == ElementType::draft_date) dates += title_lines(e);
+    if (authors > page_slots || contacts > page_slots || dates > page_slots)
+      throw std::runtime_error("title-page fields exceed one page");
+  }
+  int next_title = 4, next_credit = 10, next_author = 15;
+  int next_source = 16 + std::max(authors, 1);
+  int next_contact = 49 - contacts, next_date = 49 - dates;
+  for (const auto& e : elements) {
+    int* next = nullptr;
     switch (e.type) {
-      case ElementType::title: title_slot = 4; break;
-      case ElementType::credit: title_slot = 10; break;
-      case ElementType::author: title_slot = 15 + authors++; break;
-      case ElementType::source: title_slot = 16 + std::max(authors, 1); break;
-      case ElementType::contact: title_slot = 49 - contacts--; break;
-      case ElementType::draft_date: title_slot = 48; break;
-      default: break;
+      case ElementType::title: next = &next_title; break;
+      case ElementType::credit: next = &next_credit; break;
+      case ElementType::author: next = &next_author; break;
+      case ElementType::source: next = &next_source; break;
+      case ElementType::contact: next = &next_contact; break;
+      case ElementType::draft_date: next = &next_date; break;
+      default: continue;
     }
-    if (title_slot) {
-      result.push_back({0, title_slot, e.type, e.text});
-      transfer_styles(e, result.back(), 0);
-      result.back().source = source; result.back().source_length = e.text.size();
+    const auto source = static_cast<std::size_t>(&e - elements.data());
+    std::size_t start = 0;
+    for (;;) {
+      if (*next < 1 || *next > page_slots)
+        throw std::runtime_error("title-page field extends beyond the page");
+      const auto end = e.text.find('\n', start);
+      const auto length = (end == std::string::npos ? e.text.size() : end) - start;
+      Line line{0, (*next)++, e.type, e.text.substr(start, length)};
+      transfer_styles(e, line, start);
+      line.source = source; line.source_offset = start; line.source_length = length;
+      position_line(line);
+      if (line.geometry.x < 0 || line.geometry.x + line.geometry.width > profile::page_width)
+        throw std::runtime_error("title-page line is wider than the available page");
+      // Fixed anchors may share a slot (contact/date), but never visible text.
+      for (const auto& placed : result) {
+        if (placed.slot == line.slot && placed.geometry.width > 0 && line.geometry.width > 0 &&
+            placed.geometry.x < line.geometry.x + line.geometry.width &&
+            line.geometry.x < placed.geometry.x + placed.geometry.width)
+          throw std::runtime_error("title-page fields overlap");
+      }
+      result.push_back(std::move(line));
+      if (end == std::string::npos) break;
+      start = end + 1;
     }
   }
   auto next_page = [&] { ++page; slot = 0; };
@@ -565,7 +599,7 @@ DocumentLayout layout_document(const std::vector<Element>& input) {
     emit_styled(element, lines, index);
   }
   DocumentLayout document{std::move(result), {}};
-  for (auto& line : document.lines) position_line(line);
+  for (auto& line : document.lines) if (line.page != 0) position_line(line);
   if (std::any_of(document.lines.begin(), document.lines.end(), [](const Line& line) { return line.page == 0; }))
     document.pages.push_back({0, std::nullopt});
   // Preserve empty pages, including consecutive and trailing manual breaks.

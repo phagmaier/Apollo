@@ -172,6 +172,27 @@ Slots are on the body grid: slot n begins at 1.0 in + (n − 1)/6 in.
 
 The sample's title page is not on the body grid, and its vertical correction is about ±0.05 in uncertain. This placement follows it closely but snaps to the grid. The guide's competition advice (remove identifying details for Nicholl entries) is the writer's choice; Apollo's optional title-page export covers it.
 
+Task 3d implements deliberate multiline title fields on these anchors. Every
+authored line, including an empty first/last line, occupies one slot; title
+fields do not wrap or trim spaces. Repeated entries continue the same field's
+line sequence. Title and writing credit start at slots 4 and 10; authors at 15;
+source starts two slots below the last author (17 with none). Contact and draft
+date are independently bottom-aligned at slot 48, with their existing columns.
+The source anchor counts all author lines even when the source entry precedes
+the authors in saved order.
+
+Text extending off the physical page, beyond the title's single page, or
+overlapping another title field is an explicit layout/PDF refusal. Writing still
+saves. Omitting the title page removes those fields before PDF layout, so a
+title-only failure cannot block body-only output. The imported-PDF gate still
+applies before that choice. These are bounded engineering placement/safety
+rules, not a new claim that every title layout matches the Academy reference.
+`fixtures/editing/multiline-title.*` provides original, hand-derived text,
+style, slot and column expectations for all six fields, repeated authors/contact,
+blank lines and two numbered body pages; the form-authored PDF is checked
+separately. Fountain's title eligibility has not been expanded.
+
+
 ## Typeface
 
 [Courier Prime](https://github.com/quoteunquoteapps/CourierPrime) (SIL OFL-1.1), Regular, Bold, Italic, and Bold Italic, pinned and bundled by file hash. All four styles share one advance width (1228/2048 em) and have no kerning, so emphasis never changes layout. Underline position and thickness come from the font's `post` table. Courier Prime covers about 415 glyphs; characters outside it follow the unexpected-character policy that is still open. The guide warns against Courier New, which is about 10% longer.

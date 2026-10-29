@@ -209,3 +209,22 @@ authored project. It checks exact text/slots/columns, PDF faces and underline
 ink against hand-worked expectations, including a plain generated CONT'D.
 The matching authored model and Fountain spelling are in `import/` and
 `export/`. No existing layout fixture or profile limit changes.
+
+`multiline-title.screenplay.json` / `multiline-title.expected` (task 3d) is an
+original public synthetic model with all six title fields, repeated authors
+and contact entries, blank authored lines, Unicode and emphasis. Its slots and
+columns are hand-derived from the title profile; they are not engine output.
+Engine checks also verify exact source byte ranges and refuse overlap/off-page
+layout. The PDF check opens a disposable ordinary project, checks the editor's
+mapping, and exports with and without the title page against the independent
+expectation. Both body pages keep their logical numbers. A separate real-form
+flow authors six fields and checks its PDF and exact Fountain, including
+snapshot isolation, omission and unchanged eligibility gates. The independent
+aw-parser reads the actual authored and fresh-process Fountain exports.
+
+`tools/check-wayland.sh` now also runs `tests/title_page_native_smoke.py` on an
+isolated original synthetic project: compositor-delivered six-field editing,
+Tab focus/scroll, Apply/Cancel, one-step Undo/Redo, autosave/reopen, PDF text and
+exact Fountain. It refuses key delivery if its child loses compositor focus.
+Native virtual input is not physical-input latency or owner visual acceptance.
+

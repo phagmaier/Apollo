@@ -1,0 +1,22 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 1,
+  "titlePage": [
+    {"id": "title", "field": "title", "text": "Harbor\n\nSignal", "styles": [{"start": 0, "end": 14, "style": "bold"}]},
+    {"id": "credit", "field": "credit", "text": "Written by\nfor the screen", "styles": [{"start": 0, "end": 10, "style": "italic"}]},
+    {"id": "author-one", "field": "author", "text": "Ana Núñez\nBen West", "styles": [{"start": 0, "end": 9, "style": "underline"}]},
+    {"id": "author-two", "field": "author", "text": "C. River\nD. Stone"},
+    {"id": "source", "field": "source", "text": "Based on a radio play\nby E. Cove", "styles": [{"start": 22, "end": 32, "style": "italic"}]},
+    {"id": "contact-one", "field": "contact", "text": "Harbor Office\n\n12 Beacon Lane"},
+    {"id": "contact-two", "field": "contact", "text": "Port Example\n555-0123", "styles": [{"start": 13, "end": 21, "style": "bold"}]},
+    {"id": "draft", "field": "draftDate", "text": "Revised draft\nOctober 29, 2026"}
+  ],
+  "elements": [
+    {"id": "scene-one", "type": "sceneHeading", "text": "INT. SIGNAL ROOM - NIGHT"},
+    {"id": "action-one", "type": "action", "text": "The receiver hums."},
+    {"id": "break", "type": "pageBreak", "text": ""},
+    {"id": "scene-two", "type": "sceneHeading", "text": "EXT. HARBOR - DAWN"},
+    {"id": "action-two", "type": "action", "text": "A light answers."}
+  ]
+}

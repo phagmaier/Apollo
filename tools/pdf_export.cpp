@@ -5,12 +5,22 @@
 
 #include <QGuiApplication>
 #include <QFile>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <chrono>
+
+namespace {
+bool title_field(const apollo::Element& element) {
+  using apollo::ElementType;
+  return element.type == ElementType::title || element.type == ElementType::credit ||
+         element.type == ElementType::author || element.type == ElementType::source ||
+         element.type == ElementType::contact || element.type == ElementType::draft_date;
+}
+}
 
 int main(int argc, char** argv) {
   const auto now = [] { return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -27,7 +37,8 @@ int main(int argc, char** argv) {
     if (snapshot) {
       QFile input;
       if (!input.open(stdin, QIODevice::ReadOnly)) throw std::runtime_error("cannot read snapshot");
-      const auto captured = apollo::decode_export_snapshot(input.readAll());
+      auto captured = apollo::decode_export_snapshot(input.readAll());
+      if (!captured.include_title) std::erase_if(captured.elements, title_field);
       apollo::export_pdf(apollo::layout_document(captured.elements), QString::fromLocal8Bit(argv[2]),
                          QString::fromLocal8Bit(argv[3]), captured.include_title);
       std::cout << started << ' ' << now() << '\n';
@@ -39,7 +50,9 @@ int main(int argc, char** argv) {
     if (std::filesystem::equivalent(argv[1], argv[2], path_error))
       throw std::runtime_error("input and PDF destination must differ");
     std::ostringstream source; source << input.rdbuf();
-    const auto document = apollo::layout_document(apollo::import_fountain(source.str()));
+    auto elements = apollo::import_fountain(source.str());
+    if (argc == 4) std::erase_if(elements, title_field);
+    const auto document = apollo::layout_document(elements);
     apollo::export_pdf(document, QString::fromLocal8Bit(argv[2]), QStringLiteral(APOLLO_FONT_DIR), argc != 4);
   } catch (const std::exception& error) {
     std::cerr << "export failed: " << error.what() << '\n'; return 1;

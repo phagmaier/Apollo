@@ -152,6 +152,43 @@ Title-page fields are laid out on the title page wherever they appear in the
 document; on save they move ahead of the body in their own order, which does
 not change any page.
 
+### Structured title-page form (slice 3 task 3d)
+
+Editable projects expose **Title page…** / **Ctrl+Shift+T** in the Writing desk.
+The six labeled groups are title, writing credit, authors, source/based-on
+credit, contact information and draft date. Repeated fields remain separate
+entries in their original order; opening or cancelling the form never rewrites
+them. **Add another entry** creates another value of that field. Existing
+emphasis is retained on unchanged text; replacement text is plain.
+
+The form is a local draft until **Apply** / **Ctrl+Enter**. **Cancel** or Escape
+discards that draft. Apply updates the existing `QTextDocument` in one undo
+step, preserving body history and retained identities; subsequent autosave,
+recovery, reopen and export capture use that same document. Within the form,
+ordinary text-control undo/redo edits the draft; after Apply, writer Undo/Redo
+reverts/restores the whole title change. Leaving an absent field empty does
+not create an element. Clearing an existing entry keeps its identity and empty
+text; **Remove entry** explicitly deletes it. Applying unchanged values creates
+no undo command.
+
+Text is not trimmed, capitalized or length-limited by the form. Enter and plain
+text paste preserve authored line breaks, including blank lines. The source's
+Unicode/structural-character validation still applies; invalid or stale entry
+references are refused before any mutation. Unsupported glyphs and currently
+unexportable writing remain saveable. Multiline title layout follows the
+[profile](export-profile.md#title-page-proposal-from-the-sample); overlapping or
+off-page title text reports a layout/export error, not cropped success.
+Fountain's narrower title rules and imported-PDF block are unchanged. Export
+captures only applied changes; a later Apply cannot enter an already accepted
+snapshot. Both export formats share the existing include-title-page choice.
+
+Focused command and autosave tests cover exact Unicode/breaks/empty text,
+repeated identities, unchanged emphasis, atomic invalid submissions and
+save/undo/redo/reopen. Real Writing desk controls also cover Cancel, six-field
+Apply, frozen exports, title omission, preserved imported material and the
+unchanged imported PDF gate. See task 3d's verification in the build plan.
+
+
 ### Emphasis authoring (slice 3 task 3c)
 
 In the writer, **Ctrl+B**, **Ctrl+I**, **Ctrl+U**, or **Format → Bold / Italic /

@@ -19,6 +19,7 @@ Rectangle {
     property bool departing: projectFlow !== null && projectFlow.leaving
     property string exportDestination: ""
     property string documentTitle: "Screenplay"
+    readonly property string shownTitle: commands.titleText.length > 0 ? commands.titleText : documentTitle
     property var outlineScenes: []
     property bool outlineVisible: false
     property bool includeTitle: true
@@ -99,11 +100,12 @@ Rectangle {
         emptySpeechNotice = ""
         editorPage.selectElement(position, length)
     }
-    Shortcut { sequence: "Ctrl+E"; onActivated: desk.exportPdf() }
-    Shortcut { sequence: "Ctrl+Shift+E"; enabled: desk.fountainJob !== null && !desk.departing; onActivated: desk.openExport("fountain") }
-    Shortcut { sequence: "Ctrl+\\"; onActivated: desk.toggleOutline() }
-    Shortcut { sequence: "Ctrl+Shift+S"; enabled: !desk.departing && desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
-    Shortcut { sequence: "Ctrl+Shift+H"; enabled: desk.projectFlow !== null && !desk.departing; onActivated: desk.projectFlow.home() }
+    Shortcut { sequence: "Ctrl+E"; enabled: !titlePanel.opened; onActivated: desk.exportPdf() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: desk.fountainJob !== null && !desk.departing && !titlePanel.opened; onActivated: desk.openExport("fountain") }
+    Shortcut { sequence: "Ctrl+\\"; enabled: !titlePanel.opened; onActivated: desk.toggleOutline() }
+    Shortcut { sequence: "Ctrl+Shift+S"; enabled: !desk.departing && !titlePanel.opened && desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
+    Shortcut { sequence: "Ctrl+Shift+H"; enabled: desk.projectFlow !== null && !desk.departing && !titlePanel.opened; onActivated: desk.projectFlow.home() }
+    Shortcut { sequence: "Ctrl+Shift+T"; enabled: titleButton.enabled && !titlePanel.opened; onActivated: titlePanel.open() }
     Connections {
         target: desk.projectFlow
         function onChanged() {
@@ -187,7 +189,8 @@ Rectangle {
         Rectangle { x: 110; y: 17; width: 1; height: 25; color: "#515761" }
         Text {
             x: 130; y: 13; width: Math.max(60, (retryButton.visible ? retryButton.x : copyButton.visible ? copyButton.x : exportButton.x) - x - 24)
-            text: desk.documentTitle
+            objectName: "documentTitle"
+            text: desk.shownTitle; textFormat: Text.PlainText
             elide: Text.ElideRight
             color: "#eff1f3"
             font { family: "Liberation Sans"; pixelSize: 14; weight: Font.DemiBold }
@@ -319,6 +322,13 @@ Rectangle {
         }
     }
 
+    TitlePageForm {
+        id: titlePanel
+        parent: desk
+        commands: desk.commands
+        onClosed: editorPage.focusEditor()
+    }
+
     Popup {
         id: importedPanel; objectName: "importedPanel"
         x: 24; y: 24; width: desk.width - 48; height: desk.height - 48
@@ -357,7 +367,7 @@ Rectangle {
         }
         Text {
             x: 24; y: 64; width: parent.width - 48
-            text: desk.documentTitle
+            text: desk.shownTitle; textFormat: Text.PlainText
             elide: Text.ElideRight; color: "#777f7c"
             font { family: "Liberation Sans"; pixelSize: 11 }
         }
@@ -452,6 +462,16 @@ Rectangle {
             id: workbar
             anchors { left: parent.left; right: parent.right; top: parent.top }
             height: 57
+            DeskButton {
+                id: titleButton
+                objectName: "titlePageButton"
+                anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter }
+                text: "Title page…"; ink: "#303843"; fill: "#e9edf0"
+                visible: desk.autosaver !== null
+                enabled: visible && editorPage.enabled && !desk.autosaver.copyBusy
+                Accessible.name: "Edit title page (Ctrl+Shift+T)"
+                onClicked: titlePanel.open()
+            }
             Row {
                 anchors.centerIn: parent
                 spacing: 12

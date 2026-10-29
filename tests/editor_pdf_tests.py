@@ -193,6 +193,47 @@ def authored_emphasis(editor, output):
           "independent editor/PDF geometry, bold/italic/underline and plain generated CONT'D")
 
 
+def title_pages(editor, output):
+    """Multiline title geometry and actual form-authored PDF content."""
+    fixture = ROOT / "fixtures/editing/multiline-title.screenplay.json"
+    project = output / "multiline-title-project"
+    shutil.rmtree(project, ignore_errors=True)  # Only this test's disposable project.
+    command(editor, project, "--create")
+    shutil.copyfile(fixture, project / "screenplay.json")
+    expected = fixture_pages(fixture.with_name("multiline-title.expected"))
+    command(editor, project, "--check")
+    for included in (True, False):
+        snapshot = output / ("multiline-title" if included else "multiline-title-omitted")
+        command(editor, project, "--snapshot", snapshot, *([] if included else ["--no-title-page"]))
+        check_pdf(snapshot / "editor.pdf", expected if included else expected[1:])
+        check_styles(snapshot / "editor.pdf", expected if included else expected[1:])
+        # --snapshot deliberately edits its live project after capture. Restore
+        # only the disposable fixture project before the next request.
+        shutil.copyfile(fixture, project / "screenplay.json")
+    authored = output / "title-authored"
+    shutil.rmtree(authored, ignore_errors=True)
+    result = subprocess.run(
+        [str(editor.resolve().parent / "project_access_flow_tests"),
+         "title_form_apply_cancel_undo_reopen_and_export"],
+        env=dict(os.environ, APOLLO_TITLE_OUTPUT=str(authored.resolve())),
+        capture_output=True, text=True)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    body = [dict(body=1, number="none", rows=[
+        (1, "action", "Current writing.", ""), (3, "action", "Second paragraph.", "")])]
+    check_pdf(authored / "body.pdf", body)
+    title = dict(body=0, number="none", rows=[
+        (4, "title@center", "THE LATER SIGNAL", ""),
+        (10, "credit@center", "Written by", ""),
+        (15, "author@center", "June Vale", ""),
+        (17, "source@center", "Based on a radio play", ""),
+        (48, "contact@5.2in", "june@example.test", ""),
+        (48, "draft-date@1.5in", "October 2026", "")])
+    command(editor, authored / "project", "--snapshot", authored / "snapshot")
+    check_pdf(authored / "snapshot/editor.pdf", [title] + body)
+    print("PASS title form PDF and multiline title: independent slots, columns, styles, "
+          "blank lines, omission and unchanged body-page numbering")
+
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -220,6 +261,7 @@ def main():
     break_at_page_split(args.editor, args.output)
     authored_lowercase(args.editor, args.output)
     authored_emphasis(args.editor, args.output)
+    title_pages(args.editor, args.output)
     sources = []
     for scenes in (175, 444):
         source = args.output / f"workload-{scenes}.fountain"

@@ -64,7 +64,7 @@ struct Window {
   }
   QQuickItem* item(const char* name) {
     if (auto* found = view.rootObject()->findChild<QQuickItem*>(QString::fromLatin1(name))) return found;
-    return find_item(view.rootObject(), QString::fromLatin1(name));
+    return find_item(view.contentItem(), QString::fromLatin1(name));
   }
   void type(const QString& text) {
     for (const auto ch : text) {
@@ -105,6 +105,225 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void title_form_apply_cancel_undo_reopen_and_export() {
+    const auto requested = qEnvironmentVariable("APOLLO_TITLE_OUTPUT");
+    const auto output_root = requested.isEmpty() ? path("title-artifacts") : requested;
+    QVERIFY(QDir().mkpath(output_root));
+    const auto p = create_project(output_root + "/project", {5, {
+        {ElementType::action, "Current writing.", false, {}, "first"},
+        {ElementType::action, "Second paragraph.", false, {}, "second"}}});
+    const auto state = path("title-state");
+    const auto output = output_root + "/captured.fountain";
+    const auto body_output = output_root + "/body.fountain";
+    const auto pdf = output_root + "/body.pdf";
+    const QByteArray expected("Title: THE SIGNAL\nCredit: Written by\nAuthor: June Vale\n"
+                              "Source: Based on a radio play\nContact: june@example.test\nDraft date: October 2026\n\n"
+                              "Current writing.\n\nSecond paragraph.\n");
+    const auto initial = open_project(p.directory).screenplay;
+    {
+      Window window(font_, state, p.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      const auto fallback_title = window.item("documentTitle")->property("text").toString();
+      QVERIFY(window.click("titlePageButton"));
+      QTRY_VERIFY(window.popup_open("titlePagePanel"));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/title-form-open.png")));
+      auto fill = [&](const char* name, const QString& text) {
+        auto* field = window.item(name);
+        if (!field) return false;
+        field->forceActiveFocus();
+        QMetaObject::invokeMethod(field, "selectAll");
+        if (text.isEmpty()) QTest::keyClick(&window.view, Qt::Key_Backspace);
+        else window.type(text);
+        return true;
+      };
+      QVERIFY(fill("titleField_title_0", "Cancelled title"));
+      QVERIFY(window.click("titleCancel"));
+      QCOMPARE(open_project(p.directory).screenplay, initial);
+      QVERIFY(!window.flow.document()->isUndoAvailable());
+      QTest::keyClick(&window.view, Qt::Key_T, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("titlePagePanel"));
+      QCOMPARE(window.item("titleField_title_0")->property("text").toString(), QString());
+      QVERIFY(fill("titleField_title_0", "THE SIGNAL"));
+      QVERIFY(fill("titleField_credit_1", "Written by"));
+      QVERIFY(fill("titleField_author_2", "June Vale"));
+      QVERIFY(fill("titleField_source_3", "Based on a radio play"));
+      QVERIFY(fill("titleField_contact_4", "june@example.test"));
+      QVERIFY(fill("titleField_draftDate_5", "October 2026"));
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/title-form.png")));
+      QVERIFY(window.click("titleApply"));
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+      QCOMPARE(window.item("documentTitle")->property("text").toString(), QString("THE SIGNAL"));
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      auto* pdf_job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+      QVERIFY(job && pdf_job);
+      QCOMPARE(export_fountain(document_elements(*window.flow.document()), true).bytes, expected);
+      const auto authored = canonical(Screenplay{0, document_elements(*window.flow.document())});
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(canonical(Screenplay{initial.revision, document_elements(*window.flow.document())}), initial);
+      QCOMPARE(window.item("documentTitle")->property("text").toString(), fallback_title);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), authored);
+      QCOMPARE(window.item("documentTitle")->property("text").toString(), QString("THE SIGNAL"));
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      auto saved = open_project(p.directory).screenplay;
+      saved.revision = 0;
+      QCOMPARE(saved, authored);
+      // Capture before the next form Apply. Later title edits must not enter
+      // the accepted worker snapshot, even though autosave includes them.
+      std::mutex mutex;
+      std::condition_variable condition;
+      bool released = false;
+      std::atomic<bool> entered = false;
+      job->set_worker_hook([&] {
+        std::unique_lock lock(mutex);
+        entered = true;
+        condition.wait(lock, [&] { return released; });
+      });
+      const auto release = qScopeGuard([&] {
+        { std::lock_guard lock(mutex); released = true; }
+        condition.notify_all();
+      });
+      QVERIFY(job->request(output));
+      QTRY_VERIFY(entered.load());
+      QVERIFY(window.click("titlePageButton"));
+      QVERIFY(fill("titleField_title_0", "THE LATER SIGNAL"));
+      QVERIFY(window.click("titleApply"));
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      { std::lock_guard lock(mutex); released = true; }
+      condition.notify_all();
+      QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(output), expected);
+      job->set_worker_hook({});
+      // Clearing an existing field preserves the blank in source, rather
+      // than silently removing imported/authored metadata. Omission bypasses
+      // only title checks, never body eligibility.
+      QVERIFY(window.click("titlePageButton"));
+      QVERIFY(fill("titleField_title_0", ""));
+      QVERIFY(window.click("titleApply"));
+      QCOMPARE(window.item("documentTitle")->property("text").toString(), fallback_title);
+      QVERIFY(!job->check(true).isEmpty());
+      QVERIFY(job->check(false).isEmpty());
+      QVERIFY(!job->request(output, true));
+      QCOMPARE(bytes(output), expected);
+      QVERIFY(window.click("exportButton"));
+      QTest::keyClick(&window.view, Qt::Key_T, Qt::ControlModifier | Qt::ShiftModifier);
+      QVERIFY(!window.popup_open("titlePagePanel"));
+      QVERIFY(window.click("exportFormatFountain"));
+      QVERIFY(window.click("includeTitle"));
+      window.item("fountainDestination")->setProperty("text", body_output);
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!job->busy());
+      QCOMPARE(bytes(body_output), QByteArray("Current writing.\n\nSecond paragraph.\n"));
+      // The same shared checkbox is retained when changing export formats.
+      QVERIFY(window.click("exportButton"));
+      QVERIFY(window.click("exportFormatPdf"));
+      QVERIFY(!window.item("includeTitle")->property("checked").toBool());
+      window.item("exportDestination")->setProperty("text", pdf);
+      QSignalSpy pdf_completed(pdf_job, &PdfExportJob::completed);
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!pdf_job->busy());
+      QCOMPARE(pdf_completed.size(), 1);
+      QVERIFY(pdf_completed[0][0].toBool());
+      const auto previous_pdf = bytes(pdf);
+      QVERIFY(window.click("titlePageButton"));
+      QVERIFY(fill("titleField_title_0", QString(90, 'X')));
+      QVERIFY(window.click("titleApply"));
+      QVERIFY(pdf_job->request(pdf, true));
+      QTRY_VERIFY(!pdf_job->busy());
+      QCOMPARE(pdf_completed.size(), 2);
+      QVERIFY(!pdf_completed[1][0].toBool());
+      QCOMPARE(bytes(pdf), previous_pdf);
+      QVERIFY(pdf_job->request(pdf, false));
+      QTRY_VERIFY(!pdf_job->busy());
+      QCOMPARE(pdf_completed.size(), 3);
+      QVERIFY(pdf_completed[2][0].toBool());
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      // Restore the authored title using the document's undo, not the form.
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+    }
+    {
+      Window window(font_, state, p.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      QVERIFY(window.click("titlePageButton"));
+      QTRY_VERIFY(window.popup_open("titlePagePanel"));
+      QCOMPARE(window.item("titleField_title_0")->property("text").toString(), QString("THE LATER SIGNAL"));
+      QCOMPARE(window.item("titleField_contact_4")->property("text").toString(), QString("june@example.test"));
+      QVERIFY(window.click("titleCancel"));
+      QCOMPARE(document_elements(*window.flow.document()).back().id, initial.elements.back().id);
+    }
+  }
+  void imported_title_form_keeps_metadata_and_multiline_source_with_export_gates() {
+    const auto input = path("title-import") + ".fountain";
+    const auto original = bytes(APOLLO_IMPORT_FIXTURE_DIR "/writer-subset.fountain");
+    replace_file(input, original);
+    const auto state = path("title-import-state");
+    QString directory;
+    QByteArray metadata;
+    {
+      Window window(font_, state, {}, {}, input);
+      QTRY_VERIFY(window.flow.intake_preview());
+      QTRY_VERIFY(!window.flow.busy());
+      window.item("intakeProjectName")->setProperty("text", "Title import " + QString::number(count_));
+      window.item("intakeProjectParent")->setProperty("text", root_.path());
+      QVERIFY(window.click("editIntake"));
+      QTRY_VERIFY(window.flow.document());
+      directory = window.flow.autosaver()->location();
+      metadata = bytes(directory + "/imported-material.json");
+      const auto before = document_elements(*window.flow.document());
+      QVERIFY(window.click("titlePageButton"));
+      auto* contact = window.item("titleField_contact_4");
+      QVERIFY(contact);
+      contact->forceActiveFocus();
+      QMetaObject::invokeMethod(contact, "selectAll");
+      window.type("June Vale");
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      window.type("june@example.test");
+      QVERIFY(window.click("titleAdd_author"));
+      QTRY_VERIFY(window.item("titleField_author_6"));
+      window.type("René Wells");
+      QVERIFY(window.click("titleApply"));
+      const auto elements = document_elements(*window.flow.document());
+      QCOMPARE(elements[4].text, std::string("June Vale\n\njune@example.test"));
+      const auto author = std::find_if(elements.begin(), elements.end(), [](const auto& e) { return e.text == "René Wells"; });
+      QVERIFY(author != elements.end());
+      QCOMPARE(author->type, ElementType::author);
+      QCOMPARE(elements[0].id, before[0].id);
+      QCOMPARE(elements.back(), before.back());
+      auto* layout = static_cast<ScreenplayLayout*>(window.flow.document()->documentLayout());
+      QVERIFY2(layout->error().isEmpty(), qPrintable(layout->error()));
+      auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QVERIFY(!job->check(true).isEmpty());
+      QVERIFY(job->check(false).isEmpty());
+      const auto pdf = path("import-title-pdf") + ".pdf";
+      replace_file(pdf, "Existing PDF");
+      auto* pdf_job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+      QVERIFY(!pdf_job->request(pdf, false));
+      QCOMPARE(bytes(pdf), QByteArray("Existing PDF"));
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*window.flow.document()), before);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*window.flow.document()), elements);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(bytes(directory + "/imported-material.json"), metadata);
+      QCOMPARE(bytes(directory + "/imports/original.fountain"), original);
+    }
+    {
+      Window window(font_, state, directory);
+      QTRY_VERIFY(window.flow.document());
+      QVERIFY(window.click("titlePageButton"));
+      QTRY_VERIFY(window.popup_open("titlePagePanel"));
+      QCOMPARE(window.item("titleField_contact_4")->property("text").toString(), QString("June Vale\n\njune@example.test"));
+      QVERIFY(window.click("titleCancel"));
+      QVERIFY(window.click("importedMaterial"));
+      QTRY_VERIFY(window.item("intakeSource"));
+      QCOMPARE(window.item("intakeSource")->property("text").toString().toUtf8(), original);
+      QCOMPARE(bytes(directory + "/imported-material.json"), metadata);
+    }
+    QCOMPARE(bytes(input), original);
+  }
   void emphasis_authoring_survives_save_reopen_and_export() {
     const auto fixture = QStringLiteral(APOLLO_IMPORT_FIXTURE_DIR "/emphasis-authoring");
     const auto original = bytes(fixture + ".fountain");

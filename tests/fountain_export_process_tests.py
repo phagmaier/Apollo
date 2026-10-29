@@ -276,6 +276,30 @@ def emphasis_authoring(editor, flow_tests, root):
             (canonical, presented(expected), True)]
 
 
+def title_authoring(editor, flow_tests, root):
+    """Applied form fields reach a frozen worker and fresh-process exports."""
+    output = root / "title-authored"
+    run(flow_tests, "title_form_apply_cancel_undo_reopen_and_export",
+        env=dict(os.environ, APOLLO_TITLE_OUTPUT=str(output)))
+    body = [{"type": "action", "text": "Current writing."},
+            {"type": "action", "text": "Second paragraph."}]
+    title = [{"field": field, "text": text} for field, text in (
+        ("title", "THE SIGNAL"), ("credit", "Written by"), ("author", "June Vale"),
+        ("source", "Based on a radio play"), ("contact", "june@example.test"),
+        ("draftDate", "October 2026"))]
+    captured = {"titlePage": title, "elements": body}
+    later = json.loads(json.dumps(captured))
+    later["titlePage"][0]["text"] = "THE LATER SIGNAL"
+    reopened = output / "reopened.fountain"
+    run(editor, output / "project", "--export-fountain", reopened)
+    assert reopened.read_text() == (
+        "Title: THE LATER SIGNAL\nCredit: Written by\nAuthor: June Vale\n"
+        "Source: Based on a radio play\nContact: june@example.test\nDraft date: October 2026\n\n"
+        "Current writing.\n\nSecond paragraph.\n")
+    return [(output / "captured.fountain", captured, True),
+            (output / "body.fountain", captured, False), (reopened, later, True)]
+
+
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--editor", required=True, type=pathlib.Path)
@@ -339,6 +363,7 @@ def main():
     punctuation_cases = punctuation_subset(editor, root)
     scene_spacing_cases = scene_spacing_subset(editor, root)
     emphasis_cases = emphasis_authoring(editor, options.flow_tests, root)
+    title_cases = title_authoring(editor, options.flow_tests, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -351,7 +376,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

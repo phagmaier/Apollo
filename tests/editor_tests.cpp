@@ -16,6 +16,7 @@
 #include <QProcess>
 #include <QQuickWindow>
 #include <QRegularExpression>
+#include <QSet>
 #include <QTextBlock>
 #include <QTextFrame>
 #include <QTextLayout>
@@ -941,6 +942,174 @@ private slots:
     QCOMPARE(element_type(document_->findBlock(parenthetical.position())), ElementType::parenthetical);
     press(Qt::Key_Z, Qt::ControlModifier);
     QCOMPARE(block_element(document_->findBlock(parenthetical.position())), original);
+  }
+
+  void title_page_applies_exact_fields_and_preserves_body_history() {
+    const auto document = screenplay_document({{ElementType::action, "Body.", false, {{0, 4, Style::italic}}, "body"}}, font_);
+    EditorCommands commands(document.get());
+    commands.typeText(5, 5, 5, QStringLiteral("!"));
+    const auto body = document_elements(*document).front();
+    const QVariantList entries{
+        QVariantMap{{"id", ""}, {"field", "title"}, {"text", QStringLiteral("  Café 𝄞\nSecond\n  ")}},
+        QVariantMap{{"id", ""}, {"field", "credit"}, {"text", QStringLiteral("")}},
+        QVariantMap{{"id", ""}, {"field", "author"}, {"text", QStringLiteral("é e\u0301")}},
+        QVariantMap{{"id", ""}, {"field", "source"}, {"text", QStringLiteral("A\tB")}},
+        QVariantMap{{"id", ""}, {"field", "contact"}, {"text", QStringLiteral("\n\n")}},
+        QVariantMap{{"id", ""}, {"field", "draftDate"}, {"text", QStringLiteral(" Draft ")}}
+    };
+    QVERIFY(commands.setTitlePage(entries));
+    const auto applied = document_elements(*document);
+    QCOMPARE(applied.size(), std::size_t(7));
+    QCOMPARE(applied.back(), body);
+    const auto titles = commands.titlePage();
+    QCOMPARE(titles.size(), entries.size());
+    QSet<QString> ids;
+    for (qsizetype i = 0; i < entries.size(); ++i) {
+      const auto actual = titles[i].toMap(), expected = entries[i].toMap();
+      QCOMPARE(actual.size(), 3);
+      QCOMPARE(actual["field"], expected["field"]);
+      QCOMPARE(actual["text"], expected["text"]);
+      const auto id = actual["id"].toString();
+      QVERIFY(!id.isEmpty() && id != QStringLiteral("body") && !ids.contains(id));
+      ids.insert(id);
+      QVERIFY(applied[i].styles.empty());
+    }
+    const int steps = document->availableUndoSteps();
+    QVERIFY(commands.setTitlePage(titles));
+    QCOMPARE(document->availableUndoSteps(), steps);
+    document->undo();
+    QCOMPARE(document_elements(*document), std::vector<Element>{body});
+    QVERIFY(commands.titlePage().isEmpty());
+    document->undo();
+    QCOMPARE(document_elements(*document).front().text, std::string("Body."));
+    document->redo();
+    document->redo();
+    QCOMPARE(document_elements(*document), applied);
+    QCOMPARE(commands.titlePage(), titles);
+  }
+
+  void title_page_repeated_entries_keep_ids_and_unchanged_emphasis() {
+    const auto document = screenplay_document({
+        {ElementType::title, "Café old Ω", false, {{0, 5, Style::bold}, {10, 12, Style::italic}}, "title"},
+        {ElementType::author, "Same", false, {{0, 4, Style::underline}}, "author1"},
+        {ElementType::author, "", false, {}, "author2"},
+        {ElementType::contact, "Remove", false, {}, "contact"},
+        {ElementType::dialogue, "One.\nTwo.", false, {{5, 9, Style::italic}}, "body"}}, font_);
+    EditorCommands commands(document.get());
+    const auto before = document_elements(*document);
+    auto entries = commands.titlePage();
+    QCOMPARE(entries[1].toMap()["id"].toString(), QStringLiteral("author1"));
+    QCOMPARE(entries[2].toMap()["id"].toString(), QStringLiteral("author2"));
+    auto title = entries[0].toMap();
+    title["text"] = QStringLiteral("Café new\n𝄞 Ω");
+    entries[0] = title;
+    entries.removeLast();
+    entries.append(QVariantMap{{"id", ""}, {"field", "author"}, {"text", "Same"}});
+    QVERIFY(commands.setTitlePage(entries));
+    const auto applied = document_elements(*document);
+    auto expected_title = before[0];
+    expected_title.text = "Café new\n𝄞 Ω";
+    expected_title.styles = {{0, 5, Style::bold}, {15, 17, Style::italic}};
+    QCOMPARE(applied[0], expected_title);
+    QCOMPARE(applied[1], before[1]);
+    QCOMPARE(applied[2], before[2]);
+    QCOMPARE(applied[3].type, ElementType::author);
+    QCOMPARE(applied[3].text, std::string("Same"));
+    QVERIFY(applied[3].styles.empty() && applied[3].id != before[1].id);
+    QCOMPARE(applied[4], before[4]);
+    document->undo();
+    QCOMPARE(document_elements(*document), before);
+    document->redo();
+    QCOMPARE(document_elements(*document), applied);
+    // A common high surrogate is not a safe replacement boundary.
+    auto unicode = commands.titlePage();
+    auto changed = unicode[0].toMap();
+    changed["text"] = QStringLiteral("Café new\n𝄟 Ω");
+    unicode[0] = changed;
+    QVERIFY(commands.setTitlePage(unicode));
+    QCOMPARE(commands.titlePage()[0].toMap()["text"], changed["text"]);
+    QCOMPARE(document_elements(*document)[0].styles, expected_title.styles);
+  }
+
+  void title_page_removes_last_or_only_titles_without_losing_body() {
+    for (const auto& elements : std::vector<std::vector<Element>>{
+             {{ElementType::title, "", false, {}, "title"}},
+             {{ElementType::author, "First", false, {}, "a"}, {ElementType::title, "Last", false, {}, "t"}},
+             {{ElementType::action, "Body", false, {{0, 4, Style::bold}}, "body"},
+              {ElementType::title, "Last", false, {}, "title"}}}) {
+      const auto document = screenplay_document(elements, font_);
+      EditorCommands commands(document.get());
+      const auto before = document_elements(*document);
+      QVERIFY(commands.setTitlePage({}));
+      QVERIFY(commands.titlePage().isEmpty());
+      const auto after = document_elements(*document);
+      QCOMPARE(after.size(), std::size_t(1));
+      if (elements[0].type == ElementType::action) QCOMPARE(after[0], before[0]);
+      else {
+        QCOMPARE(after[0].type, ElementType::action);
+        QVERIFY(after[0].text.empty() && !after[0].id.empty());
+        QVERIFY(after[0].id != before[0].id);
+      }
+      document->undo();
+      QCOMPARE(document_elements(*document), before);
+      document->redo();
+      QCOMPARE(document_elements(*document), after);
+    }
+  }
+
+  void title_page_refuses_invalid_or_stale_submissions_atomically() {
+    const auto document = screenplay_document({
+        {ElementType::title, "Title", false, {}, "title"}, {ElementType::author, "", false, {}, "author"},
+        {ElementType::action, "Body", false, {}, "body"}}, font_);
+    EditorCommands commands(document.get());
+    const auto original = commands.titlePage();
+    QList<QVariantList> invalid;
+    auto replace = [&](const char* key, const QVariant& value) {
+      auto entries = original;
+      auto entry = entries[0].toMap();
+      entry[key] = value;
+      entries[0] = entry;
+      invalid.append(entries);
+    };
+    replace("field", "unknown");
+    replace("field", "author");
+    replace("id", "body");
+    replace("id", "gone");
+    replace("id", 42);
+    replace("text", 42);
+    for (const QChar character : {QChar('\r'), QChar(0x2028), QChar(0x2029), QChar(0xfdd0),
+                                  QChar(0xfdd1), QChar(0xd800), QChar(0xdc00)})
+      replace("text", QStringLiteral("Changed") + character);
+    auto duplicate = original;
+    duplicate.append(original[0]);
+    invalid.append(duplicate);
+    invalid.append(QVariantList{original[1], original[0]});
+    invalid.append(QVariantList{QStringLiteral("not a map")});
+    invalid.append(QVariantList{QVariantMap{{"id", ""}, {"field", "title"}}});
+    // Validation must finish before a valid earlier row can mutate anything.
+    auto late_invalid = original;
+    auto first = late_invalid[0].toMap();
+    first["text"] = QStringLiteral("Would change");
+    late_invalid[0] = first;
+    late_invalid.append(QVariantMap{{"id", ""}, {"field", "bad"}, {"text", ""}});
+    invalid.append(late_invalid);
+    const auto before = document_elements(*document);
+    for (const auto& entries : invalid) {
+      QVERIFY(!commands.setTitlePage(entries));
+      QCOMPARE(document_elements(*document), before);
+      QVERIFY(!document->isUndoAvailable());
+      QVERIFY(!document->isModified());
+    }
+    // A form snapshot cannot retarget an element whose actual type changed.
+    commands.cycleType(0, false);
+    const auto retyped = document_elements(*document);
+    const int steps = document->availableUndoSteps();
+    QVERIFY(!commands.setTitlePage(original));
+    QCOMPARE(document_elements(*document), retyped);
+    QCOMPARE(document->availableUndoSteps(), steps);
+    document->undo();
+    QVERIFY(commands.setTitlePage(original));
+    QVERIFY(document->isRedoAvailable());
   }
 
   void empty_speeches_follow_real_keys() {

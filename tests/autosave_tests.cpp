@@ -1,4 +1,5 @@
 #include "editor/autosave.h"
+#include "editor/editor_commands.h"
 #include "editor/editor_view.h"
 #include "editor/pdf_export_job.h"
 #include "editor/screenplay_layout.h"
@@ -315,6 +316,48 @@ private slots:
     QTRY_VERIFY(saved());
     QVERIFY(document_elements(*document_) == typed);
     QVERIFY(source::open_project(project_path_).screenplay.elements == source::canonical({0, typed}).elements);
+  }
+
+  void title_page_apply_is_saved_and_undo_reopens_exactly() {
+    auto elements = scene;
+    elements.insert(elements.begin(), {
+        {T::title, "Original", false, {{0, 8, Style::bold}}, "title"},
+        {T::author, "", false, {}, "blank-author"}});
+    QVERIFY(create(elements));
+    QVERIFY(open_project());
+    auto* commands = document_->findChild<EditorCommands*>();
+    QVERIFY(commands);
+    const auto original = document_elements(*document_);
+    auto entries = commands->titlePage();
+    auto title = entries[0].toMap();
+    title["text"] = QStringLiteral("Original\nCafé 𝄞 ");
+    entries[0] = title;
+    entries.append(QVariantMap{{"id", ""}, {"field", "contact"}, {"text", QStringLiteral("  Rue\n\nParis ")}});
+    QVERIFY(commands->setTitlePage(entries));
+    const auto applied = document_elements(*document_);
+    // Capture immediately, before the asynchronous save can complete.
+    QCOMPARE(applied.front().text, std::string("Original\nCafé 𝄞 "));
+    QCOMPARE(applied[1], original[1]);
+    QCOMPARE(applied[2].text, std::string("  Rue\n\nParis "));
+    QCOMPARE(std::vector<Element>(applied.begin() + 3, applied.end()),
+             std::vector<Element>(original.begin() + 2, original.end()));
+    QTRY_VERIFY(saved());
+    const auto disk = saved_json(project_path_).value("titlePage").toArray();
+    QCOMPARE(disk.size(), 3);
+    QCOMPARE(disk[0].toObject().value("text").toString(), QStringLiteral("Original\nCafé 𝄞 "));
+    QCOMPARE(disk[1].toObject().value("text").toString(), QStringLiteral(""));
+    QCOMPARE(disk[2].toObject().value("id").toString(), QString::fromStdString(applied[2].id));
+    QCOMPARE(source::open_project(project_path_).screenplay.elements, source::canonical({0, applied}).elements);
+    document_->undo();
+    QCOMPARE(document_elements(*document_), original);
+    QTRY_VERIFY(saved());
+    QCOMPARE(source::open_project(project_path_).screenplay.elements, source::canonical({0, original}).elements);
+    QVERIFY(document_->isRedoAvailable());
+    document_->redo();
+    QTRY_VERIFY(saved());
+    QCOMPARE(document_elements(*document_), applied);
+    QVERIFY(open_project());
+    QCOMPARE(document_elements(*document_), source::canonical({0, applied}).elements);
   }
 
   // Edits through the real editor save and reopen as the same document.

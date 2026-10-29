@@ -38,6 +38,9 @@ Crash loss during copying remains unverified. The bounded case/spacing and
 emphasis steps are recorded below; remaining slice 2 flows and the rest of
 slices 3–6 are still pending. Concurrent heavy I/O can exceed the measured
 one-second crash-loss target; see task 2.3's evidence and limits.
+**Task 3d — structured title-page form is done for this bounded step**, with
+release, sanitizer, engine and full native evidence below. Other slice 3
+controls and writing assistance remain separate work.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1238,3 +1241,117 @@ Dual authoring, title form, manual page-break/act controls, suggestions,
 spelling, find/replace and scene navigation/reordering remain separate work.
 Native virtual input is not physical-input latency or owner comfort/appearance
 acceptance. No new crash-loss, copying-loss or power-loss guarantee follows.
+
+### Task 3d — structured title-page form
+
+2026-10-29. **Done for bounded task 3d**, including final verification. The form
+is available in editable ordinary projects and admitted editable import copies.
+This does not finish slice 3, full import/export compatibility, or the writing
+milestone.
+
+**Title page… / Ctrl+Shift+T** opens six labeled groups: title, writing credit,
+authors, source/based-on credit, contact information and draft date. Fields
+support keyboard navigation, visible focus, plain text, deliberate breaks and
+separate repeated entries. **Apply / Ctrl+Enter** makes one document undo step;
+**Cancel / Escape** discards the form draft. Autosave/recovery/reopen and both
+export jobs use that same applied document; later form changes cannot enter an
+accepted export snapshot. Unused absent fields remain absent; clearing an
+existing entry preserves its empty text/identity until explicitly removed.
+Unchanged emphasis and body history survive. The desk title follows Apply,
+Undo/Redo and clearing rather than retaining its opening-only value.
+
+The [source contract](source-format.md#structured-title-page-form-slice-3-task-3d)
+records editing boundaries. [Title placement](export-profile.md#title-page-proposal-from-the-sample)
+now supports deliberate/blank lines and repeated fields on the existing fixed
+anchors, with independent original expectations. Off-page or overlapping title
+text reports a layout/PDF failure instead of cropped success. A body-only PDF
+removes title fields before layout, so a title-only failure does not block it.
+Both formats retain the shared **Include title page** choice and logical body
+numbering.
+
+**No gate was widened:** source v1, `writer-subset-5` and
+`fountain-canonical-4` are unchanged. Multiline, blank, over-48-character or
+lowercase-title values remain saveable but outside the included-title Fountain
+subset; omitting the title bypasses only its checks. Imported PDF stays blocked
+even when the title is omitted. Immutable imported originals and unsupported
+metadata/notes/stash remain accessible and unchanged. Owner-private material and
+`prompt.md` are not part of this change.
+
+Independent expectations cover all six fields, repeated authors/contact,
+Unicode, styles, blank lines, title omission and two logical body pages.
+The new engine checks fail when compiled against the pre-task engine.
+Real form controls cover Apply/Cancel, one-step undo/redo, autosave/reopen,
+held-worker snapshot isolation, Fountain refusal/file preservation, shared
+omission choice, PDF layout failure/old-file preservation, and the separate
+imported-PDF gate. The actual authored Fountain exports and fresh-process
+re-export are also read by aw-parser; shared-engine agreement is not the oracle.
+
+Native real-key checks are repeatable through `tools/check-wayland.sh`, which
+now runs `tests/title_page_native_smoke.py` using only an isolated synthetic
+ordinary project and its own focused child. The exact saved field values,
+Tab focus/scroll, Apply/Cancel, whole-title Undo/Redo, autosave, fresh-process
+editing, actual PDF content and exact Fountain are observed. No desktop-wide
+screenshot or clipboard capture is used by that title smoke.
+
+#### Verification and review
+
+| Check | Observed result |
+| --- | --- |
+| Release (`mise run check`, full native runner stage 1) | **23/23**; repeat-run fixture setup corrected before the final pass |
+| Sanitizers (`mise run check-debug`) | **23/23**, ASan/UBSan with no sanitizer report; final behavior-only PDF outcome assertions also pass in the focused sanitizer run |
+| Engine-only (`mise run check-engine`) | **2/2**, without Qt/PDF |
+| Full `tools/check-wayland.sh` | All six stages pass: native editor **84/84**, export lifecycle **13/13**, project flows **40/40**, compose/dead-key input, first paint, PDF snapshots, typing and export while typing |
+| Real compositor input | Title smoke passes all six fields, keyboard traversal/scroll, Apply/Cancel, whole-title Undo/Redo, autosave, fresh-process edit/undo, PDF content and exact Fountain |
+| Independent export checks | Hand-derived multiline-title geometry/styles and form-authored PDF content pass; aw-parser independently reads **24** exported/expected cases, including three actual title-authoring exports |
+| Independent Academy reference | All 11 anchored body pages and full body text sequence pass with the four unchanged documented deviations |
+| Actual surface | Open/populated native form captures inspected; no owner appearance/comfort acceptance inferred |
+
+Fresh native Wayland/threaded-OpenGL instrumentation, 200 synthetic keys per
+workload per mode:
+
+| Observed sample | Primary (203 displayed pages) | Stress (507 displayed pages) |
+| --- | ---: | ---: |
+| Typing key-to-frame p95 / max | 18.0 / 19.3 ms | 43.1 / 44.6 ms |
+| Export-while-typing key-to-frame p95 / max | 22.7 / 25.2 ms | 53.1 / 62.9 ms |
+| Warm open to first frame, typing run | 300.7 ms | 528.9 ms |
+| Actual PDF requests / maximum completion time | 50 / 341.6 ms | 34 / 691.7 ms |
+| Sampled editor-plus-helper PSS maximum, export mode | 117.6 MiB | 178.1 MiB |
+
+No >100 ms stall or missing frame was observed. The primary samples meet the
+exercised spike targets. These are the existing unsaved `--measure` /
+`--measure-export` workload paths, not timings with autosave or later assistance.
+The title form's real-key autosave/reopen is a separate small-project check.
+PSS is a requested-20-ms sampled maximum, not an unsampled peak.
+
+Direct requirement/test review corrected the desk's stale opening-only title
+and added title/undo/clear assertions. Repeating the suite exposed a new
+PDF fixture setup bug: it tried to create its existing disposable project.
+Setup now removes only that test's named project, and final repeated checks
+pass. The original engine fails the new multiline/repeat/overlap checks; its
+temporary probe source/binary were removed. Existing public fixtures, private
+material, dependencies and font pins are unchanged.
+The final test-quality pass uses actual PDF completion outcomes and preserved
+file bytes rather than pinning error-message wording. Both title flows pass
+again offscreen, on native Wayland and under sanitizers after that refinement.
+Direct completion review has no remaining in-scope finding.
+
+Native evidence: `build/wayland-check-20261029-031948-oVrSgx/`, including
+`native-title-page/evidence.json` and `results.txt`;
+`build/task-title-native-final.log` contains the final release/full native run.
+Engine/Academy logs: `build/task-title-{engine,academy}.log`. Form captures:
+`build/release/project-access-tests/title-form{,-open}.png`.
+Sanitizer evidence: `build/task-title-debug-final.log` and
+`build/task-title-debug-focused.log`.
+The earlier `build/task-title-native.log` records the fixture-reuse failure,
+not final evidence.
+
+#### Remaining limits
+
+Fixed title anchors are not an automatic composition or wrapping system:
+overlong/overlapping fields need writer adjustment or title omission. Included
+title Fountain eligibility, imported-PDF blocking, full Fountain grammar and
+the remaining writing features retain their earlier gates. Extended comfort,
+owner appearance acceptance and screen-reader interaction were not exercised.
+Native virtual input is not physical-input latency. No new crash-loss,
+copying-loss or power-loss guarantee follows from these title checks.
+

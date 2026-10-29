@@ -20,7 +20,6 @@ QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob*
   QStringList scenes;
   // Opening snapshot for the bounded visual check, not a scene navigator.
   for (auto block = document.begin(); block != document.end(); block = block.next()) {
-    if (element_type(block) == ElementType::title) title = block.text();
     if (element_type(block) == ElementType::heading)
       scenes.push_back(QString::fromStdString(presented_text(ElementType::heading, block.text().toStdString())));
   }

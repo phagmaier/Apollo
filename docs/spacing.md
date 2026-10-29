@@ -66,6 +66,9 @@ editor, the PDF and clean Fountain alike.
 
 Tabs remain outside the subset everywhere: plain paste turns them into spaces,
 import keeps them review-only, and the export refuses them.
+This plain-paste rule describes the screenplay body editor; the
+[structured title form](source-format.md#structured-title-page-form-slice-3-task-3d)
+uses plain text fields without the body's paragraph/type conversion.
 
 ### Writing
 

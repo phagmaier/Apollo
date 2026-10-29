@@ -14,6 +14,7 @@ namespace apollo::editor {
 class EditorCommands : public QObject {
   Q_OBJECT
   Q_PROPERTY(QVariantList emptySpeeches READ emptySpeeches NOTIFY emptySpeechesChanged)
+  Q_PROPERTY(QString titleText READ titleText NOTIFY titleTextChanged)
 public:
   // Clipboard format that keeps element types, emphasis, and dual flags.
   static inline const QString mime_type = QStringLiteral("application/x-apollo-elements");
@@ -39,14 +40,23 @@ public:
   Q_INVOKABLE int locateEmptySpeech(const QString& id) const;
   // One undoable type-only change. Refuses stale, valid, or dual-related speech.
   Q_INVOKABLE int treatSpeechAsAction(const QString& id);
+  // Live title entries in document order: {id, field, text}. Existing ids
+  // must keep their type and relative order; an empty id creates an entry.
+  Q_INVOKABLE QVariantList titlePage() const;
+  // Full desired list, including empty entries. Omission explicitly removes
+  // an existing title. One undo step; invalid or unchanged lists do not edit.
+  Q_INVOKABLE bool setTitlePage(const QVariantList& entries);
+  const QString& titleText() const { return title_text_; }
 
 signals:
   void emptySpeechesChanged();
+  void titleTextChanged();
 
 private:
   QTextDocument* document_;
   int typed_end_ = -1, typed_steps_ = -1;
   QVariantList empty_speeches_;
-  void refreshEmptySpeeches();
+  QString title_text_;
+  void refreshDocumentState();
 };
 }

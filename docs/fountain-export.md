@@ -88,6 +88,17 @@ semantics and canonical bytes by aw-parser, not only Apollo's interpreter.
 
 Without **Include title page**, title fields are neither checked nor written.
 
+The structured title form (task 3d) preserves multiline and blank writing in
+source and supports its bounded PDF layout; it does **not** widen this
+Fountain contract. A cleared existing entry is still a saved empty field until
+explicitly removed, and receives the existing refusal when included. An unused
+absent field left empty creates no element. Apply commits all form changes in
+one document undo step. A request captures only applied changes, and a later
+Apply cannot change its snapshot. The real-controls checks and independent
+aw-parser now also verify six authored title fields, an accepted snapshot
+followed by a later title edit, body-only output and fresh-process re-export.
+
+
 ## Verification of each export
 
 After the explicit checks pass, the worker reads the produced text with the

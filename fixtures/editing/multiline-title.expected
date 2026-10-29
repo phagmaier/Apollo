@@ -1,0 +1,32 @@
+# ORIGINAL PUBLIC synthetic title page, authored for Apollo; no reference/private source.
+# Hand-derived from docs/export-profile.md, not an engine dump.
+# Title begins at 4: Harbor, blank, Signal. Credit begins at 10, takes two slots.
+# Two two-line authors occupy 15-18; source is two slots below the last, at 20-21.
+# Five authored contact lines end at 48: Office44, blank45, Lane46, Port47, phone48.
+# Two draft-date lines are bottom-aligned at 47-48. Contacts x=374.4pt; dates x=108pt.
+# Other title fields center at 306pt using 7.1953125pt per Unicode character.
+# Empty authored lines (title5/contact45) occupy slots but have no PDF glyphs.
+# Body pages retain number=none and number=2. whether the title is included or omitted.
+page title number=none
+4	title@center	HARBOR	bold=all
+6	title@center	SIGNAL	bold=all
+10	credit@center	Written by	italic=all
+11	credit@center	for the screen
+15	author@center	Ana Núñez	underline=all
+16	author@center	Ben West
+17	author@center	C. River
+18	author@center	D. Stone
+20	source@center	Based on a radio play
+21	source@center	by E. Cove	italic=all
+44	contact@5.2in	Harbor Office
+46	contact@5.2in	12 Beacon Lane
+47	contact@5.2in	Port Example
+48	contact@5.2in	555-0123	bold=all
+47	draft-date@1.5in	Revised draft
+48	draft-date@1.5in	October 29, 2026
+page 1 number=none
+1	heading	INT. SIGNAL ROOM - NIGHT
+3	action	The receiver hums.
+page 2 number=2.
+1	heading	EXT. HARBOR - DAWN
+3	action	A light answers.
