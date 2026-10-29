@@ -378,6 +378,7 @@ private slots:
   void continuous_typing_is_captured() {
     QVERIFY(create(scene));
     Events events;
+    const auto drain = qScopeGuard([&] { view_.reset(); saver_.reset(); });
     QVERIFY(open_project(events.hook()));
     place(position_of("glass.") + 6);
     QElapsedTimer clock;
@@ -411,6 +412,7 @@ private slots:
         saved_at_first_ack = saver_->saved_revision();
       }
     };
+    const auto drain = qScopeGuard([&] { view_.reset(); saver_.reset(); });
     QVERIFY(open_project(events.hook()));
     place(position_of("glass.") + 6);
     type("x");
@@ -500,6 +502,7 @@ private slots:
     events.also = [&](Phase phase, std::uint64_t) {
       if (static_cast<int>(phase) == when) source::replace_file(path, external);
     };
+    const auto drain = qScopeGuard([&] { view_.reset(); saver_.reset(); });
     QVERIFY(open_project(events.hook()));
     place(position_of("glass.") + 6);
     type(" My work.");
@@ -859,6 +862,7 @@ private slots:
     events.also = [&](Phase phase, std::uint64_t) {
       if (phase == Phase::written && inject) throw std::runtime_error("injected short write");
     };
+    const auto drain = qScopeGuard([&] { view_.reset(); saver_.reset(); });
     QVERIFY(open_project(events.hook()));
     const auto before = read_file(project_path_ + "/screenplay.json");
     const auto moved = project_path_ + "-moved";
