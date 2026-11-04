@@ -369,9 +369,8 @@ int agreement(const char* path, const QString& directory, int edits, bool snapsh
   if (!job.request(destination, include_title)) throw std::runtime_error(job.status().toStdString());
   if (snapshot) {
     const auto original_elements = apollo::editor::document_elements(*document);
-    // Select-all replacement deliberately cannot cross pairs or markers.
-    // Explicitly unpair from the last cue first, then remove safe markers,
-    // using authoring commands and one undo step for the live mutation.
+    // Select-all replacement cannot cross pairs, markers or title fields.
+    // Remove those through their authoring commands in the same undo step.
     auto* commands = document->findChild<apollo::editor::EditorCommands*>();
     QTextCursor live(document.get());
     live.beginEditBlock();
@@ -396,6 +395,10 @@ int agreement(const char* path, const QString& directory, int edits, bool snapsh
         editor->setProperty("cursorPosition", caret);
       }
       block = previous;
+    }
+    if (!commands->titlePage().isEmpty() && !commands->setTitlePage({})) {
+      live.endEditBlock();
+      throw std::runtime_error("snapshot instrumentation cannot remove title fields");
     }
     // Real editor typing, caret movement, undo and redo after the request.
     // The resulting live text cannot be exported (unsupported glyph) and

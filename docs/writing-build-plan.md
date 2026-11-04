@@ -60,8 +60,18 @@ affected editor/project-flow/oracle checks pass again after the final menu fix.
 Real controls, persistence, independent Fountain/PDF and native Compose/wtype
 checks pass. fcitx is unverified here, and the existing heavy-I/O crash-loss
 limit remains. See [the contract and evidence](element-types.md) and
-[task result](#task-3e--element-type-controls). Remaining selection/clipboard,
-shortcut-reference, assistance/navigation and interchange work stays pending.
+[task result](#task-3e--element-type-controls). Task 3f below completes the
+bounded selection/clipboard step; shortcut-reference, assistance/navigation
+and interchange work stays pending.
+
+**Task 3f — selection and clipboard behavior is done for this bounded step (2026-11-04).**
+This bounded task defines ordinary replacement, deliberate breaks and paste
+boundaries, preserves external text/type and internal emphasis, and verifies
+one-step undo and existing title/page-break/dual protections. Release and
+sanitizers pass 24/24 each, engine-only 2/2, plus native Compose/primary-selection
+and compositor-key checks. See [the contract](selection-and-clipboard.md) and
+[results and verification limits](#task-3f--selection-and-clipboard-behavior).
+Shortcut lookup, assistance and broader interchange remain subsequent work.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1578,3 +1588,80 @@ suite passes without that competing workload. Owner comfort, sustained typing
 performance, general selection/clipboard rules, standalone shortcut lookup,
 broader Fountain compatibility,
 imported PDF and later milestone slices remain separate work.
+
+### Task 3f — selection and clipboard behavior
+
+2026-11-04. **Done for this bounded step**, with the evidence and limits below.
+The [behavior table](selection-and-clipboard.md)
+records the delegated Enter/deletion, selection, composing and clipboard
+conventions. This completes only the selected bounded task;
+shortcut reference, assistance and broader interchange remain separate work.
+
+External paste preserves the current element type, Unicode, spaces, blank
+paragraphs and trailing breaks (tabs become one space). Dialogue paste keeps
+all lines inside one speech. Other body types retain paragraphs and U+2028
+breaks, with surviving destination halves kept separately. Apollo MIME retains
+selected types/emphasis/dual flags without copying identities. Empty clipboard
+paste preserves the selection and undo history. Middle-button paste uses the
+same rules at its clicked location. Existing marker/dual refusals remain;
+title-field boundary joins and replacements now refuse with an explanation.
+
+The first real-key checks failed on type/whitespace preservation, empty-paste
+selection retention and title-boundary replacement. New tests protect the
+original failures, reversed replacement through six real edit routes, exact
+unselected styles/identities and one-step Undo/Redo. The original synthetic
+clipboard fixture exercises plain paste plus Apollo MIME, autosave/reopen,
+fresh-process Fountain output, hand-derived PDF slots/columns/styles and
+independent aw-parser. No source-schema, import/export version, font pin or
+dependency changed, and imported PDF remains gated.
+
+Preserved U+2028 exposed a parenthetical layout defect: the first separator
+was counted twice when wrapping the hanging continuation, causing invalid
+source mapping or an invalid Qt line access. Hand-worked engine examples fail
+on the original implementation and pass with the correction, including hidden
+leading spaces and blank/trailing lines. The editor also checks line validity
+before accessing it and retains its existing visible fallback/error behavior.
+
+Review reproduced an IME paragraph path around the title guard and corrected
+it, while keeping marker-only deletion beside a title available. The existing
+snapshot instrumentation's select-all mutation then hit the new title guard;
+it now removes titles through the actual title command, within the same undo
+step as unpairing/marker removal and typing. Exact elements/styles/IDs restore
+on Undo, and the already accepted PDF snapshot still matches independent
+expectations. The earlier concurrent-relink test failure and subsequent title
+snapshot failure are retained in the earlier logs, not counted as final evidence.
+
+| Check | Observed result |
+| --- | --- |
+| Isolated `mise run check` | **24/24** passed |
+| `mise run check-debug` | **24/24** passed with address/undefined sanitizers |
+| `mise run check-engine` | **2/2** passed |
+| Final paired-dialogue paste assertion | Focused real-key check passes again in release and sanitizer builds after the last assertion addition |
+| Native Wayland editor, Compose input plugin, OpenGL | **131 passed**, four optional compositor/fcitx checks skipped in this run; primary-selection paste passes |
+| Native project flows | **45 passed**, no skips; software renderer, exact clipboard writing/styles/IDs, autosave/reopen and export checks included |
+| Native compositor keys | `wtype` Ctrl+V replaces reversed selection with multiline dialogue; exact styles/IDs and one-step Undo/Redo pass separately |
+| Independent exports | Poppler checks pasted text, blank-line slots, columns and italic suffixes; aw-parser 0.1.1 independently reads **39 exports** as hand-worked models |
+| Direct completion review | Requirements, changed code, untracked fixtures, test necessity and whitespace checked; no remaining in-scope finding |
+| Additional Academy regression comparison | **Unavailable:** `reference/academy/expected.tsv` and the local reference PDF are absent; both ordinary and browser-user-agent downloads of the public guide returned HTTP 403 |
+
+Final logs: `build/task-3f-release-verified.log`,
+`build/task-3f-debug.log`, `build/task-3f-engine.log`,
+`build/task-3f-native-{editor,flows,keys}.log` and
+`build/task-3f-paired-paste-{release,debug}.log`. The original regression failures
+are retained in `build/task-3f-red.log` and `build/task-3f-engine-red.log`;
+the latter reproduces the original invalid parenthetical source mapping.
+`build/task-3f-academy.log` and `build/task-3f-reference-download*.log` record
+the missing-reference/download limitation. Earlier release logs contain the
+concurrent relink or title-snapshot failures, not final evidence.
+
+The native input context is explicitly `QT_IM_MODULE=compose`; fcitx5 is not
+installed, so the standard full fcitx runner was not run. The compositor check
+uses the already extracted `build/native-tools/usr/bin/wtype`. Native virtual
+keys are not physical-key latency. Owner comfort/appearance, sustained typing
+performance, crash-loss during copying and power-loss behavior were not newly
+assessed; the existing heavy-I/O crash-loss limit remains. Full Fountain grammar,
+imported PDF and later milestone work retain their gates. The extra Academy
+comparison remains unverified here; the independent synthetic fixtures passed.
+
+Next ready bounded work: shortcut reference and action labels. Remaining
+Fountain compatibility and slice 4 assistance/navigation are pending.

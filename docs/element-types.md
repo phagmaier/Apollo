@@ -38,7 +38,8 @@ Tab direction returns to action. Enter retains the existing element rules:
 splitting text within lyric/centered keeps its type, and Enter at its end makes
 a following action. These are bounded authoring conventions within the
 [build plan](writing-build-plan.md#editing-and-assistance-contract); full
-selection/clipboard behavior and writing assistance remain separate tasks.
+selection/clipboard conventions are now in the [task 3f contract](selection-and-clipboard.md);
+writing assistance remains separate work.
 
 ## Verification and retained limits
 
@@ -70,9 +71,10 @@ Compose is an explicit tested input-path deviation. These results do not
 validate fcitx integration. Arch's wtype 0.4-2 executable was extracted under
 `build/native-tools/` for the compositor checks; no system package changed.
 
-Selection/clipboard rules beyond this single-element type command, a standalone
-shortcut reference, everyday assistance, broader Fountain compatibility and
-imported-PDF validation remain pending. Owner comfort/appearance acceptance and
+Task 3f records [selection/clipboard rules](selection-and-clipboard.md) beyond
+this single-element type command. A standalone shortcut reference, everyday
+assistance, broader Fountain compatibility and imported-PDF validation remain
+pending. Owner comfort/appearance acceptance and
 sustained typing/export performance were not reevaluated. Existing memory and
 crash-durability limits remain, including the known heavy-I/O crash-loss limit.
 

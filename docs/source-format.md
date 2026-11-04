@@ -146,8 +146,11 @@ See the [spacing contract](spacing.md) for blank dialogue lines and page splits.
 
 Copy/cut and paste between Apollo selections preserve an existing deliberate
 break inside its element, along with its type and emphasis. Clipboard offsets
-use the same U+2028-to-`\n` mapping as the saved text. External plain-text paste
-still follows the spike's paragraph rules pending slice 3.
+use the same U+2028-to-`\n` mapping as the saved text. Task 3f's
+[selection and clipboard contract](selection-and-clipboard.md) replaces the
+spike's external-paste rules: preserve the destination type and whitespace,
+keep dialogue lines in one speech, and retain paragraphs in other body types.
+It also records title-boundary protection and plain versus Apollo emphasis.
 
 Title-page fields are laid out on the title page wherever they appear in the
 document; on save they move ahead of the body in their own order, which does

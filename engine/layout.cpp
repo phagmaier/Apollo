@@ -109,8 +109,15 @@ std::vector<std::string> speech_lines(const Element& element, std::size_t dialog
   if (first_wrap.empty()) return {""};
   if (first_wrap.size() < 2) return first_wrap;
   std::vector<std::string> lines{first_wrap.front()};
-  auto rest = std::string_view(element.text).substr(first_wrap.front().size());
-  const auto tail = wrap(rest, 16);
+  // Locate the displayed first line after hidden leading spaces, and consume
+  // its authored separator once. Passing that separator to wrap again would
+  // invent a blank continuation line (and break the editor's source mapping).
+  auto rest = std::string_view(element.text).substr(element.text.find(first_wrap.front()) + first_wrap.front().size());
+  while (!rest.empty() && rest.front() == ' ') rest.remove_prefix(1);
+  const bool authored_break = !rest.empty() && rest.front() == '\n';
+  if (authored_break) rest.remove_prefix(1);
+  auto tail = wrap(rest, 16);
+  if (authored_break && tail.empty()) tail.emplace_back();
   lines.insert(lines.end(), tail.begin(), tail.end());
   return lines;
 }

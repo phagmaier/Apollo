@@ -254,6 +254,7 @@ QTextBlock cue_with_id(QTextDocument* document, const QString& id) {
 // The elements covering [start, end), each cut to the selected part. A
 // selection edge that covers none of a block's text leaves that block out.
 std::vector<Element> selected_elements(QTextDocument* document, int start, int end) {
+  if (start > end) std::swap(start, end);
   if (const auto marker = selected_marker(document, start, end); marker.isValid())
     return {block_element(marker)};
   std::vector<Element> elements;
@@ -573,6 +574,18 @@ bool EditorCommands::refuseMarkerSelection(int start, int end) {
   return false;
 }
 
+bool EditorCommands::refuseTitleSelection(int start, int end) {
+  setTypeMessage({});
+  const auto [from, to] = std::minmax(start, end);
+  if (document_->findBlock(from) == document_->findBlock(to)) return false;
+  for (auto block = document_->findBlock(from); block.isValid() && block.position() <= to; block = block.next()) {
+    if (title_index(element_type(block)) < 0) continue;
+    setTypeMessage(QStringLiteral("Keep title fields separate from screenplay elements. Use the Title page form for structural title changes."));
+    return true;
+  }
+  return false;
+}
+
 int EditorCommands::editablePosition(int position, bool backward) const {
   const auto block = document_->findBlock(position);
   if (!block.isValid() || element_type(block) != ElementType::page_break) return position;
@@ -684,6 +697,7 @@ int EditorCommands::deleteText(int position, int start, int end, bool backward) 
       const int caret = removePageBreak(marker.position(), start, end);
       return caret < 0 ? -2 : caret;
     }
+    if (refuseTitleSelection(start, end)) return -2;
     if (refuseDualSelection(start, end)) return -2;
     return refuseMarkerSelection(start, end) ? -2 : -1;
   }
@@ -692,6 +706,12 @@ int EditorCommands::deleteText(int position, int start, int end, bool backward) 
   if (start == end && ((backward && position == block.position()) ||
       (!backward && position == block.position() + block.length() - 1))) {
     const auto adjacent = backward ? block.previous() : block.next();
+    if (adjacent.isValid() && element_type(block) != ElementType::page_break &&
+        element_type(adjacent) != ElementType::page_break &&
+        (title_index(element_type(block)) >= 0 || title_index(element_type(adjacent)) >= 0)) {
+      refuseTitleSelection(block.position(), adjacent.position());
+      return -2;
+    }
     if (adjacent.isValid() && element_type(adjacent) != ElementType::page_break &&
         element_type(block) != ElementType::page_break && (dual_member(block) || dual_member(adjacent))) {
       setDualMessage(unpair_first);
@@ -727,8 +747,13 @@ bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
     auto original_position = [&](int at) { return at < left ? at : at + right - left; };
     const int from = original_position(base + input->replacementStart());
     const int to = original_position(base + input->replacementStart() + input->replacementLength());
-    if (refuseMarkerSelection(start, end) || refuseDualSelection(start, end) ||
-        (input->replacementLength() && (refuseMarkerSelection(from, to) || refuseDualSelection(from, to)))) {
+    if (refuseTitleSelection(start, end) || refuseMarkerSelection(start, end) || refuseDualSelection(start, end) ||
+        (input->replacementLength() && (refuseTitleSelection(from, to) || refuseMarkerSelection(from, to) || refuseDualSelection(from, to)))) {
+      event->accept();
+      return true;
+    }
+    if (title_index(element_type(document_->findBlock(base))) >= 0 && paragraph_break(input->commitString())) {
+      setTypeMessage(QStringLiteral("Use the Title page form to add title fields or title line breaks."));
       event->accept();
       return true;
     }
@@ -780,13 +805,22 @@ bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
       event->accept();
       return true;
     }
+    // Qt's primary-selection path bypasses our type/whitespace/undo rules.
+    // Preserve the selected primary data before changing the caret.
+    if (event->type() == QEvent::MouseButtonPress && target >= 0) {
+      const int caret = pasteData(target, target, target,
+                                 QGuiApplication::clipboard()->mimeData(QClipboard::Selection));
+      if (caret >= 0) watched->setProperty("cursorPosition", caret);
+    }
+    event->accept();
+    return true;
   }
   return QObject::eventFilter(watched, event);
 }
 
 int EditorCommands::typeText(int position, int selectionStart, int selectionEnd, const QString& text) {
   setDualMessage({});
-  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
+  if (refuseTitleSelection(selectionStart, selectionEnd) || refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
   if (dual_member(document_->findBlock(editablePosition(position))) && paragraph_break(text)) {
     setDualMessage(unpair_first); return -1;
   }
@@ -816,7 +850,12 @@ int EditorCommands::typeText(int position, int selectionStart, int selectionEnd,
 
 int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
   setDualMessage({});
-  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
+  if (refuseTitleSelection(selectionStart, selectionEnd) || refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
+  const int target = selectionStart != selectionEnd ? std::min(selectionStart, selectionEnd) : position;
+  if (title_index(element_type(document_->findBlock(target))) >= 0) {
+    setTypeMessage(QStringLiteral("Use the Title page form to add title fields or title line breaks."));
+    return -1;
+  }
   setPageBreakMessage({});
   auto cursor = selection(document_, position, selectionStart, selectionEnd);
   if (dual_member(cursor.block())) {
@@ -1011,7 +1050,8 @@ void EditorCommands::copy(int selectionStart, int selectionEnd) {
 
 int EditorCommands::cut(int selectionStart, int selectionEnd) {
   setDualMessage({});
-  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
+  if (selectionStart == selectionEnd) return -1;
+  if (refuseTitleSelection(selectionStart, selectionEnd) || refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
   setPageBreakMessage({});
   copy(selectionStart, selectionEnd);
   auto cursor = selection(document_, selectionStart, selectionStart, selectionEnd);
@@ -1022,11 +1062,14 @@ int EditorCommands::cut(int selectionStart, int selectionEnd) {
 }
 
 int EditorCommands::paste(int position, int selectionStart, int selectionEnd) {
+  return pasteData(position, selectionStart, selectionEnd, QGuiApplication::clipboard()->mimeData());
+}
+
+int EditorCommands::pasteData(int position, int selectionStart, int selectionEnd, const QMimeData* data) {
   setDualMessage({});
-  if (refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
+  if (refuseTitleSelection(selectionStart, selectionEnd) || refuseMarkerSelection(selectionStart, selectionEnd) || refuseDualSelection(selectionStart, selectionEnd)) return -1;
   setPageBreakMessage({});
-  const auto* data = QGuiApplication::clipboard()->mimeData();
-  if (!data) return position;
+  if (!data) return -1;
   std::vector<Element> elements;
   bool apollo_selection = false;
   if (data->hasFormat(mime_type)) {
@@ -1040,18 +1083,31 @@ int EditorCommands::paste(int position, int selectionStart, int selectionEnd) {
     return -1;
   }
   if (!apollo_selection) {
-    // Plain text: one action paragraph per non-empty line, or dialogue when
-    // pasted inside dialogue. Line separators and tabs never reach the layout.
+    // Dialogue stays one speech with deliberate breaks, including blank lines.
+    // Other body types retain paragraphs and U+2028 deliberate breaks. A title
+    // paste stays within its field. Never infer Fountain syntax or drop spaces.
     const int target = selectionStart != selectionEnd ? std::min(selectionStart, selectionEnd) : editablePosition(position);
-    const auto type = element_type(document_->findBlock(target));
-    for (auto line : data->text().split(QRegularExpression(QStringLiteral("\\r\\n|[\\r\\n\\x{2028}\\x{2029}]")))) {
-      line.replace(QLatin1Char('\t'), QLatin1Char(' '));
-      if (!line.trimmed().isEmpty())
-        elements.push_back({type == ElementType::dialogue ? ElementType::dialogue : ElementType::action, line.toStdString()});
-    }
+    auto type = element_type(document_->findBlock(target));
+    if (type == ElementType::page_break) type = ElementType::action;
+    auto text = data->text();
+    if (text.isEmpty()) return -1;
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    text.replace(QLatin1Char('\t'), QLatin1Char(' '));
+    if (type == ElementType::dialogue || title_index(type) >= 0) {
+      text.replace(QChar::LineSeparator, QLatin1Char('\n'));
+      elements.push_back({type, text.toStdString()});
+    } else for (auto line : text.split(QLatin1Char('\n')))
+      elements.push_back({type, element_text(line)});
   }
-  if (elements.empty()) return position;
+  if (elements.empty()) return -1;
   const auto destination = document_->findBlock(selectionStart != selectionEnd ? std::min(selectionStart, selectionEnd) : editablePosition(position));
+  if (apollo_selection && (title_index(element_type(destination)) >= 0 ||
+      std::any_of(elements.begin(), elements.end(), [](const Element& e) { return title_index(e.type) >= 0; }))) {
+    setTypeMessage(QStringLiteral("Use the Title page form to paste title fields. Plain text can be pasted within one existing field."));
+    return -1;
+  }
   if (dual_member(destination) && (elements.size() != 1 || (apollo_selection &&
       (elements.front().type != element_type(destination) || elements.front().dual_right != block_element(destination).dual_right)))) {
     setDualMessage(unpair_first); return -1;

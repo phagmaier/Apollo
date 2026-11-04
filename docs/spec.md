@@ -92,8 +92,9 @@ These capabilities come from the owner's brief. Except where explicitly noted, t
 - Ordinary external text paste keeps the current element type; paragraphs
   pasted into dialogue remain dialogue. Apollo-to-Apollo paste preserves
   screenplay element types and emphasis. Ordinary paste does not guess Fountain
-  syntax; Fountain conversion uses explicit import. Detailed handling of line
-  breaks, selections, and partial elements remains to be designed.
+  syntax; Fountain conversion uses explicit import. The bounded writer's
+  implementation conventions for line breaks, selections and partial elements
+  are recorded in the [selection and clipboard contract](selection-and-clipboard.md).
 - Apply element spacing and indentation automatically, and uppercase character cues and scene headings as normal editing behavior. Flag structural or ambiguous formatting problems with suggested corrections the owner can apply and undo. Do not silently rewrite dialogue or action. Exact diagnostics and exceptions remain to be specified.
 - Dialogue without an associated character cue is a structural problem to flag
   with an undoable suggested correction. Intentional blank spacing within

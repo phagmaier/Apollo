@@ -461,6 +461,12 @@ void ScreenplayLayout::relayout() {
       double origin_y = 0;
       for (const auto& placement : placements) {
         auto line = text_layout->createLine();
+        if (!line.isValid()) {
+          error_ = QStringLiteral("QTextLayout has fewer lines than the engine in block %1").arg(index);
+          text_layout->endLayout();
+          fallback_layout();
+          return;
+        }
         line.setNumColumns(placement.end - line.textStart());
         if (line.textStart() + line.textLength() != placement.end && error_.isEmpty())
           error_ = QStringLiteral("QTextLayout did not break block %1 where the engine did").arg(index);

@@ -1,0 +1,11 @@
+# Original synthetic clipboard fixture. Profile: cue 1, three speech slots
+# 2-4 (slot 3 blank); one blank before next cue 6, speech 7-9, action 11.
+# Columns are independently checked by pdf_tests.py: cue 4in, dialogue 3in.
+page 1 number=none
+1	cue	MARA
+2	dialogue	Hold.
+4	dialogue	Listen. tail.	italic=tail.
+6	cue	THEO
+7	dialogue	Hold.
+9	dialogue	Listen. tail.	italic=tail.
+11	action	Rain.

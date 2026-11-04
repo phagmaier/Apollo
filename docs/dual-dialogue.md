@@ -34,8 +34,11 @@ Conservative cross-block protection includes selections that end at a paired
 cue's start and removal of a neighboring separator. Copy is unrestricted.
 Apollo does not guess whether such replacement should remove a cue, change an
 association, or retain a pair. Unpair, make the structural edit, then explicitly
-pair complete adjacent speeches again. Ordinary external multiline paste still
-uses the spike paragraph rules outside pairs; this is not a general paste redesign.
+pair complete adjacent speeches again. Task 3f's
+[clipboard contract](selection-and-clipboard.md) supersedes the spike's plain
+paragraph rules: external multiline dialogue paste stays within one speech,
+including inside a pair. It does not change its elements, cue association or
+dual flags. Multielement paste and primary-selection paste in a pair still refuse.
 
 Existing incomplete/invalid saved pairs retain every flag and word. A persistent
 warning says the layout is a preview and Fountain may be refused. Missing speech

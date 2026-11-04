@@ -1,0 +1,13 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [],
+  "elements": [
+    {"id": "cue", "type": "character", "text": "MARA"},
+    {"id": "speech", "type": "dialogue", "text": "Hold.\n\nListen. tail.", "styles": [{"start": 15, "end": 20, "style": "italic"}]},
+    {"id": "second-cue", "type": "character", "text": "THEO"},
+    {"id": "reply", "type": "dialogue", "text": "Hold.\n\nListen. tail.", "styles": [{"start": 15, "end": 20, "style": "italic"}]},
+    {"id": "ending", "type": "action", "text": "Rain."}
+  ]
+}

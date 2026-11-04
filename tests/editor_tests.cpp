@@ -1372,8 +1372,197 @@ private slots:
     QCOMPARE(ink_mismatch(QStringLiteral("type-change")), std::make_pair(0, 0));
   }
 
-  // Plain text becomes action paragraphs at the caret, one per non-empty
-  // line; line separators and tabs never reach the document.
+  void plain_paste_preserves_type_whitespace_and_selection_data() {
+    QTest::addColumn<int>("kind");
+    for (auto kind : {ElementType::heading, ElementType::action, ElementType::cue, ElementType::parenthetical,
+                      ElementType::dialogue, ElementType::transition, ElementType::lyric, ElementType::centered})
+      QTest::newRow(std::to_string(static_cast<int>(kind)).c_str()) << static_cast<int>(kind);
+  }
+  void plain_paste_preserves_type_whitespace_and_selection() {
+    QFETCH(int, kind);
+    const auto type = static_cast<ElementType>(kind);
+    QVERIFY(open_elements({{type, "Before old after", false, {{0, 6, Style::bold}, {11, 16, Style::italic}}, "target"},
+                           {ElementType::action, "Untouched.", false, {}, "neighbor"}}));
+    const auto original = document_elements(*document_);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 10), Q_ARG(int, 7));
+    QGuiApplication::clipboard()->setText(QString::fromUtf8("é\tX\r\n\r\nY Z\n"));
+    press(Qt::Key_V, Qt::ControlModifier);
+    const auto actual = document_elements(*document_);
+    if (type == ElementType::dialogue) {
+      QCOMPARE(actual.size(), std::size_t(2));
+      QVERIFY(same_element(actual[0], {type, "Before é X\n\nY\nZ\n after", false,
+          {{0, 6, Style::bold}, {18, 23, Style::italic}}}));
+      QCOMPARE(actual[0].id, std::string("target"));
+    } else {
+      const std::vector<Element> expected{{type, "Before ", false, {{0, 6, Style::bold}}},
+          {type, "é X"}, {type, ""}, {type, "Y\nZ"}, {type, ""},
+          {type, " after", false, {{1, 6, Style::italic}}}, original[1]};
+      QVERIFY(same_elements(actual, expected));
+      QCOMPARE(actual[0].id, std::string("target"));
+    }
+    QCOMPARE(actual.back(), original.back());
+    QVERIFY2(layout()->error().isEmpty(), qPrintable(layout()->error()));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), actual);
+  }
+
+  void whitespace_paste_and_empty_clipboard_are_distinct() {
+    QVERIFY(open_elements({{ElementType::action, "Keep old.", false, {}, "target"}}));
+    const auto original = document_elements(*document_);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 5), Q_ARG(int, 8));
+    QGuiApplication::clipboard()->setText(QString());
+    press(Qt::Key_V, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    QCOMPARE(editor_->property("selectedText").toString(), QStringLiteral("old"));
+    QVERIFY(!document_->isUndoAvailable());
+    QGuiApplication::clipboard()->setText(QStringLiteral("  \t"));
+    press(Qt::Key_V, Qt::ControlModifier);
+    auto expected = original; expected[0].text = "Keep    .";
+    QCOMPARE(document_elements(*document_), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+  }
+
+  void title_boundaries_refuse_replacement_and_structural_keys() {
+    const std::vector<Element> original{{ElementType::title, "SIGNAL", false, {}, "title"},
+                                       {ElementType::action, "Body.", false, {}, "body"}};
+    for (int operation = 0; operation < 7; ++operation) {
+      QVERIFY(open_elements(original));
+      QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 4), Q_ARG(int, 9));
+      if (operation == 0) type("X");
+      if (operation == 1) press(Qt::Key_Return);
+      if (operation == 2) press(Qt::Key_Backspace);
+      if (operation == 3) press(Qt::Key_Delete);
+      if (operation == 4) press(Qt::Key_X, Qt::ControlModifier);
+      if (operation == 5) { QGuiApplication::clipboard()->setText("X"); press(Qt::Key_V, Qt::ControlModifier); }
+      if (operation == 6) { QInputMethodEvent input; input.setCommitString("X"); QGuiApplication::sendEvent(editor_, &input); }
+      QCOMPARE(document_elements(*document_), original);
+      QCOMPARE(editor_->property("selectionStart").toInt(), 4);
+      QCOMPARE(editor_->property("selectionEnd").toInt(), 9);
+      QVERIFY(!document_->isUndoAvailable());
+      QVERIFY(!document_->findChild<EditorCommands*>()->typeMessage().isEmpty());
+    }
+    for (bool backward : {false, true}) {
+      QVERIFY(open_elements(original));
+      editor_->setProperty("cursorPosition", backward ? 7 : 6);
+      press(backward ? Qt::Key_Backspace : Qt::Key_Delete);
+      QCOMPARE(document_elements(*document_), original);
+    }
+    QVERIFY(open_elements(original));
+    editor_->setProperty("cursorPosition", 3);
+    press(Qt::Key_Return);
+    QCOMPARE(document_elements(*document_), original);
+    QInputMethodEvent paragraph;
+    paragraph.setCommitString(QStringLiteral("a\nb"));
+    QGuiApplication::sendEvent(editor_, &paragraph);
+    QCOMPARE(document_elements(*document_), original);
+    // Marker-only removal beside a title never merges the title into body.
+    QVERIFY(open_elements({original[0], {ElementType::page_break, "", false, {}, "break"}, original[1]}));
+    editor_->setProperty("cursorPosition", 6);
+    press(Qt::Key_Delete);
+    QCOMPARE(document_elements(*document_), original);
+    for (bool from_title : {false, true}) {
+      QVERIFY(open_elements(original));
+      const auto copied = from_title ? document_->begin() : document_->lastBlock();
+      QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, copied.position()), Q_ARG(int, copied.position() + copied.length() - 1));
+      press(Qt::Key_C, Qt::ControlModifier);
+      const auto target = from_title ? 7 : 0;
+      editor_->setProperty("cursorPosition", target);
+      press(Qt::Key_V, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), original);
+      QCOMPARE(cursor(), target);
+      QVERIFY(!document_->isUndoAvailable());
+    }
+    QVERIFY(open_elements(original));
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 0), Q_ARG(int, 6));
+    QGuiApplication::clipboard()->setText(QStringLiteral("FIRST\r\n\r\nLAST"));
+    press(Qt::Key_V, Qt::ControlModifier);
+    auto multiline = original; multiline[0].text = "FIRST\n\nLAST";
+    QCOMPARE(document_elements(*document_), multiline);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+  }
+
+  void selection_replacement_keeps_unselected_text_and_styles_data() {
+    QTest::addColumn<int>("operation");
+    QTest::addColumn<bool>("reverse");
+    for (int operation = 0; operation < 6; ++operation)
+      for (bool reverse : {false, true})
+        QTest::newRow(qPrintable(QString::number(operation) + (reverse ? " reversed" : " forward"))) << operation << reverse;
+  }
+  void selection_replacement_keeps_unselected_text_and_styles() {
+    QFETCH(int, operation); QFETCH(bool, reverse);
+    const std::vector<Element> original{{ElementType::action, "Left old", false, {{0, 4, Style::bold}}, "left"},
+        {ElementType::action, "new tail", false, {{4, 8, Style::italic}}, "right"},
+        {ElementType::action, "Untouched.", false, {}, "neighbor"}};
+    QVERIFY(open_elements(original));
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, reverse ? 13 : 5), Q_ARG(int, reverse ? 5 : 13));
+    if (operation == 0) press(Qt::Key_Backspace);
+    if (operation == 1) press(Qt::Key_Delete);
+    if (operation == 2) press(Qt::Key_Return);
+    if (operation == 3) type("X");
+    if (operation == 4) { QGuiApplication::clipboard()->setText("X"); press(Qt::Key_V, Qt::ControlModifier); }
+    if (operation == 5) { QInputMethodEvent input; input.setCommitString("X"); QGuiApplication::sendEvent(editor_, &input); }
+    const auto actual = document_elements(*document_);
+    if (operation == 2) {
+      QVERIFY(same_elements(actual, {{ElementType::action, "Left ", false, {{0, 4, Style::bold}}},
+          {ElementType::action, "tail", false, {{0, 4, Style::italic}}}, original.back()}));
+    } else {
+      const bool inserted = operation >= 3;
+      QVERIFY(same_elements(actual, {{ElementType::action, inserted ? "Left Xtail" : "Left tail", false,
+          {{0, 4, Style::bold}, {inserted ? 6u : 5u, inserted ? 10u : 9u, Style::italic}}}, original.back()}));
+    }
+    QCOMPARE(actual.front().id, original.front().id);
+    QCOMPARE(actual.back(), original.back());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), actual);
+  }
+
+  void primary_selection_paste_uses_screenplay_rules() {
+    if (!QGuiApplication::clipboard()->supportsSelection()) QSKIP("Platform has no primary selection");
+    QVERIFY(open_elements({{ElementType::lyric, "old", false, {{0, 3, Style::italic}}, "target"}}));
+    const auto original = document_elements(*document_);
+    QGuiApplication::clipboard()->setText(QStringLiteral("A\n\nB"), QClipboard::Selection);
+    const auto point = caret_rect(0).center() * px_per_point;
+    QMouseEvent press_event(QEvent::MouseButtonPress, point, point, Qt::MiddleButton, Qt::MiddleButton, Qt::NoModifier);
+    QGuiApplication::sendEvent(editor_, &press_event);
+    QMouseEvent release_event(QEvent::MouseButtonRelease, point, point, Qt::MiddleButton, Qt::NoButton, Qt::NoModifier);
+    QGuiApplication::sendEvent(editor_, &release_event);
+    const auto actual = document_elements(*document_);
+    QVERIFY(same_elements(actual, {{ElementType::lyric, "A"}, {ElementType::lyric, ""}, {ElementType::lyric, "B"}, original[0]}));
+    QCOMPARE(actual.back(), original[0]);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+  }
+
+  void compositor_paste_replaces_selection_in_one_undo_step() {
+    if (qEnvironmentVariableIntValue("APOLLO_TEST_WAYLAND_INPUT") != 1)
+      QSKIP("Enable APOLLO_TEST_WAYLAND_INPUT=1 in a native session with wtype");
+    const std::vector<Element> original{{ElementType::cue, "MARA", false, {}, "cue"},
+        {ElementType::dialogue, "old tail.", false, {{4, 9, Style::italic}}, "speech"}};
+    QVERIFY(open_elements(original));
+    const auto start = document_->lastBlock().position();
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, start + 3), Q_ARG(int, start));
+    QGuiApplication::clipboard()->setText(QStringLiteral("Hold.\n\nListen."));
+    auto error = compositor_keys({"-M", "ctrl", "-k", "v", "-m", "ctrl"});
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    const std::vector<Element> expected{original[0], {ElementType::dialogue, "Hold.\n\nListen. tail.",
+        false, {{15, 20, Style::italic}}, "speech"}};
+    QCOMPARE(document_elements(*document_), expected);
+    error = compositor_keys({"-M", "ctrl", "-k", "z", "-m", "ctrl"});
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QCOMPARE(document_elements(*document_), original);
+    error = compositor_keys({"-M", "ctrl", "-M", "shift", "-k", "z", "-m", "shift", "-m", "ctrl"});
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QCOMPARE(document_elements(*document_), expected);
+  }
+
+  // Plain paragraphs keep every line, including blank lines. U+2028 is a
+  // deliberate break within a paragraph; a tab becomes one space.
   void paste_plain_text_as_action() {
     QVERIFY(open(QStringLiteral("01-element-geometry")));
     const auto before = document_elements(*document_);
@@ -1384,7 +1573,7 @@ private slots:
     const auto after = document_elements(*document_);
     QCOMPARE(after.size(), before.size() + 4);
     QVERIFY(same_element(after[1], before[1]));
-    const std::vector<std::string> pasted{"First line.", "Second line.", "Third", "line. End"};
+    const std::vector<std::string> pasted{"First line.", "", "Second line.", "Third\nline. End"};
     for (std::size_t i = 0; i < pasted.size(); ++i)
       QVERIFY(after[2 + i].type == ElementType::action && after[2 + i].text == pasted[i]);
     QVERIFY(same_element(after[6], before[2]));
@@ -1394,8 +1583,8 @@ private slots:
     QVERIFY(same_elements(document_elements(*document_), before));
   }
 
-  // Inside dialogue, pasted paragraphs stay dialogue; one line joins the
-  // element at the caret.
+  // Inside dialogue, pasted paragraphs remain deliberate lines in the same
+  // speech; a single plain line joins inline in any destination type.
   void paste_plain_text_in_dialogue_and_inline() {
     QVERIFY(open(QStringLiteral("01-element-geometry")));
     const QString lights = QStringLiteral("always leave the lights on.");
@@ -1404,7 +1593,9 @@ private slots:
     press(Qt::Key_V, Qt::ControlModifier);
     QCOMPARE(element_type(block_at(position_of(QStringLiteral("One.")))), ElementType::dialogue);
     QCOMPARE(element_type(block_at(position_of(QStringLiteral("Two.")))), ElementType::dialogue);
-    QCOMPARE(block_at(position_of(QStringLiteral("One."))).text(), QStringLiteral("One."));
+    QCOMPARE(block_at(position_of(QStringLiteral("One."))), block_at(position_of(QStringLiteral("Two."))));
+    QCOMPARE(block_element(block_at(position_of(QStringLiteral("One.")))).text,
+             std::string("I left the lights on for you. I always leave the lights on.One.\nTwo."));
     const int blocks = document_->blockCount();
     editor_->setProperty("cursorPosition", position_of(QStringLiteral("tall window")));
     QGuiApplication::clipboard()->setText(QStringLiteral("very "));
@@ -2245,6 +2436,15 @@ private slots:
     QCOMPARE(document_elements(*document_), edited);
     press(Qt::Key_Z, Qt::ControlModifier);
     QCOMPARE(document_elements(*document_), elements);
+    // Plain multiline paste is still text within this speech, not a
+    // multielement structural edit requiring unpairing.
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, words.position()), Q_ARG(int, words.position() + 5));
+    QGuiApplication::clipboard()->setText(QStringLiteral("Wait.\n\nStay."));
+    press(Qt::Key_V, Qt::ControlModifier);
+    auto pasted = elements; pasted[1].text = "Wait.\n\nStay. Listen.";
+    QCOMPARE(document_elements(*document_), pasted);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), elements);
     // Clearing dialogue is unfinished writing, never an implicit unpair.
     QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, words.position()), Q_ARG(int, words.position() + words.length() - 1));
     press(Qt::Key_Backspace);
@@ -2451,15 +2651,11 @@ private slots:
     QGuiApplication::clipboard()->setText(QStringLiteral("One.\nTwo."));
     press(Qt::Key_V, Qt::ControlModifier);
     const auto pasted = document_elements(*document_);
-    QCOMPARE(pasted.size(), std::size_t(5));
+    QCOMPARE(pasted.size(), std::size_t(3));
     QCOMPARE(pasted[0], input[0]);
-    QCOMPARE(pasted[1], input[1]);
-    QCOMPARE(pasted[2].type, ElementType::dialogue);
-    QCOMPARE(pasted[2].text, std::string("One."));
-    QCOMPARE(pasted[3].type, ElementType::dialogue);
-    QCOMPARE(pasted[3].text, std::string("Two."));
-    QCOMPARE(pasted[4], input[2]);
-    QVERIFY(!pasted[2].id.empty() && !pasted[3].id.empty() && pasted[2].id != pasted[3].id);
+    auto speech = input[1]; speech.text += "One.\nTwo.";
+    QCOMPARE(pasted[1], speech);
+    QCOMPARE(pasted[2], input[2]);
     press(Qt::Key_Z, Qt::ControlModifier);
     QCOMPARE(document_elements(*document_), input);
   }

@@ -37,6 +37,16 @@ int main() {
   try { (void)wrap("text", 0); std::cerr << "zero width accepted\n"; ++failures; }
   catch (const std::invalid_argument&) {}
   using apollo::ElementType;
+  // A parenthetical's first line uses 17 columns; subsequent lines hang
+  // one column in. Its authored newline already ends that first line.
+  for (const std::string text : {"Y\nZ", "  Y \nZ", "Y\n\nZ", "Y\n"}) {
+    const auto parenthetical = apollo::layout({{ElementType::parenthetical, text}});
+    std::vector<std::string> actual;
+    for (const auto& line : parenthetical) actual.push_back(line.text);
+    check("parenthetical authored breaks", actual,
+          text == "Y\n\nZ" ? std::vector<std::string>{"Y", "", "Z"} :
+          text == "Y\n" ? std::vector<std::string>{"Y", ""} : std::vector<std::string>{"Y", "Z"});
+  }
   const auto lines = apollo::layout({
       {ElementType::heading, "INT. LIGHTHOUSE KITCHEN - NIGHT"},
       {ElementType::action, "Mara crosses the room, unlatches the tall window, and leans out into the cold."},

@@ -6,6 +6,8 @@
 #include <QTextDocument>
 #include <QVariantList>
 
+class QMimeData;
+
 namespace apollo::editor {
 // The spike's editing rules (docs/spike-brief.md, "Editor behavior under
 // test"), applied to the document through QTextCursor. QML forwards the keys
@@ -92,6 +94,8 @@ private:
   void setPageBreakMessage(const QString& message);
   bool refuseMarkerSelection(int start, int end);
   bool refuseDualSelection(int start, int end);
+  bool refuseTitleSelection(int start, int end);
+  int pasteData(int position, int selectionStart, int selectionEnd, const QMimeData* data);
   void setDualMessage(const QString& message);
   void setTypeMessage(const QString& message);
   void moveToWriting(QTextCursor& cursor, bool skipTitle = false);

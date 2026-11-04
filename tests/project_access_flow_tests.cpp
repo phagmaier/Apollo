@@ -10,6 +10,7 @@
 #include "source/fountain_export.h"
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QClipboard>
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -105,6 +106,66 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void clipboard_authoring_survives_save_reopen_and_export() {
+    const auto requested = qEnvironmentVariable("APOLLO_CLIPBOARD_OUTPUT");
+    const auto output = requested.isEmpty() ? path("clipboard-output") : requested;
+    QVERIFY(QDir().mkpath(output));
+    const auto project = create_project(output + "/project", {0, {
+        {ElementType::cue, "MARA", false, {}, "cue"},
+        {ElementType::dialogue, "old tail.", false, {{4, 9, Style::italic}}, "speech"},
+        {ElementType::cue, "THEO", false, {}, "second-cue"},
+        {ElementType::dialogue, "Reply.", false, {}, "reply"},
+        {ElementType::action, "Rain.", false, {}, "ending"}}});
+    auto expected = parse_screenplay(bytes(APOLLO_IMPORT_FIXTURE_DIR "/../editing/clipboard-authoring.screenplay.json"));
+    const auto fountain = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/clipboard-authoring.fountain");
+    QVERIFY(!fountain.isEmpty());
+    {
+      Window window(font_, path("clipboard-state"), project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      auto* document = window.flow.document();
+      auto* editor = window.flow.editor();
+      const auto initial = document_elements(*document);
+      const int start = document->findBlockByNumber(1).position();
+      QMetaObject::invokeMethod(editor, "select", Q_ARG(int, start + 3), Q_ARG(int, start));
+      QGuiApplication::clipboard()->setText(QStringLiteral("Hold.\r\n\r\nListen."));
+      QTest::keyClick(&window.view, Qt::Key_V, Qt::ControlModifier);
+      const auto plain = document_elements(*document);
+      QCOMPARE(plain[1], expected.elements[1]);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document), initial);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*document), plain);
+      // Actual Apollo MIME copy/paste retains styles; the destination identity
+      // survives whole-text replacement, and copied source ids never duplicate.
+      const auto first = document->findBlockByNumber(1), second = document->findBlockByNumber(3);
+      QMetaObject::invokeMethod(editor, "select", Q_ARG(int, first.position()), Q_ARG(int, first.position() + first.length() - 1));
+      QTest::keyClick(&window.view, Qt::Key_C, Qt::ControlModifier);
+      QMetaObject::invokeMethod(editor, "select", Q_ARG(int, second.position()), Q_ARG(int, second.position() + second.length() - 1));
+      QTest::keyClick(&window.view, Qt::Key_V, Qt::ControlModifier);
+      QCOMPARE(canonical(Screenplay{0, document_elements(*document)}), expected);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document), plain);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(canonical(Screenplay{0, document_elements(*document)}), expected);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      auto saved = open_project(project.directory).screenplay; saved.revision = 0;
+      QCOMPARE(saved, expected);
+    }
+    Window reopened(font_, path("clipboard-reopened"), project.directory);
+    QTRY_VERIFY(reopened.flow.editor() && reopened.flow.editor()->hasActiveFocus());
+    QCOMPARE(canonical(Screenplay{0, document_elements(*reopened.flow.document())}), expected);
+    auto* fountain_job = qobject_cast<FountainExportJob*>(reopened.view.rootObject()->property("fountainJob").value<QObject*>());
+    auto* pdf_job = qobject_cast<PdfExportJob*>(reopened.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(fountain_job && pdf_job);
+    QVERIFY(fountain_job->request(output + "/authored.fountain"));
+    QTRY_VERIFY(!fountain_job->busy());
+    QCOMPARE(bytes(output + "/authored.fountain"), fountain);
+    QSignalSpy completed(pdf_job, &PdfExportJob::completed);
+    QVERIFY(pdf_job->request(output + "/authored.pdf"));
+    QTRY_VERIFY(!pdf_job->busy());
+    QCOMPARE(completed.size(), 1); QVERIFY(completed[0][0].toBool());
+  }
+
   void title_form_apply_cancel_undo_reopen_and_export() {
     const auto requested = qEnvironmentVariable("APOLLO_TITLE_OUTPUT");
     const auto output_root = requested.isEmpty() ? path("title-artifacts") : requested;

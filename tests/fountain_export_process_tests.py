@@ -276,6 +276,30 @@ def emphasis_authoring(editor, flow_tests, root):
             (canonical, presented(expected), True)]
 
 
+def clipboard_authoring(editor, flow_tests, root):
+    """Paste-authored speeches survive independent parsing and PDF geometry."""
+    from pdf_tests import check_pdf, check_styles, fixture_pages
+    output = root / "clipboard-authored"
+    run(flow_tests, "clipboard_authoring_survives_save_reopen_and_export",
+        env=dict(os.environ, APOLLO_CLIPBOARD_OUTPUT=str(output)))
+    project, actual = output / "project", output / "authored.fountain"
+    expected = json.loads((FIXTURES / "editing/clipboard-authoring.screenplay.json").read_text())
+    saved_bytes = (project / "screenplay.json").read_bytes()
+    saved = json.loads(saved_bytes)
+    saved["revision"] = 0
+    assert saved == expected, (saved, expected)
+    canonical = FIXTURES / "export/clipboard-authoring.fountain"
+    assert actual.read_bytes() == canonical.read_bytes()
+    reopened = output / "reopened.fountain"
+    run(editor, project, "--export-fountain", reopened)
+    assert reopened.read_bytes() == canonical.read_bytes()
+    assert (project / "screenplay.json").read_bytes() == saved_bytes
+    pages = fixture_pages(FIXTURES / "editing/clipboard-authoring.expected")
+    check_pdf(output / "authored.pdf", pages)
+    check_styles(output / "authored.pdf", pages)
+    return [(path, expected, True) for path in (actual, reopened, canonical)]
+
+
 def element_type_authoring(editor, flow_tests, root):
     """Real type controls reach independent Fountain parsing and PDF geometry."""
     from pdf_tests import check_pdf, check_styles, fixture_pages
@@ -510,6 +534,7 @@ def main():
     page_break_cases = page_break_authoring(editor, options.flow_tests, root)
     dual_cases = dual_authoring(editor, options.flow_tests, root)
     element_type_cases = element_type_authoring(editor, options.flow_tests, root)
+    clipboard_cases = clipboard_authoring(editor, options.flow_tests, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -522,7 +547,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases + page_break_cases + dual_cases + element_type_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases + page_break_cases + dual_cases + element_type_cases + clipboard_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

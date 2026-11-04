@@ -20,6 +20,8 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   breaks and blank dialogue lines in layout, page splits, import and export.
 - [Element types](docs/element-types.md): the body selector and Ctrl+1–8,
   centered act labels, the six-type Tab cycle and protected structures.
+- [Selection and clipboard](docs/selection-and-clipboard.md): replacement,
+  paragraph/line-break paste, emphasis, undo and protected title/speech boundaries.
 - [Export profile](docs/export-profile.md) and [fixture guide](fixtures/README.md):
   layout rules, independent expectations, and verification procedures.
 - [Stack recommendation](docs/stack-recommendation.md): technical

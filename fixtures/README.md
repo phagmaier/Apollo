@@ -225,6 +225,13 @@ line and repeated spaces, imported as authored and exported as presented.
 
 ## Edited layout — `editing/`
 
+`clipboard-authoring.screenplay.json`, `clipboard-authoring.expected` and
+`../export/clipboard-authoring.fountain` are original synthetic task 3f fixtures.
+Real plain paste and Apollo copy/paste author two speeches with a deliberate
+blank line and italic suffix. Their hand-written model, canonical Fountain and
+hand-derived one-page slots/columns are checked through autosave/reopen, a fresh
+export process, Poppler and independent aw-parser, including the pasted styles.
+
 Hand-derived `.expected` files, in the layout format above, for writing that the
 spike Fountain parser cannot express, so the checks edit a saved project
 instead. `break-before-space.expected` is fixture 01 after MARA's dialogue gains
