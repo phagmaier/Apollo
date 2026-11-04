@@ -22,6 +22,8 @@ class EditorCommands : public QObject {
   Q_PROPERTY(QString dualWarning READ dualWarning NOTIFY dualStateChanged)
   Q_PROPERTY(int documentRevision READ documentRevision NOTIFY documentStateChanged)
   Q_PROPERTY(QString typeMessage READ typeMessage NOTIFY typeMessageChanged)
+  Q_PROPERTY(bool canUndo READ canUndo NOTIFY historyChanged)
+  Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
 public:
   // Clipboard format that keeps element types, emphasis, and dual flags.
   static inline const QString mime_type = QStringLiteral("application/x-apollo-elements");
@@ -37,6 +39,8 @@ public:
   Q_INVOKABLE QString elementTypeAt(int position) const;
   Q_INVOKABLE void setElementType(int position, int selectionStart, int selectionEnd, const QString& type);
   int documentRevision() const { return document_->revision(); }
+  bool canUndo() const { return document_->isUndoAvailable(); }
+  bool canRedo() const { return document_->isRedoAvailable(); }
   const QString& typeMessage() const { return type_message_; }
   // Single caret in the second speech; changes only its cue flag, undoably.
   Q_INVOKABLE void toggleDualDialogue(int position, int selectionStart, int selectionEnd);
@@ -81,6 +85,7 @@ signals:
   void dualStateChanged();
   void documentStateChanged();
   void typeMessageChanged();
+  void historyChanged();
 
 private:
   QTextDocument* document_;

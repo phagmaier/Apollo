@@ -106,6 +106,163 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void shortcut_reference_retains_writing_and_blocks_background_actions() {
+    const auto p = project();
+    Window window(font_, path("shortcuts-state"), p.directory);
+    QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+    auto* editor = window.flow.editor();
+    auto* document = window.flow.document();
+    window.type("Fresh ");
+    const auto before = document_elements(*document);
+    const bool can_undo = document->isUndoAvailable();
+    QVERIFY(QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 10), Q_ARG(int, 6)));
+    QTest::keyClick(&window.view, Qt::Key_F1);
+    QTRY_VERIFY(window.popup_open("shortcutPanel"));
+    QVERIFY(!editor->hasActiveFocus());
+    QVERIFY(window.item("shortcutClose")->hasActiveFocus());
+    QCOMPARE(window.item("shortcutUndo")->property("text").toString(), QString("Ctrl+Z"));
+    QCOMPARE(window.item("shortcutRedo")->property("text").toString(), QString("Ctrl+Shift+Z"));
+    QCOMPARE(window.item("shortcutPdf")->property("text").toString(), QString("Ctrl+E"));
+    QCOMPARE(window.item("shortcutFountain")->property("text").toString(), QString("Ctrl+Shift+E"));
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/shortcuts.png")));
+    const auto outline = window.view.rootObject()->property("outlineVisible");
+    // Window shortcuts must not export, switch project, open another dialog or
+    // change the underlying selection while help has focus.
+    QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier);
+    for (const auto key : {Qt::Key_E, Qt::Key_S, Qt::Key_H, Qt::Key_T})
+      QTest::keyClick(&window.view, key, Qt::ControlModifier | Qt::ShiftModifier);
+    QTest::keyClick(&window.view, Qt::Key_Backslash, Qt::ControlModifier);
+    QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+    QTest::keyClick(&window.view, Qt::Key_1, Qt::ControlModifier);
+    QTest::keyClick(&window.view, Qt::Key_B, Qt::ControlModifier);
+    QTRY_VERIFY(window.popup_open("shortcutPanel"));
+    QVERIFY(window.flow.document() == document);
+    QCOMPARE(document_elements(*document), before);
+    QCOMPARE(document->isUndoAvailable(), can_undo);
+    QCOMPARE(window.view.rootObject()->property("outlineVisible"), outline);
+    for (const auto* name : {"exportPanel", "copyPanel", "titlePagePanel"}) QVERIFY(!window.popup_open(name));
+    auto* pdf = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(pdf && !pdf->busy());
+    QVERIFY(!QFileInfo::exists(p.directory + ".pdf"));
+    QTest::keyClick(&window.view, Qt::Key_Escape);
+    QTRY_VERIFY(!window.popup_open("shortcutPanel"));
+    QTRY_VERIFY(editor->hasActiveFocus());
+    QCOMPARE(editor->property("cursorPosition").toInt(), 6);
+    QCOMPARE(editor->property("selectionStart").toInt(), 6);
+    QCOMPARE(editor->property("selectionEnd").toInt(), 10);
+    // Discoverable pointer access and keyboard dismissal also work when small.
+    window.view.resize(540, 480);
+    QVERIFY(window.click("shortcutButton"));
+    QTRY_VERIFY(window.popup_open("shortcutPanel"));
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/shortcuts-small.png")));
+    QTest::keyClick(&window.view, Qt::Key_Tab);
+    auto* scroll = window.item("shortcutScroll");
+    QVERIFY(scroll);
+    QTRY_VERIFY(scroll->hasActiveFocus());
+    auto* flick = scroll->property("contentItem").value<QQuickItem*>();
+    QVERIFY(flick);
+    for (int row = 0; row < 60; ++row) QTest::keyClick(&window.view, Qt::Key_Down);
+    QVERIFY(flick->property("contentY").toReal() > 0);
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/shortcuts-scrolled.png")));
+    QTest::keyClick(&window.view, Qt::Key_Tab);
+    QTRY_VERIFY(window.item("shortcutClose")->hasActiveFocus());
+    QTest::keyClick(&window.view, Qt::Key_Space);
+    QTRY_VERIFY(!window.popup_open("shortcutPanel"));
+    QTRY_VERIFY(editor->hasActiveFocus());
+    window.type("Blue");
+    QCOMPARE(document_elements(*document)[0].text, std::string("Fresh Blueent writing."));
+    QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document), before);
+    QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document)[0].text, std::string("Fresh Blueent writing."));
+    // Help must leave a title draft and its Ctrl+Enter action in their own context.
+    QTest::keyClick(&window.view, Qt::Key_T, Qt::ControlModifier | Qt::ShiftModifier);
+    QTRY_VERIFY(window.popup_open("titlePagePanel"));
+    QTest::keyClick(&window.view, Qt::Key_F1);
+    QVERIFY(!window.popup_open("shortcutPanel"));
+    QVERIFY(window.popup_open("titlePagePanel"));
+    QTest::keyClick(&window.view, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasActiveFocus());
+  }
+  void edit_menu_uses_document_history_and_protected_clipboard_commands() {
+    const auto p = project();
+    Window window(font_, path("edit-menu-state"), p.directory);
+    QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+    auto* editor = window.flow.editor();
+    auto* document = window.flow.document();
+    const auto initial = document_elements(*document);
+    QVERIFY(window.click("editButton"));
+    QTRY_VERIFY(window.popup_open("editMenu"));
+    for (const auto* name : {"editUndo", "editRedo", "editCut", "editCopy"}) QVERIFY(!window.item(name)->isEnabled());
+    QCOMPARE(window.item("editUndo")->property("text").toString(), QString("Undo\tCtrl+Z"));
+    QCOMPARE(window.item("editRedo")->property("text").toString(), QString("Redo\tCtrl+Shift+Z"));
+    QTest::keyClick(&window.view, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasActiveFocus());
+    window.type("Fresh ");
+    const auto typed = document_elements(*document);
+    QCOMPARE(typed[0].text, std::string("Fresh Current writing."));
+    QVERIFY(document->isUndoAvailable());
+    QVERIFY(window.click("editButton"));
+    QTRY_VERIFY(window.popup_open("editMenu"));
+    QTRY_VERIFY(window.item("editUndo")->isEnabled());
+    QVERIFY(window.click("editUndo"));
+    QTRY_VERIFY(editor->hasActiveFocus());
+    QCOMPARE(document_elements(*document), initial);
+    QVERIFY(window.click("editButton"));
+    QVERIFY(!window.item("editUndo")->isEnabled());
+    QVERIFY(window.item("editRedo")->isEnabled());
+    QVERIFY(window.click("editRedo"));
+    QCOMPARE(document_elements(*document), typed);
+    QVERIFY(QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 6), Q_ARG(int, 10)));
+    QVERIFY(window.click("editButton"));
+    QVERIFY(window.item("editCopy")->isEnabled());
+    QVERIFY(window.click("editCopy"));
+    QCOMPARE(QGuiApplication::clipboard()->text(), QString("Curr"));
+    QVERIFY(QGuiApplication::clipboard()->mimeData()->hasFormat("application/x-apollo-elements"));
+    QVERIFY(window.click("editButton"));
+    QVERIFY(window.click("editCut"));
+    QCOMPARE(document_elements(*document)[0].text, std::string("Fresh ent writing."));
+    QVERIFY(window.click("editButton"));
+    QVERIFY(window.click("editPaste"));
+    QCOMPARE(document_elements(*document), typed);
+    // Graphical paste must take the screenplay command route, preserving the
+    // destination type and all paragraph/space content from external text.
+    QGuiApplication::clipboard()->setText(" blue\n\nline ");
+    QVERIFY(window.click("editButton"));
+    QVERIFY(window.click("editPaste"));
+    const auto pasted = document_elements(*document);
+    QVERIFY(pasted.size() > typed.size());
+    QCOMPARE(pasted[1].text, std::string(" blue"));
+    QCOMPARE(pasted[2].text, std::string());
+    QCOMPARE(pasted[3].text, std::string("line "));
+    QVERIFY(window.click("editButton"));
+    QVERIFY(window.click("editUndo"));
+    QCOMPARE(document_elements(*document), typed);
+    QVERIFY(window.click("editButton"));
+    QVERIFY(window.click("editSelectAll"));
+    QCOMPARE(editor->property("selectionStart").toInt(), 0);
+    QCOMPARE(editor->property("selectionEnd").toInt(), document->characterCount() - 1);
+    QTRY_VERIFY(editor->hasActiveFocus());
+
+    const auto titled = create_project(path("menu-protected"), {0, {
+        {ElementType::title, "THE SIGNAL", false, {}, "title"},
+        {ElementType::action, "Keep this writing.", false, {}, "body"}}});
+    Window guarded(font_, path("menu-protected-state"), titled.directory);
+    QTRY_VERIFY(guarded.flow.editor() && guarded.flow.editor()->hasActiveFocus());
+    const auto protected_writing = document_elements(*guarded.flow.document());
+    QVERIFY(QMetaObject::invokeMethod(guarded.flow.editor(), "select", Q_ARG(int, 5), Q_ARG(int, 15)));
+    QGuiApplication::clipboard()->setText("Keep the clipboard.");
+    QVERIFY(guarded.click("editButton"));
+    QVERIFY(guarded.click("editCut"));
+    QCOMPARE(QGuiApplication::clipboard()->text(), QString("Keep the clipboard."));
+    QCOMPARE(document_elements(*guarded.flow.document()), protected_writing);
+    QVERIFY(guarded.click("editButton"));
+    QVERIFY(guarded.click("editPaste"));
+    QCOMPARE(document_elements(*guarded.flow.document()), protected_writing);
+    QVERIFY(!guarded.flow.document()->isUndoAvailable());
+    QCOMPARE(guarded.flow.editor()->property("selectionStart").toInt(), 5);
+    QCOMPARE(guarded.flow.editor()->property("selectionEnd").toInt(), 15);
+  }
   void clipboard_authoring_survives_save_reopen_and_export() {
     const auto requested = qEnvironmentVariable("APOLLO_CLIPBOARD_OUTPUT");
     const auto output = requested.isEmpty() ? path("clipboard-output") : requested;

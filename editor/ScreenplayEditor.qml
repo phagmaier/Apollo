@@ -15,6 +15,24 @@ Rectangle {
     color: "#d4d9df"
     function focusEditor() { editor.forceActiveFocus() }
     readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
+    // Observe the installed document's history directly: TextEdit's property
+    // notifications do not refresh bindings for these external cursor edits.
+    readonly property bool canUndo: commands.canUndo
+    readonly property bool canRedo: commands.canRedo
+    readonly property bool canPaste: editor.canPaste
+    function edit(action) {
+        if (!enabled)
+            return
+        switch (action) {
+        case "undo": editor.undo(); break
+        case "redo": editor.redo(); break
+        case "cut": editor.place(commands.cut(editor.selectionStart, editor.selectionEnd)); break
+        case "copy": commands.copy(editor.selectionStart, editor.selectionEnd); break
+        case "paste": editor.place(commands.paste(editor.cursorPosition, editor.selectionStart, editor.selectionEnd)); break
+        case "selectAll": editor.selectAll(); break
+        }
+        editor.forceActiveFocus()
+    }
     readonly property var elementTypes: [
         { type: "sceneHeading", label: "Scene heading", name: "Heading" },
         { type: "action", label: "Action", name: "Action" },

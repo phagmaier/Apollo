@@ -71,7 +71,17 @@ one-step undo and existing title/page-break/dual protections. Release and
 sanitizers pass 24/24 each, engine-only 2/2, plus native Compose/primary-selection
 and compositor-key checks. See [the contract](selection-and-clipboard.md) and
 [results and verification limits](#task-3f--selection-and-clipboard-behavior).
-Shortcut lookup, assistance and broader interchange remain subsequent work.
+Task 3g below completes shortcut lookup; assistance and broader interchange
+remain subsequent work.
+
+**Task 3g — shortcut reference and action labels is done (2026-11-04).**
+The rail's **Shortcuts** button or F1 opens the writing reference; **Edit**
+exposes Undo/Redo and clipboard actions with key labels and live availability.
+Release and sanitizer suites pass 24/24 each, engine-only 2/2, native project
+flows 47/47, plus focused final UI and compositor-key checks. See
+[the result and verification limits](#task-3g--shortcut-reference-and-action-labels).
+Next ready work is slice 4's context-restricted writing suggestions. Remaining
+Fountain compatibility, other assistance and scene navigation stay pending.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1663,5 +1673,83 @@ assessed; the existing heavy-I/O crash-loss limit remains. Full Fountain grammar
 imported PDF and later milestone work retain their gates. The extra Academy
 comparison remains unverified here; the independent synthetic fixtures passed.
 
-Next ready bounded work: shortcut reference and action labels. Remaining
-Fountain compatibility and slice 4 assistance/navigation are pending.
+At the 3f checkpoint, the next ready bounded work was shortcut reference and
+action labels; task 3g below implements that step. Remaining Fountain
+compatibility and slice 4 assistance/navigation are pending.
+
+### Task 3g — shortcut reference and action labels
+
+2026-11-04. **Done for this bounded task**, with the evidence and limits below.
+This bounded task implements the [shortcut discoverability requirement](spec.md#writing-and-formatting)
+and [editing plan](#editing-and-assistance-contract). Keybinding customization
+remains unspecified; assistance, scene navigation and broader interchange are
+separate work.
+
+The rail's **Shortcuts** button and **F1** open a modal, scrollable reference in
+the Writing desk. It covers Undo/Redo, clipboard, Enter/Tab, all eight types,
+selected-text emphasis, dual dialogue, page breaks, title-page editing, project
+actions and exports. The type rows use the selector's existing type model.
+Tab/Shift+Tab move between the scrolling area and **Back to writing**; arrow
+keys scroll and Space activates the button. Esc, the close button or clicking
+outside dismisses help. Opening and closing retain the caret, selection
+direction, writing and undo history.
+The reference labels the current outline as a read-only preview and distinguishes
+immediate PDF export from Fountain options. Export gates remain unchanged.
+
+The new **Edit** menu exposes Undo/Redo, Cut/Copy/Paste and Select all with their
+shortcut labels and current availability. Undo/Redo use Qt's existing history;
+clipboard actions call the same protected screenplay commands as the keys.
+Outline and Export tooltips/accessibility labels now include their shortcuts.
+Writing/project accelerators are disabled while desk dialogs are visible, so
+help or an editable dialog field cannot trigger an export/project departure
+behind it. Title-form Ctrl+Enter remains local; F1 does not interrupt a dialog
+or menu. No source schema, font pin, import/export version or dependency changed.
+
+Focused tests first failed on absent F1/Edit controls. The Edit check then
+reproduced a stale TextEdit `canUndo` binding after an external cursor edit:
+the property getter and document reported available history while the binding
+remained false. EditorCommands now forwards the installed document's
+undo/redo-availability signals. The checks exercise initial/changed/exhausted
+history, exact Undo/Redo, selected Apollo MIME copy/cut/paste, external paragraphs
+and spaces, and title-boundary cut/paste refusal without changing writing,
+selection or the clipboard. Help checks cover reversed selection, shortcut
+isolation, narrow windows, keyboard scrolling/dismissal and title-dialog scope.
+Visual review found the scrollbar could overlap key labels in a narrow window;
+the content now reserves room for it.
+
+| Check | Observed result |
+| --- | --- |
+| `mise run check` | **24/24** passed; both affected UI tests pass again after the scrollbar adjustment and final keyboard assertion |
+| `mise run check-debug` | **24/24** passed with address/undefined sanitizers; both affected UI tests pass again after the final keyboard assertion |
+| `mise run check-engine` | **2/2** passed |
+| Native Wayland project flows, Compose input context, software renderer | **47 passed**, no failures/skips; final focused UI checks also pass after the Space assertion |
+| Native Wayland/OpenGL Writing desk | Existing outline/focus check passes with the additional controls |
+| Native compositor keys (`wtype`) | F1/Esc, background typing/export/project-action isolation, reversed selection, Undo/Redo, scroll/focus/Space dismissal and resumed writing pass with exact autosaved text and element identity |
+| Direct completion review | Requirements, tracked and untracked code, tests and visual captures reviewed; whitespace check passes; no remaining in-scope finding |
+| Additional Academy comparison | **Unavailable:** local `reference/academy/expected.tsv` and PDF are absent; independent synthetic fixture/PDF/oracle checks pass |
+
+Logs: `build/task-3g-{release,debug,engine,academy}.log`,
+`build/task-3g-{release,debug,native}-focused-final.log`,
+`build/task-3g-native-{flows,editor}.log`, and
+`build/task-3g-native-keys-final.log`. The initial red checks are retained in
+`build/task-3g-{red,edit-red,edit-investigation}.log`. Visual captures are
+`build/release/project-access-tests/shortcuts{,-small,-scrolled}.png`.
+The repeatable compositor runner is `build/task-3g-native-smoke.sh`; its final
+isolated project, app logs and exact source snapshots are under
+`build/task-3g-native-keys-SzuUWs/`. The earlier ad hoc wtype run used Return on
+the plain Qt button and did not activate it; the corrected runner and permanent
+UI check use Space. No product behavior was changed to accommodate that
+incorrect runner assumption.
+
+Native input uses the installed Compose plugin because fcitx5 is unavailable;
+the standard fcitx runner was not run. Compositor virtual keys do not measure
+physical-key latency. Owner appearance/comfort and sustained typing performance
+were not reevaluated, and the existing heavy-I/O crash-loss limit remains.
+This step does not complete slice 3's broader Fountain compatibility, imported
+PDF, assistance/navigation or the writing milestone.
+
+Next ready bounded work: context-restricted character/cue-extension and
+scene-heading-part suggestions in slice 4, with the spec's real-key acceptance,
+dismissal and excluded-context rules. Spelling/dictionary, find/replace,
+diagnostics and the live scene navigator remain separate work; the full
+Fountain compatibility gate remains required.

@@ -28,6 +28,9 @@ Rectangle {
     property var emptySpeechIssues: commands.emptySpeeches
     property string emptySpeechId: ""
     property string emptySpeechNotice: ""
+    readonly property bool dialogOpen: shortcutPanel.visible || titlePanel.visible || importedPanel.visible
+            || emptySpeechPanel.visible || exportPanel.visible || copyPanel.visible || reloadPanel.visible
+            || failurePanel.visible || leavePanel.visible
     property var selectedEmptySpeech: {
         for (const issue of emptySpeechIssues) {
             if (issue.id === emptySpeechId)
@@ -100,12 +103,18 @@ Rectangle {
         emptySpeechNotice = ""
         editorPage.selectElement(position, length)
     }
-    Shortcut { sequence: "Ctrl+E"; enabled: !titlePanel.opened; onActivated: desk.exportPdf() }
-    Shortcut { sequence: "Ctrl+Shift+E"; enabled: desk.fountainJob !== null && !desk.departing && !titlePanel.opened; onActivated: desk.openExport("fountain") }
-    Shortcut { sequence: "Ctrl+\\"; enabled: !titlePanel.opened; onActivated: desk.toggleOutline() }
-    Shortcut { sequence: "Ctrl+Shift+S"; enabled: !desk.departing && !titlePanel.opened && desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
-    Shortcut { sequence: "Ctrl+Shift+H"; enabled: desk.projectFlow !== null && !desk.departing && !titlePanel.opened; onActivated: desk.projectFlow.home() }
-    Shortcut { sequence: "Ctrl+Shift+T"; enabled: titleButton.enabled && !titlePanel.opened; onActivated: titlePanel.open() }
+    Shortcut {
+        sequence: "F1"
+        enabled: !desk.departing && !desk.dialogOpen && !editMenu.visible
+                 && !elementTypeMenu.visible && !pageBreakMenu.visible && !emphasisMenu.visible
+        onActivated: shortcutPanel.open()
+    }
+    Shortcut { sequence: "Ctrl+E"; enabled: !desk.dialogOpen; onActivated: desk.exportPdf() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: desk.fountainJob !== null && !desk.departing && !desk.dialogOpen; onActivated: desk.openExport("fountain") }
+    Shortcut { sequence: "Ctrl+\\"; enabled: !desk.dialogOpen; onActivated: desk.toggleOutline() }
+    Shortcut { sequence: "Ctrl+Shift+S"; enabled: !desk.departing && !desk.dialogOpen && desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
+    Shortcut { sequence: "Ctrl+Shift+H"; enabled: desk.projectFlow !== null && !desk.departing && !desk.dialogOpen; onActivated: desk.projectFlow.home() }
+    Shortcut { sequence: "Ctrl+Shift+T"; enabled: titleButton.enabled && !desk.dialogOpen; onActivated: titlePanel.open() }
     Connections {
         target: desk.projectFlow
         function onChanged() {
@@ -269,7 +278,7 @@ Rectangle {
             fill: "#e9edf0"; ink: "#303843"
             font.weight: Font.DemiBold
             enabled: (desk.exportJob !== null && !desk.exportJob.busy) || (desk.fountainJob !== null && !desk.fountainJob.busy)
-            Accessible.name: desk.fountainJob ? "Export PDF or Fountain options" : "Export PDF options"
+            Accessible.name: desk.fountainJob ? "Export PDF or Fountain options (Ctrl+E exports PDF; Ctrl+Shift+E opens Fountain options)" : "Export PDF options (Ctrl+E exports PDF)"
             onClicked: desk.openExport(desk.exportFormat)
         }
     }
@@ -302,7 +311,7 @@ Rectangle {
                 width: 44; height: 44; text: "☰"; font.pixelSize: 21
                 fill: desk.outlineVisible ? "#637080" : "transparent"
                 ink: desk.outlineVisible ? "white" : "#b7c0c8"
-                Accessible.name: desk.outlineVisible ? "Hide scene outline" : "Show scene outline"
+                Accessible.name: (desk.outlineVisible ? "Hide scene outline" : "Show scene outline") + " (Ctrl+\\)"
                 Accessible.checkable: true
                 Accessible.checked: desk.outlineVisible
                 onClicked: desk.toggleOutline()
@@ -320,6 +329,21 @@ Rectangle {
                 Accessible.name: "Stash (outside this spike)"
             }
         }
+        DeskButton {
+            objectName: "shortcutButton"
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 2; bottomMargin: 12 }
+            text: "Shortcuts"; padding: 2
+            font.pixelSize: 11
+            Accessible.name: "Keyboard shortcuts (F1)"
+            onClicked: shortcutPanel.open()
+        }
+    }
+
+    ShortcutReference {
+        id: shortcutPanel
+        parent: desk
+        elementTypes: editorPage.elementTypes
+        onClosed: editorPage.focusEditor()
     }
 
     TitlePageForm {
@@ -474,6 +498,51 @@ Rectangle {
                     enabled: visible && editorPage.enabled && !desk.autosaver.copyBusy
                     Accessible.name: "Edit title page (Ctrl+Shift+T)"
                     onClicked: titlePanel.open()
+                }
+                DeskButton {
+                    id: editButton
+                    objectName: "editButton"
+                    text: "Edit"; ink: "#303843"; fill: "#e9edf0"
+                    enabled: editorPage.enabled
+                    Accessible.name: "Edit: Undo, Redo and clipboard actions"
+                    ToolTip.text: "Undo: Ctrl+Z. Redo: Ctrl+Shift+Z. Cut, copy, paste and select all."
+                    onClicked: editMenu.open()
+                    Menu {
+                        id: editMenu
+                        objectName: "editMenu"
+                        y: editButton.height
+                        onClosed: editorPage.focusEditor()
+                        MenuItem {
+                            objectName: "editUndo"; text: "Undo\tCtrl+Z"
+                            enabled: editorPage.canUndo
+                            onTriggered: editorPage.edit("undo")
+                        }
+                        MenuItem {
+                            objectName: "editRedo"; text: "Redo\tCtrl+Shift+Z"
+                            enabled: editorPage.canRedo
+                            onTriggered: editorPage.edit("redo")
+                        }
+                        MenuSeparator {}
+                        MenuItem {
+                            objectName: "editCut"; text: "Cut\tCtrl+X"
+                            enabled: editorPage.hasSelection
+                            onTriggered: editorPage.edit("cut")
+                        }
+                        MenuItem {
+                            objectName: "editCopy"; text: "Copy\tCtrl+C"
+                            enabled: editorPage.hasSelection
+                            onTriggered: editorPage.edit("copy")
+                        }
+                        MenuItem {
+                            objectName: "editPaste"; text: "Paste\tCtrl+V"
+                            enabled: editorPage.canPaste
+                            onTriggered: editorPage.edit("paste")
+                        }
+                        MenuItem {
+                            objectName: "editSelectAll"; text: "Select all\tCtrl+A"
+                            onTriggered: editorPage.edit("selectAll")
+                        }
+                    }
                 }
                 DeskButton {
                     id: elementTypeButton

@@ -95,6 +95,8 @@ frozen every visual detail.
   `docs/spike-report.md` and `docs/spike-handoff.md` for the owner's acceptance
   and the remaining limits. The opening scene list is a read-only visual
   preview, not the product scene navigator. Undo is Ctrl+Z; redo is Ctrl+Shift+Z.
+  The rail's **Shortcuts** button or F1 opens the writing shortcut reference;
+  **Edit** exposes Undo/Redo and clipboard actions with their key labels.
 - Project folders and autosave follow [source-format.md](docs/source-format.md).
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
   and `apollo_editor DIR` opens editable projects with autosave. Ordinary

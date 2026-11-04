@@ -338,6 +338,8 @@ int insert_between(QTextCursor& cursor, const std::vector<Element>& inserted) {
 
 EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObject(parent), document_(document) {
   connect(document_, &QTextDocument::contentsChanged, this, &EditorCommands::refreshDocumentState);
+  connect(document_, &QTextDocument::undoAvailable, this, &EditorCommands::historyChanged);
+  connect(document_, &QTextDocument::redoAvailable, this, &EditorCommands::historyChanged);
   refreshDocumentState();
 }
 
