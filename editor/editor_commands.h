@@ -18,6 +18,8 @@ class EditorCommands : public QObject {
   Q_PROPERTY(QString pageBreakMessage READ pageBreakMessage NOTIFY pageBreakMessageChanged)
   Q_PROPERTY(QString dualMessage READ dualMessage NOTIFY dualStateChanged)
   Q_PROPERTY(QString dualWarning READ dualWarning NOTIFY dualStateChanged)
+  Q_PROPERTY(int documentRevision READ documentRevision NOTIFY documentStateChanged)
+  Q_PROPERTY(QString typeMessage READ typeMessage NOTIFY typeMessageChanged)
 public:
   // Clipboard format that keeps element types, emphasis, and dual flags.
   static inline const QString mime_type = QStringLiteral("application/x-apollo-elements");
@@ -28,6 +30,12 @@ public:
   Q_INVOKABLE int typeText(int position, int selectionStart, int selectionEnd, const QString& text);
   Q_INVOKABLE int enter(int position, int selectionStart, int selectionEnd);
   Q_INVOKABLE void cycleType(int position, bool backward);
+  // Body type names from the source format. A local selection changes its
+  // whole element; spanning elements or changing protected structure refuses.
+  Q_INVOKABLE QString elementTypeAt(int position) const;
+  Q_INVOKABLE void setElementType(int position, int selectionStart, int selectionEnd, const QString& type);
+  int documentRevision() const { return document_->revision(); }
+  const QString& typeMessage() const { return type_message_; }
   // Single caret in the second speech; changes only its cue flag, undoably.
   Q_INVOKABLE void toggleDualDialogue(int position, int selectionStart, int selectionEnd);
   const QString& dualMessage() const { return dual_message_; }
@@ -69,6 +77,8 @@ signals:
   void titleTextChanged();
   void pageBreakMessageChanged();
   void dualStateChanged();
+  void documentStateChanged();
+  void typeMessageChanged();
 
 private:
   QTextDocument* document_;
@@ -77,11 +87,13 @@ private:
   QString title_text_;
   QString page_break_message_;
   QString dual_message_, dual_warning_;
+  QString type_message_;
   bool forwarding_input_ = false;
   void setPageBreakMessage(const QString& message);
   bool refuseMarkerSelection(int start, int end);
   bool refuseDualSelection(int start, int end);
   void setDualMessage(const QString& message);
+  void setTypeMessage(const QString& message);
   void moveToWriting(QTextCursor& cursor, bool skipTitle = false);
   void refreshDocumentState();
 };

@@ -276,6 +276,37 @@ def emphasis_authoring(editor, flow_tests, root):
             (canonical, presented(expected), True)]
 
 
+def element_type_authoring(editor, flow_tests, root):
+    """Real type controls reach independent Fountain parsing and PDF geometry."""
+    from pdf_tests import check_pdf, check_styles, fixture_pages
+    output = root / "element-type-authored"
+    run(flow_tests, "element_type_authoring_survives_save_reopen_and_export",
+        env=dict(os.environ, APOLLO_ELEMENT_TYPE_OUTPUT=str(output)))
+    project, actual = output / "project", output / "authored.fountain"
+    expected = json.loads((FIXTURES / "editing/element-type-authoring.screenplay.json").read_text())
+    types = ["sceneHeading", "centered", "action", "character", "parenthetical", "dialogue",
+             "lyric", "transition", "centered"]
+    for element, kind in zip(expected["elements"], types, strict=True):
+        element["type"] = kind
+    saved_bytes = (project / "screenplay.json").read_bytes()
+    saved = json.loads(saved_bytes)
+    saved["revision"] = 0
+    assert saved == expected, (saved, expected)
+    canonical = FIXTURES / "export/element-type-authoring.fountain"
+    assert actual.read_bytes() == canonical.read_bytes()
+    reopened = output / "reopened.fountain"
+    run(editor, project, "--export-fountain", reopened)
+    assert reopened.read_bytes() == canonical.read_bytes()
+    assert (project / "screenplay.json").read_bytes() == saved_bytes
+    pages = fixture_pages(FIXTURES / "editing/element-type-authoring.expected")
+    check_pdf(output / "authored.pdf", pages)
+    check_styles(output / "authored.pdf", pages)
+    imported = output / "bounded-reimport"
+    run(editor, imported, "--edit-fountain", reopened)
+    assert model(json.loads((imported / "screenplay.json").read_text())) == model(presented(expected))
+    return [(path, presented(expected), True) for path in (actual, reopened, canonical)]
+
+
 def dual_authoring(editor, flow_tests, root):
     """Real command-authored pairs reach independent parsing and PDF geometry."""
     from pdf_tests import check_pdf, check_styles, fixture_pages
@@ -478,6 +509,7 @@ def main():
     title_cases = title_authoring(editor, options.flow_tests, root)
     page_break_cases = page_break_authoring(editor, options.flow_tests, root)
     dual_cases = dual_authoring(editor, options.flow_tests, root)
+    element_type_cases = element_type_authoring(editor, options.flow_tests, root)
 
     if options.aw_parser:
         subset = json.loads((FIXTURES / "import/writer-subset.expected.json").read_text())
@@ -490,7 +522,7 @@ def main():
                                {"type": "character", "text": "MARA"}, {"type": "dialogue", "text": "Here."}]
         cases = [(out, typed, True), (body, typed, False), (FIXTURES / "export/writer-subset.fountain", subset, True),
                  (FIXTURES / "export/writer-subset-edited.fountain", edited, True),
-                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases + page_break_cases + dual_cases
+                 (FIXTURES / "export/writer-subset-edited-no-title.fountain", edited, False)] + case_cases + spacing_cases + punctuation_cases + scene_spacing_cases + emphasis_cases + title_cases + page_break_cases + dual_cases + element_type_cases
         for path, screenplay, with_title in cases:
             title, elements = model(screenplay)
             want = (title if with_title else [], elements)

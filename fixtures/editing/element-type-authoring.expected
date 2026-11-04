@@ -1,0 +1,11 @@
+# Hand-derived profile slots: normal element gaps; two blank slots after transition.
+page 1 number=none
+1	heading	INT. STATION - DAY
+3	centered	ACT ONE	bold=ACT
+5	action	A bell waits.
+7	cue	MARA (V.O.)
+8	paren	(softly)
+9	dialogue	Here we are.
+11	lyric	We follow the light.	underline=follow
+13	transition	CUT TO:
+16	centered	END OF ACT ONE

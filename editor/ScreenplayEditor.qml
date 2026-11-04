@@ -15,6 +15,30 @@ Rectangle {
     color: "#d4d9df"
     function focusEditor() { editor.forceActiveFocus() }
     readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
+    readonly property var elementTypes: [
+        { type: "sceneHeading", label: "Scene heading", name: "Heading" },
+        { type: "action", label: "Action", name: "Action" },
+        { type: "character", label: "Character", name: "Character" },
+        { type: "parenthetical", label: "Parenthetical", name: "Parenthetical" },
+        { type: "dialogue", label: "Dialogue", name: "Dialogue" },
+        { type: "transition", label: "Transition", name: "Transition" },
+        { type: "lyric", label: "Lyric", name: "Lyric" },
+        { type: "centered", label: "Centered / act label", name: "Centered" }
+    ]
+    readonly property string currentType: {
+        commands.documentRevision // Also refresh after type changes, Undo and Redo at a stationary caret.
+        return commands.elementTypeAt(editor.cursorPosition)
+    }
+    readonly property string typeLabel: {
+        for (const entry of elementTypes)
+            if (entry.type === currentType) return entry.label
+        return currentType === "pageBreak" ? "Page break" : "Title page"
+    }
+    function setElementType(type) {
+        if (enabled)
+            commands.setElementType(editor.cursorPosition, editor.selectionStart, editor.selectionEnd, type)
+        editor.forceActiveFocus()
+    }
     function toggleDualDialogue() {
         if (enabled)
             commands.toggleDualDialogue(editor.cursorPosition, editor.selectionStart, editor.selectionEnd)
@@ -118,6 +142,11 @@ Rectangle {
                     const shift = event.modifiers & Qt.ShiftModifier
                     const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
                     const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
+                    if (event.modifiers === Qt.ControlModifier && event.key >= Qt.Key_1 && event.key <= Qt.Key_8) {
+                        root.setElementType(root.elementTypes[event.key - Qt.Key_1].type)
+                        event.accepted = true
+                        return
+                    }
                     if (event.modifiers === (Qt.ControlModifier | Qt.ShiftModifier) && event.key === Qt.Key_D) {
                         root.toggleDualDialogue()
                         event.accepted = true

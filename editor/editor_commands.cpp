@@ -25,6 +25,11 @@ namespace {
 // Tab order from the brief; Shift+Tab runs it backward.
 constexpr std::array cycle{ElementType::heading, ElementType::action, ElementType::cue,
                            ElementType::parenthetical, ElementType::dialogue, ElementType::transition};
+constexpr std::array body_types{ElementType::heading, ElementType::action, ElementType::cue,
+    ElementType::parenthetical, ElementType::dialogue, ElementType::transition, ElementType::lyric, ElementType::centered};
+const QStringList body_type_names{QStringLiteral("sceneHeading"), QStringLiteral("action"), QStringLiteral("character"),
+    QStringLiteral("parenthetical"), QStringLiteral("dialogue"), QStringLiteral("transition"),
+    QStringLiteral("lyric"), QStringLiteral("centered")};
 
 std::size_t utf8_offset(const QString& text, int utf16) {
   return element_text(text.left(utf16)).size();
@@ -336,6 +341,8 @@ EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObje
 }
 
 void EditorCommands::refreshDocumentState() {
+  setTypeMessage({});
+  emit documentStateChanged();
   QVariantList issues;
   QString title, dual_warning;
   for (auto block = document_->begin(); block.isValid();) {
@@ -866,27 +873,65 @@ int EditorCommands::enter(int position, int selectionStart, int selectionEnd) {
   return cursor.position();
 }
 
-void EditorCommands::cycleType(int position, bool backward) {
+QString EditorCommands::elementTypeAt(int position) const {
+  const auto block = document_->findBlock(position);
+  if (!block.isValid()) return {};
+  const auto type = element_type(block);
+  const auto found = std::find(body_types.begin(), body_types.end(), type);
+  if (found != body_types.end()) return body_type_names[found - body_types.begin()];
+  return type == ElementType::page_break ? QStringLiteral("pageBreak") : QStringLiteral("titlePage");
+}
+
+void EditorCommands::setTypeMessage(const QString& message) {
+  if (type_message_ == message) return;
+  type_message_ = message;
+  emit typeMessageChanged();
+}
+
+void EditorCommands::setElementType(int position, int start, int end, const QString& name) {
+  setTypeMessage({});
   setDualMessage({});
-  if (dual_member(document_->findBlock(position))) { setDualMessage(unpair_first); return; }
-  if (isPageBreak(position)) {
-    setPageBreakMessage(QStringLiteral("A page break is not a text element. Move to adjacent writing to change its type."));
+  setPageBreakMessage({});
+  const auto index = body_type_names.indexOf(name);
+  if (index < 0 || position < 0 || position >= document_->characterCount() ||
+      start < 0 || end < 0 || start >= document_->characterCount() || end >= document_->characterCount()) return;
+  const auto block = document_->findBlock(position);
+  if (document_->findBlock(start) != block || document_->findBlock(end) != block) {
+    setTypeMessage(QStringLiteral("Choose one element at a time to change its type. The selected writing is kept."));
     return;
   }
-  setPageBreakMessage({});
+  if (element_type(block) == ElementType::page_break) {
+    setTypeMessage(QStringLiteral("A page break is not a text element. Use the Page break controls, or move to adjacent writing."));
+    return;
+  }
+  if (title_index(element_type(block)) >= 0) {
+    setTypeMessage(QStringLiteral("Use the Title page form to edit title fields. Move to the screenplay to change a body element's type."));
+    return;
+  }
+  const auto next = body_types[index];
+  if (element_type(block) == next) return;
+  if (dual_member(block)) { setDualMessage(unpair_first); return; }
   QTextCursor cursor(document_);
   cursor.setPosition(position);
-  const auto type = element_type(cursor.block());
+  cursor.beginEditBlock();
+  set_type(cursor, next);
+  cursor.endEditBlock();
+}
+
+void EditorCommands::cycleType(int position, bool backward) {
+  const auto block = document_->findBlock(position);
+  if (!block.isValid()) return;
+  const auto type = element_type(block);
   const auto found = std::find(cycle.begin(), cycle.end(), type);
-  // Types outside the cycle (lyrics, centered text, title fields) become action.
+  // The two other body types return to Action. Protected elements use the
+  // same refusal path as direct selection rather than becoming body text.
   auto next = ElementType::action;
   if (found != cycle.end()) {
     const auto index = static_cast<std::size_t>(found - cycle.begin());
     next = cycle[(index + (backward ? cycle.size() - 1 : 1)) % cycle.size()];
   }
-  cursor.beginEditBlock();
-  set_type(cursor, next);
-  cursor.endEditBlock();
+  const auto index = std::find(body_types.begin(), body_types.end(), next) - body_types.begin();
+  setElementType(position, position, position, body_type_names[index]);
 }
 
 void EditorCommands::toggleEmphasis(int selectionStart, int selectionEnd, const QString& name) {

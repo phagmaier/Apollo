@@ -1,0 +1,67 @@
+{
+  "format": "apollo-screenplay",
+  "version": 1,
+  "revision": 0,
+  "titlePage": [],
+  "elements": [
+    {
+      "id": "e1",
+      "type": "action",
+      "text": "int. station - day"
+    },
+    {
+      "id": "e2",
+      "type": "action",
+      "text": "ACT ONE",
+      "styles": [
+        {
+          "start": 0,
+          "end": 3,
+          "style": "bold"
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "action",
+      "text": "A bell waits."
+    },
+    {
+      "id": "e4",
+      "type": "action",
+      "text": "mara (v.o.)"
+    },
+    {
+      "id": "e5",
+      "type": "action",
+      "text": "(softly)"
+    },
+    {
+      "id": "e6",
+      "type": "action",
+      "text": "Here we are."
+    },
+    {
+      "id": "e7",
+      "type": "action",
+      "text": "We follow the light.",
+      "styles": [
+        {
+          "start": 3,
+          "end": 9,
+          "style": "underline"
+        }
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "action",
+      "text": "CUT TO:"
+    },
+    {
+      "id": "e9",
+      "type": "action",
+      "text": "END OF ACT ONE"
+    }
+  ]
+}

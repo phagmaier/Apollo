@@ -18,6 +18,8 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   and printed for headings and cues, import/export rules and the owner's case policy.
 - [Spacing](docs/spacing.md): authored versus presented spaces, deliberate
   breaks and blank dialogue lines in layout, page splits, import and export.
+- [Element types](docs/element-types.md): the body selector and Ctrl+1–8,
+  centered act labels, the six-type Tab cycle and protected structures.
 - [Export profile](docs/export-profile.md) and [fixture guide](fixtures/README.md):
   layout rules, independent expectations, and verification procedures.
 - [Stack recommendation](docs/stack-recommendation.md): technical

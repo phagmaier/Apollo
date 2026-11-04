@@ -470,6 +470,68 @@ private slots:
     QCOMPARE(bytes(input), original);
   }
 
+  void element_type_authoring_survives_save_reopen_and_export() {
+    const auto initial = parse_screenplay(bytes(APOLLO_IMPORT_FIXTURE_DIR "/../editing/element-type-authoring.screenplay.json"));
+    const auto expected_fountain = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/element-type-authoring.fountain");
+    const auto requested = qEnvironmentVariable("APOLLO_ELEMENT_TYPE_OUTPUT");
+    const auto output_root = requested.isEmpty() ? path("element-type-output") : requested;
+    QVERIFY(QDir().mkpath(output_root));
+    const auto project = create_project(output_root + "/project", initial);
+    const auto state = path("element-type-state");
+    auto expected = initial;
+    const std::array types{ElementType::heading, ElementType::centered, ElementType::action,
+        ElementType::cue, ElementType::parenthetical, ElementType::dialogue, ElementType::lyric,
+        ElementType::transition, ElementType::centered};
+    const std::array keys{Qt::Key_1, Qt::Key_8, Qt::Key_2, Qt::Key_3, Qt::Key_4,
+                         Qt::Key_5, Qt::Key_7, Qt::Key_6, Qt::Key_8};
+    for (std::size_t i = 0; i < types.size(); ++i) expected.elements[i].type = types[i];
+    auto writing = [](const QTextDocument* doc) { return canonical(Screenplay{0, document_elements(*doc)}); };
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      auto* document = window.flow.document();
+      for (int i = 0; i < int(types.size()); ++i) {
+        window.flow.editor()->setProperty("cursorPosition", document->findBlockByNumber(i).position() + 2);
+        if (i == 1) { // Author the act label through the actual graphical control.
+          QVERIFY(window.click("elementTypeButton"));
+          QTRY_VERIFY(window.popup_open("elementTypeMenu"));
+          QVERIFY(window.click("elementTypeCentered"));
+        } else QTest::keyClick(&window.view, keys[i], Qt::ControlModifier);
+      }
+      QCOMPARE(writing(document), expected);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      auto before_last = expected; before_last.elements.back().type = ElementType::action;
+      QCOMPARE(writing(document), before_last);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(writing(document), expected);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      auto saved = open_project(project.directory).screenplay; saved.revision = 0;
+      QCOMPARE(saved, expected);
+    }
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      QCOMPARE(writing(window.flow.document()), expected);
+      auto* fountain = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      auto* pdf = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+      QVERIFY(fountain && pdf);
+      QTest::keyClick(&window.view, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.popup_open("exportPanel"));
+      window.item("fountainDestination")->setProperty("text", output_root + "/authored.fountain");
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_VERIFY(!fountain->busy());
+      QCOMPARE(bytes(output_root + "/authored.fountain"), expected_fountain);
+      QVERIFY(window.click("exportButton"));
+      QVERIFY(window.click("exportFormatPdf"));
+      window.item("exportDestination")->setProperty("text", output_root + "/authored.pdf");
+      QSignalSpy done(pdf, &PdfExportJob::completed);
+      QVERIFY(window.click("exportConfirm"));
+      QTRY_COMPARE(done.size(), 1); QVERIFY(done[0][0].toBool());
+      // Export captures the applied types without changing saved source.
+      QCOMPARE(writing(window.flow.document()), expected);
+    }
+  }
+
   void dual_authoring_survives_save_reopen_and_export() {
     const auto initial = parse_screenplay(bytes(APOLLO_IMPORT_FIXTURE_DIR "/../editing/dual-dialogue-authoring.screenplay.json"));
     const auto expected_fountain = bytes(APOLLO_IMPORT_FIXTURE_DIR "/../export/dual-dialogue-authoring.fountain");

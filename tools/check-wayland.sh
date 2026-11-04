@@ -116,6 +116,9 @@ run_wizard() {
   run_logged native-dual-dialogue timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/dual_dialogue_native_smoke.py \
     --editor "$editor" --output "$APOLLO_RUN_DIR/native-dual-dialogue"
   printf '\nNative dual dialogue: real wtype pair/unpair, typing, protected structure, exact IDs, Undo/Redo, autosave/reopen, independent PDF columns and exact Fountain passed.\n' >> "$APOLLO_RESULTS"
+  run_logged native-element-types timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/element_types_native_smoke.py \
+    --editor "$editor" --output "$APOLLO_RUN_DIR/native-element-types"
+  printf '\nNative element types: all eight wtype shortcuts, centered act labels and lyrics, typing, Tab, exact IDs, Undo/Redo, autosave/reopen, independent PDF and exact Fountain passed.\n' >> "$APOLLO_RESULTS"
   run_logged native-export-snapshots timeout 180s env PYTHONDONTWRITEBYTECODE=1 uv run tests/editor_pdf_tests.py \
     --editor "$editor" --output "$APOLLO_RUN_DIR/native-editor-pdf-tests"
   while IFS= read -r line; do

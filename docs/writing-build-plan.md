@@ -6,7 +6,7 @@ within the implementation slices. No owner question from this interview remains
 pending. Implementation requires task-specific authorization; the progress
 record below distinguishes completed work from remaining proposals.
 
-**Current status (2026-10-29):** slice 1 and tasks **2.1–2.5** are done.
+**Current status (2026-11-04):** slice 1 and tasks **2.1–2.5** are done.
 Project sessions are guarded; Save a Copy becomes active without resetting the
 editor; Reload preserves current writing first; recovery/emergency packages and
 explicit failure-close choices are implemented and verified as recorded below.
@@ -52,6 +52,16 @@ from the second speech. The owner chose explicit unpairing before structural
 changes; incomplete/oversized groups retain writing with visible diagnostics.
 See the [contract and evidence](dual-dialogue.md). Other milestone work and
 imported PDF remain gated.
+
+**Task 3e — element-type controls is done (2026-11-04), for this bounded step.**
+The live selector and Ctrl+1–8 cover all eight body types, including lyrics and
+centered act labels. Release and sanitizer suites pass 24/24, engine 2/2;
+affected editor/project-flow/oracle checks pass again after the final menu fix.
+Real controls, persistence, independent Fountain/PDF and native Compose/wtype
+checks pass. fcitx is unverified here, and the existing heavy-I/O crash-loss
+limit remains. See [the contract and evidence](element-types.md) and
+[task result](#task-3e--element-type-controls). Remaining selection/clipboard,
+shortcut-reference, assistance/navigation and interchange work stays pending.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1515,3 +1525,56 @@ independent Fountain/PDF fixture passes, including fresh-process output and
 retained imported-PDF refusal. See the [final evidence and limits](dual-dialogue.md#final-check-results--2026-10-29).
 Sustained typing performance and owner appearance/comfort acceptance were not
 re-evaluated. This completes only the bounded dual-authoring task.
+
+
+### Task 3e — element-type controls
+
+2026-11-04. **Done for this bounded step**, with the evidence and limits below.
+The task follows the completed dual-dialogue step with the remaining body-type
+controls from the [editing contract](#editing-and-assistance-contract). See
+[element-types.md](element-types.md) for the interaction table and evidence limits.
+
+The Writing desk now shows the caret's current element type and offers all eight
+body text types through a selector and Ctrl+1–8. Lyrics and centered act labels
+are directly authorable. Each choice changes one whole element in one undo step,
+retains text/breaks, emphasis, identity and local selection, and refuses a
+cross-element selection. Title fields and page-break markers use their dedicated
+controls; paired speeches still require explicit unpairing. The six-type Tab
+cycle remains, and the toolbar wraps beside the expanded outline. No source,
+import-converter or Fountain-contract version changed.
+
+Meaningful checks first failed against the missing controls, then passed through
+the real menu/keys. Existing stale-title validation still tests atomic refusal
+when another adapter changes a field's type; Tab now protects title fields.
+Original synthetic fixtures provide hand-written canonical Fountain and
+hand-derived PDF slots/columns, checked by Poppler and independent aw-parser,
+along with exact saved IDs/styles and fresh-process reopen/reimport. Final review
+reproduced a checkmark becoming unchecked when choosing the active type. The
+menu now restores its live type binding after unchanged/refused commands;
+focused checks fail before that fix and pass afterward. All four affected
+editor/project-flow/process/oracle checks pass again in release and sanitizer
+builds, and native menu/no-op/protection checks pass again.
+
+| Check | Result |
+| --- | --- |
+| Isolated `mise run check` | 24/24 passed |
+| `mise run check-debug` | 24/24 passed with address/undefined/leak sanitizers |
+| `mise run check-engine` | 2/2 passed |
+| Affected checks after final menu fix | 4/4 release and 4/4 sanitizer; native menu/protection passed |
+| Independent Fountain process/oracle | 36 exports matched hand-worked semantic models |
+| Native Wayland/OpenGL editor, Compose input plugin | 108 passed, three optional input checks skipped; scene shortcut passed separately |
+| Native project flows | 44 passed, no skips |
+| Native wtype element-type smoke | All eight shortcuts, lyric/act labels, typing, Tab, Undo/Redo, IDs, autosave/reopen and independent exports passed |
+| Direct review, synthetic-window image, shell syntax and whitespace | Passed; no remaining in-scope findings |
+
+Logs are in `build/task-3e-*`; final native smoke evidence is under
+`build/task-3e-native-elements-verified/`. The system lacks fcitx5, so full fcitx
+preflight was not run; the default Wayland input context produced focus warnings
+on rapid test-window replacement, while the explicit Compose run passed. The
+wtype test executable was extracted locally without changing system packages.
+A concurrent sanitizer workload reproduced the known heavy-I/O crash-loss limit
+(1,146 ms against the unchanged 1,000 ms target); the complete isolated release
+suite passes without that competing workload. Owner comfort, sustained typing
+performance, general selection/clipboard rules, standalone shortcut lookup,
+broader Fountain compatibility,
+imported PDF and later milestone slices remain separate work.

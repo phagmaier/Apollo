@@ -461,105 +461,147 @@ Rectangle {
         Item {
             id: workbar
             anchors { left: parent.left; right: parent.right; top: parent.top }
-            height: 57
-            DeskButton {
-                id: titleButton
-                objectName: "titlePageButton"
-                anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter }
-                text: "Title page…"; ink: "#303843"; fill: "#e9edf0"
-                visible: desk.autosaver !== null
-                enabled: visible && editorPage.enabled && !desk.autosaver.copyBusy
-                Accessible.name: "Edit title page (Ctrl+Shift+T)"
-                onClicked: titlePanel.open()
-            }
-            Row {
-                anchors.centerIn: parent
-                spacing: 12
-                Text { text: "Screenplay"; color: "#4d5965"; font { family: "Liberation Sans"; pixelSize: 12; weight: Font.DemiBold } }
-                Text { text: desk.screenplayLayout.pageCount + (desk.screenplayLayout.pageCount === 1 ? " page" : " pages"); color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 } }
-                Text { text: "100%"; color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 } }
-            }
-            DeskButton {
-                id: pageBreakButton
-                objectName: "pageBreakButton"
-                anchors { right: emphasisButton.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
-                text: "Page break"
-                ink: "#303843"; fill: "#e9edf0"
-                enabled: editorPage.enabled
-                Accessible.name: "Insert or remove a manual page break"
-                ToolTip.text: "Insert: Ctrl+Enter. Remove: Ctrl+Shift+Enter. Page breaks keep whole elements and speeches together."
-                onClicked: pageBreakMenu.open()
-                Menu {
-                    id: pageBreakMenu
-                    objectName: "pageBreakMenu"
-                    y: pageBreakButton.height
-                    onClosed: editorPage.focusEditor()
-                    MenuItem {
-                        objectName: "pageBreakInsert"
-                        text: "Insert page break\tCtrl+Enter"
-                        onTriggered: editorPage.insertPageBreak()
-                    }
-                    MenuItem {
-                        objectName: "pageBreakRemove"
-                        text: "Remove page break\tCtrl+Shift+Enter"
-                        onTriggered: editorPage.removePageBreak()
-                    }
-                    MenuSeparator {}
-                    Label {
-                        width: 310; padding: 12; wrapMode: Text.Wrap
-                        text: "Inserts before the whole element, speech or dual pair; at its final end, inserts after it. Selected writing is never replaced. Backspace or Delete beside a break removes only the marker."
-                        font.pixelSize: 12
+            height: workbarFlow.height + 24
+            Flow {
+                id: workbarFlow
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 16; topMargin: 12 }
+                spacing: 8
+                DeskButton {
+                    id: titleButton
+                    objectName: "titlePageButton"
+                    text: "Title page…"; ink: "#303843"; fill: "#e9edf0"
+                    visible: desk.autosaver !== null
+                    enabled: visible && editorPage.enabled && !desk.autosaver.copyBusy
+                    Accessible.name: "Edit title page (Ctrl+Shift+T)"
+                    onClicked: titlePanel.open()
+                }
+                DeskButton {
+                    id: elementTypeButton
+                    objectName: "elementTypeButton"
+                    text: editorPage.typeLabel
+                    ink: "#303843"; fill: "#e9edf0"
+                    enabled: editorPage.enabled
+                    Accessible.name: "Element type: " + text
+                    ToolTip.text: "Change this element's type. Ctrl+1–8; Tab cycles the six common types."
+                    onClicked: elementTypeMenu.open()
+                    Menu {
+                        id: elementTypeMenu
+                        objectName: "elementTypeMenu"
+                        y: elementTypeButton.height
+                        onClosed: editorPage.focusEditor()
+                        Instantiator {
+                            model: editorPage.elementTypes
+                            delegate: MenuItem {
+                                required property var modelData
+                                required property int index
+                                objectName: "elementType" + modelData.name
+                                text: modelData.label + "\tCtrl+" + (index + 1)
+                                checkable: true
+                                checked: editorPage.currentType === modelData.type
+                                onTriggered: {
+                                    editorPage.setElementType(modelData.type)
+                                    // Qt toggles checkable items even when a command
+                                    // is unchanged or refused. Keep the live type authoritative.
+                                    checked = Qt.binding(() => editorPage.currentType === modelData.type)
+                                }
+                            }
+                            onObjectAdded: (index, object) => elementTypeMenu.insertItem(index, object)
+                            onObjectRemoved: (index, object) => elementTypeMenu.removeItem(object)
+                        }
+                        MenuSeparator {}
+                        Label {
+                            width: 310; padding: 12; wrapMode: Text.Wrap
+                            text: "Changes one whole element and keeps its words. Act labels use centered text. Tab / Shift+Tab cycle the six common types."
+                            font.pixelSize: 12
+                        }
                     }
                 }
-            }
-            DeskButton {
-                id: emphasisButton
-                objectName: "emphasisButton"
-                anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
-                text: "Format"
-                ink: "#303843"; fill: "#e9edf0"
-                enabled: editorPage.enabled
-                Accessible.name: "Format screenplay: Dual Dialogue, Bold, Italic, Underline"
-                ToolTip.text: "Dual Dialogue: Ctrl+Shift+D in the second speech. Select text for Bold, Italic or Underline."
-                onClicked: emphasisMenu.open()
-                Menu {
-                    id: emphasisMenu
-                    objectName: "emphasisMenu"
-                    y: emphasisButton.height
-                    onClosed: editorPage.focusEditor()
-                    MenuItem {
-                        objectName: "dualDialogueToggle"
-                        text: "Toggle Dual Dialogue\tCtrl+Shift+D"
-                        enabled: editorPage.enabled
-                        onTriggered: editorPage.toggleDualDialogue()
+                DeskButton {
+                    id: pageBreakButton
+                    objectName: "pageBreakButton"
+                    text: "Page break"
+                    ink: "#303843"; fill: "#e9edf0"
+                    enabled: editorPage.enabled
+                    Accessible.name: "Insert or remove a manual page break"
+                    ToolTip.text: "Insert: Ctrl+Enter. Remove: Ctrl+Shift+Enter. Page breaks keep whole elements and speeches together."
+                    onClicked: pageBreakMenu.open()
+                    Menu {
+                        id: pageBreakMenu
+                        objectName: "pageBreakMenu"
+                        y: pageBreakButton.height
+                        onClosed: editorPage.focusEditor()
+                        MenuItem {
+                            objectName: "pageBreakInsert"
+                            text: "Insert page break\tCtrl+Enter"
+                            onTriggered: editorPage.insertPageBreak()
+                        }
+                        MenuItem {
+                            objectName: "pageBreakRemove"
+                            text: "Remove page break\tCtrl+Shift+Enter"
+                            onTriggered: editorPage.removePageBreak()
+                        }
+                        MenuSeparator {}
+                        Label {
+                            width: 310; padding: 12; wrapMode: Text.Wrap
+                            text: "Inserts before the whole element, speech or dual pair; at its final end, inserts after it. Selected writing is never replaced. Backspace or Delete beside a break removes only the marker."
+                            font.pixelSize: 12
+                        }
                     }
-                    Label {
-                        width: 310; padding: 12; wrapMode: Text.Wrap
-                        text: "Dual Dialogue: put the caret in the second complete speech to pair it with the preceding speech, or turn the pair off. Page breaks cannot separate the speeches."
-                        font.pixelSize: 12
+                }
+                DeskButton {
+                    id: emphasisButton
+                    objectName: "emphasisButton"
+                    text: "Format"
+                    ink: "#303843"; fill: "#e9edf0"
+                    enabled: editorPage.enabled
+                    Accessible.name: "Format screenplay: Dual Dialogue, Bold, Italic, Underline"
+                    ToolTip.text: "Dual Dialogue: Ctrl+Shift+D in the second speech. Select text for Bold, Italic or Underline."
+                    onClicked: emphasisMenu.open()
+                    Menu {
+                        id: emphasisMenu
+                        objectName: "emphasisMenu"
+                        y: emphasisButton.height
+                        onClosed: editorPage.focusEditor()
+                        MenuItem {
+                            objectName: "dualDialogueToggle"
+                            text: "Toggle Dual Dialogue\tCtrl+Shift+D"
+                            enabled: editorPage.enabled
+                            onTriggered: editorPage.toggleDualDialogue()
+                        }
+                        Label {
+                            width: 310; padding: 12; wrapMode: Text.Wrap
+                            text: "Dual Dialogue: put the caret in the second complete speech to pair it with the preceding speech, or turn the pair off. Page breaks cannot separate the speeches."
+                            font.pixelSize: 12
+                        }
+                        MenuSeparator {}
+                        MenuItem {
+                            objectName: "emphasisBold"
+                            text: "Bold\tCtrl+B"
+                            font.bold: true
+                            enabled: editorPage.enabled && editorPage.hasSelection
+                            onTriggered: editorPage.toggleEmphasis("bold")
+                        }
+                        MenuItem {
+                            objectName: "emphasisItalic"
+                            text: "Italic\tCtrl+I"
+                            font.italic: true
+                            enabled: editorPage.enabled && editorPage.hasSelection
+                            onTriggered: editorPage.toggleEmphasis("italic")
+                        }
+                        MenuItem {
+                            objectName: "emphasisUnderline"
+                            text: "Underline\tCtrl+U"
+                            font.underline: true
+                            enabled: editorPage.enabled && editorPage.hasSelection
+                            onTriggered: editorPage.toggleEmphasis("underline")
+                        }
                     }
-                    MenuSeparator {}
-                    MenuItem {
-                        objectName: "emphasisBold"
-                        text: "Bold\tCtrl+B"
-                        font.bold: true
-                        enabled: editorPage.enabled && editorPage.hasSelection
-                        onTriggered: editorPage.toggleEmphasis("bold")
-                    }
-                    MenuItem {
-                        objectName: "emphasisItalic"
-                        text: "Italic\tCtrl+I"
-                        font.italic: true
-                        enabled: editorPage.enabled && editorPage.hasSelection
-                        onTriggered: editorPage.toggleEmphasis("italic")
-                    }
-                    MenuItem {
-                        objectName: "emphasisUnderline"
-                        text: "Underline\tCtrl+U"
-                        font.underline: true
-                        enabled: editorPage.enabled && editorPage.hasSelection
-                        onTriggered: editorPage.toggleEmphasis("underline")
-                    }
+                }
+                Text {
+                    height: elementTypeButton.height
+                    verticalAlignment: Text.AlignVCenter
+                    text: desk.screenplayLayout.pageCount + (desk.screenplayLayout.pageCount === 1 ? " page" : " pages")
+                    color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 }
                 }
             }
         }
@@ -637,7 +679,7 @@ Rectangle {
         Text {
             anchors { left: parent.left; right: parent.right; margins: 20; verticalCenter: parent.verticalCenter }
             objectName: "operationStatus"
-            text: desk.commands.pageBreakMessage || desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.lastExport === "fountain" && desk.fountainJob ? desk.fountainJob.status : desk.exportJob ? desk.exportJob.status : "")
+            text: desk.commands.typeMessage || desk.commands.pageBreakMessage || desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.lastExport === "fountain" && desk.fountainJob ? desk.fountainJob.status : desk.exportJob ? desk.exportJob.status : "")
             elide: Text.ElideMiddle
             ToolTip.visible: footerArea.containsMouse
             ToolTip.text: text

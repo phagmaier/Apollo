@@ -1100,8 +1100,12 @@ private slots:
       QVERIFY(!document->isUndoAvailable());
       QVERIFY(!document->isModified());
     }
-    // A form snapshot cannot retarget an element whose actual type changed.
-    commands.cycleType(0, false);
+    // A form snapshot cannot retarget an element whose actual type changed
+    // through another adapter. Normal type controls now protect title fields.
+    QTextCursor changed(document.get());
+    QTextBlockFormat body_type;
+    body_type.setProperty(element_type_property, static_cast<int>(ElementType::action));
+    changed.mergeBlockFormat(body_type);
     const auto retyped = document_elements(*document);
     const int steps = document->availableUndoSteps();
     QVERIFY(!commands.setTitlePage(original));
@@ -1956,6 +1960,185 @@ private slots:
     QCOMPARE(document_elements(*document_), typed);
     press(Qt::Key_Z, Qt::ControlModifier);
     QCOMPARE(document_elements(*document_), original);
+  }
+
+  void element_type_shortcuts_preserve_writing_and_selection_data() {
+    QTest::addColumn<int>("key");
+    QTest::addColumn<int>("type");
+    QTest::addColumn<QString>("label");
+    const std::array types{ElementType::heading, ElementType::action, ElementType::cue,
+        ElementType::parenthetical, ElementType::dialogue, ElementType::transition,
+        ElementType::lyric, ElementType::centered};
+    const QStringList labels{"Scene heading", "Action", "Character", "Parenthetical",
+        "Dialogue", "Transition", "Lyric", "Centered / act label"};
+    for (int i = 0; i < 8; ++i)
+      QTest::newRow(qPrintable(labels[i])) << int(Qt::Key_1 + i) << int(types[i]) << labels[i];
+  }
+
+  void element_type_shortcuts_preserve_writing_and_selection() {
+    QFETCH(int, key); QFETCH(int, type); QFETCH(QString, label);
+    const auto target = static_cast<ElementType>(type);
+    const auto before = target == ElementType::action ? ElementType::centered : ElementType::action;
+    QVERIFY(open_elements({{before, "Caf\xc3\xa9 bells\nring.", false, {{0, 5, Style::bold}}, "words"},
+                           {ElementType::action, "Untouched.", false, {}, "after"}}));
+    const auto original = document_elements(*document_);
+    auto* selector = view_->rootObject()->findChild<QQuickItem*>("elementTypeButton");
+    QVERIFY(selector);
+    // Backward local selection must retain its direction and UTF-16 bounds.
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 8), Q_ARG(int, 2));
+    press(static_cast<Qt::Key>(key), Qt::ControlModifier);
+    auto expected = original; expected[0].type = target;
+    QCOMPARE(document_elements(*document_), expected);
+    QCOMPARE(cursor(), 2);
+    QCOMPARE(editor_->property("selectionEnd").toInt(), 8);
+    QCOMPARE(selector->property("text").toString(), label);
+    const auto steps = document_->availableUndoSteps();
+    press(static_cast<Qt::Key>(key), Qt::ControlModifier);
+    QCOMPARE(document_->availableUndoSteps(), steps); // no-op is not an edit
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), expected);
+    // Qt's Undo/Redo can restore the caret at the next element. The selector
+    // follows that caret; return to the changed element to check its label.
+    editor_->setProperty("cursorPosition", 2);
+    QCOMPARE(selector->property("text").toString(), label);
+    editor_->setProperty("cursorPosition", document_->lastBlock().position());
+    QCOMPARE(selector->property("text").toString(), QStringLiteral("Action"));
+  }
+
+  void element_type_menu_and_six_type_tab_cycle() {
+    QVERIFY(open_elements({{ElementType::action, "ACT ONE", false, {{0, 3, Style::italic}}, "act"}}));
+    const auto original = document_elements(*document_);
+    auto* button = view_->rootObject()->findChild<QQuickItem*>("elementTypeButton");
+    QVERIFY(button);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     button->mapToScene(button->boundingRect().center()).toPoint());
+    auto* menu = view_->rootObject()->findChild<QObject*>("elementTypeMenu");
+    QVERIFY(menu);
+    QTRY_VERIFY(menu->property("opened").toBool());
+    auto* centered = find_item(view_->contentItem(), "elementTypeCentered");
+    QVERIFY(centered && centered->isEnabled());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     centered->mapToScene(centered->boundingRect().center()).toPoint());
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    auto expected = original; expected[0].type = ElementType::centered;
+    QCOMPARE(document_elements(*document_), expected);
+    QCOMPARE(button->property("text").toString(), QStringLiteral("Centered / act label"));
+    const auto steps = document_->availableUndoSteps();
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     button->mapToScene(button->boundingRect().center()).toPoint());
+    QTRY_VERIFY(menu->property("opened").toBool());
+    QVERIFY(centered->property("checked").toBool());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     centered->mapToScene(centered->boundingRect().center()).toPoint());
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    QVERIFY(centered->property("checked").toBool());
+    QCOMPARE(document_->availableUndoSteps(), steps);
+    // Keep all authoring controls reachable beside the expanded outline.
+    view_->resize(880, 900);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+        view_->rootObject()->findChild<QQuickItem*>("outlineToggle")->mapToScene(QPointF(20, 20)).toPoint());
+    QTest::qWait(50);
+    const QStringList controls{"elementTypeButton", "pageBreakButton", "emphasisButton"};
+    QList<QRectF> regions;
+    for (const auto& name : controls) {
+      auto* item = view_->rootObject()->findChild<QQuickItem*>(name);
+      QVERIFY(item && item->isVisible());
+      const auto region = item->mapRectToScene(item->boundingRect());
+      QVERIFY(QRectF(QPointF(), view_->size()).contains(region));
+      for (const auto& previous : regions) QVERIFY(!previous.intersects(region));
+      regions.append(region);
+    }
+    view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/element-types-outline.png"));
+    press(Qt::Key_Tab); // a type outside the six-common-type cycle becomes Action
+    QCOMPARE(element_type(document_->firstBlock()), ElementType::action);
+    const std::array cycle{ElementType::cue, ElementType::parenthetical, ElementType::dialogue,
+                          ElementType::transition, ElementType::heading, ElementType::action};
+    for (const auto next : cycle) {
+      press(Qt::Key_Tab);
+      QCOMPARE(element_type(document_->firstBlock()), next);
+    }
+    press(Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(element_type(document_->firstBlock()), ElementType::heading);
+    press(Qt::Key_7, Qt::ControlModifier);
+    QCOMPARE(element_type(document_->firstBlock()), ElementType::lyric);
+    press(Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(element_type(document_->firstBlock()), ElementType::action);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(button->property("text").toString(), QStringLiteral("Lyric"));
+  }
+
+  void element_type_controls_refuse_protected_structure() {
+    for (const auto type : {ElementType::title, ElementType::page_break}) {
+      QVERIFY(open_elements({{type, type == ElementType::title ? "TITLE" : ""}, {ElementType::action, "Words."}}));
+      const auto original = document_elements(*document_);
+      editor_->setProperty("cursorPosition", 0);
+      press(Qt::Key_7, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), original);
+      auto* commands = document_->findChild<EditorCommands*>();
+      QVERIFY(!commands->typeMessage().isEmpty());
+      QCOMPARE(view_->rootObject()->findChild<QObject*>("operationStatus")->property("text").toString(), commands->typeMessage());
+      press(Qt::Key_Tab);
+      QCOMPARE(document_elements(*document_), original);
+      QVERIFY(!document_->isUndoAvailable());
+    }
+    QVERIFY(open_elements({{ElementType::action, "First."}, {ElementType::action, "Second."}}));
+    const auto original = document_elements(*document_);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 2), Q_ARG(int, 10));
+    press(Qt::Key_8, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    QCOMPARE(cursor(), 10);
+    QCOMPARE(editor_->property("selectionStart").toInt(), 2);
+    QVERIFY(!document_->isUndoAvailable());
+    QVERIFY(!document_->findChild<EditorCommands*>()->typeMessage().isEmpty());
+    // Protect both speeches and every part, including a selection local to a block.
+    QVERIFY(open_elements({{ElementType::cue, "MARA"}, {ElementType::dialogue, "Left."},
+        {ElementType::cue, "THEO", true}, {ElementType::parenthetical, "(softly)"},
+        {ElementType::dialogue, "Right."}}));
+    const auto pair = document_elements(*document_);
+    for (auto block = document_->begin(); block.isValid(); block = block.next()) {
+      editor_->setProperty("cursorPosition", block.position());
+      press(Qt::Key_8, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), pair);
+      QVERIFY(!document_->isUndoAvailable());
+      QVERIFY(document_->findChild<EditorCommands*>()->dualMessage().contains("Turn Dual Dialogue off"));
+    }
+    auto* button = view_->rootObject()->findChild<QQuickItem*>("elementTypeButton");
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     button->mapToScene(button->boundingRect().center()).toPoint());
+    QTRY_VERIFY(view_->rootObject()->findChild<QObject*>("elementTypeMenu")->property("opened").toBool());
+    auto* centered = find_item(view_->contentItem(), "elementTypeCentered");
+    auto* dialogue = find_item(view_->contentItem(), "elementTypeDialogue");
+    QVERIFY(centered && dialogue);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     centered->mapToScene(centered->boundingRect().center()).toPoint());
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    QCOMPARE(document_elements(*document_), pair);
+    QVERIFY(!centered->property("checked").toBool());
+    QVERIFY(dialogue->property("checked").toBool());
+    QVERIFY(!document_->isUndoAvailable());
+  }
+
+  void lyric_and_centered_enter_preserve_type_then_return_to_action() {
+    for (const auto type : {ElementType::lyric, ElementType::centered}) {
+      QVERIFY(open_elements({{ElementType::action, "ACT ONE", false, {}, "label"}}));
+      press(type == ElementType::lyric ? Qt::Key_7 : Qt::Key_8, Qt::ControlModifier);
+      editor_->setProperty("cursorPosition", 3);
+      press(Qt::Key_Return);
+      auto split = document_elements(*document_);
+      QCOMPARE(split.size(), std::size_t(2));
+      QCOMPARE(split[0].type, type); QCOMPARE(split[0].text, std::string("ACT"));
+      QCOMPARE(split[1].type, type); QCOMPARE(split[1].text, std::string(" ONE"));
+      QCOMPARE(split[0].id, std::string("label")); QVERIFY(split[1].id != split[0].id);
+      press(Qt::Key_End);
+      press(Qt::Key_Return);
+      const auto elements = document_elements(*document_);
+      QCOMPARE(elements.size(), std::size_t(3));
+      QCOMPARE(elements[2].type, ElementType::action); QVERIFY(elements[2].text.empty());
+      press(Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*document_), split);
+    }
   }
 
   void dual_authoring_from_every_speech_part_and_undo() {

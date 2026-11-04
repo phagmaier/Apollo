@@ -85,6 +85,21 @@ comparison below; agreement with the engine alone does not prove correctness.
   - it puts one blank line after `FADE IN:` before a heading.
 - Use it to catch wrapping mistakes and to estimate page counts. It is not a page-break authority.
 
+### Element-type authoring
+
+`editing/element-type-authoring.screenplay.json` starts with original action
+paragraphs. Real selector/shortcut commands turn them into all eight body text
+types, including centered act labels and lyrics, while retaining IDs, text and
+emphasis. `export/element-type-authoring.fountain` is the hand-written canonical
+output; `editing/element-type-authoring.expected` contains hand-derived slots
+and columns, including the centered label after a transition. Project-flow and
+process/oracle tests check autosave/reopen, exact Fountain, independent aw-parser
+semantics and Poppler PDF geometry/bold. Underline is checked in saved source
+and independent Fountain semantics, without another raster underline check.
+`tests/element_types_native_smoke.py` exercises all eight shortcuts through
+wtype, typing, Tab, Undo/Redo, autosave/reopen and independent exports. It is
+included in `tools/check-wayland.sh`.
+
 ### Manual page-break authoring
 
 `editing/page-break-authoring.screenplay.json` is an original, unbroken model:
