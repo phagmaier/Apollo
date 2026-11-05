@@ -460,7 +460,7 @@ void EditorCommands::refreshDocumentState() {
     auto text = QString::fromStdString(presented_text(ElementType::heading, element_text(block.text())));
     if (text.trimmed().isEmpty()) text = QStringLiteral("Untitled scene");
     scenes.append(QVariantMap{{"id", block.blockFormat().stringProperty(element_id_property)},
-                              {"text", text}, {"position", block.position()}});
+                              {"text", text}});
   }
   if (scenes != scenes_) {
     scenes_ = std::move(scenes);

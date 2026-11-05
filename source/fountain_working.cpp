@@ -141,8 +141,15 @@ bool writer_subset_character(char32_t cp) {
   return legacy_character(cp) || cp == 0x2014 || cp == 0x2018 || cp == 0x2019 ||
       cp == 0x201c || cp == 0x201d || cp == 0x2026;
 }
-std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e, bool typographic_punctuation) {
+std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e, bool typographic_punctuation, bool check_spacing) {
   std::vector<WriterSubsetGap> result;
+  // When export owns spacing validation, printable ASCII body text already
+  // satisfies every remaining rule. Only action/dialogue may contain LF.
+  // Titles and non-ASCII text retain the full Unicode/case/length checks.
+  if (!check_spacing && !is_title_field(e.type) &&
+      std::all_of(e.text.begin(), e.text.end(), [&](char c) {
+        return (c >= 32 && c <= 126) || (c == '\n' && (e.type == ElementType::action || e.type == ElementType::dialogue));
+      })) return result;
   const auto text = QString::fromUtf8(e.text);
   for (const auto cp : text.toUcs4())
     if (!(typographic_punctuation ? writer_subset_character(cp) : legacy_character(cp))) { result.push_back(WriterSubsetGap::character); break; }
@@ -158,7 +165,7 @@ std::vector<WriterSubsetGap> writer_subset_gaps(const Element& e, bool typograph
   if (text.contains('\n') && e.type != ElementType::action && e.type != ElementType::dialogue)
     result.push_back(WriterSubsetGap::multiline);
   if (is_title_field(e.type) && text.size() > 48) result.push_back(WriterSubsetGap::long_title);
-  if (e.type != ElementType::page_break)
+  if (check_spacing && e.type != ElementType::page_break)
     for (const auto& line : text.split('\n'))
       if (line.isEmpty() || line != line.trimmed() || line.contains("  ")) { result.push_back(WriterSubsetGap::spacing); break; }
   return result;

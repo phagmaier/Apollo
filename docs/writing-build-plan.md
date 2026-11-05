@@ -148,7 +148,14 @@ outputs. Release and sanitizer suites pass 27/27 each, engine 2/2, final export
 rechecks 28/28 each, and the native Wayland smoke passes. See
 [the contract](fountain-export.md#snapshot-files-and-departure) and
 [task evidence](#task-5b--bounded-fountain-export-lifecycle).
-Task 5c — production export responsiveness and remaining evidence — is next.
+**Task 5c — production export responsiveness and remaining evidence is done for this bounded step (2026-11-05).**
+The corrected native primary samples meet the retained budgets; all 109 PDFs
+and 349 Fountain exports verify independently, with exact saves/reopen. Final
+release and sanitizers pass 28/28 each, engine 2/2. A repeatable runner and the
+profiled request/scene-list fixes are implemented and reviewed.
+[Results and retained limits](#task-5c--production-export-responsiveness-and-remaining-evidence) distinguish
+stress, save age, sampled memory and remaining milestone gates. Slice 6's local
+launch/owner handoff and the separate compatibility/slice 2 follow-ups remain open.
 
 ## Intended result and boundary
 
@@ -2371,11 +2378,100 @@ new crash-loss/memory measurements and cancellation of kernel-level filesystem
 stalls remain unestablished here. Task 5c and broader compatibility/slice 2/6
 work remain open.
 
-### Upcoming slice 5 tasks
+### Task 5c — production export responsiveness and remaining evidence
 
-- **5c — production export responsiveness and remaining evidence (ready).**
-  Depends on completed 5a/5b. Measure native primary/stress writing with autosave and all
-  current assistance enabled, including Fountain/PDF exports while typing,
-  saved output correctness and independent layout fixtures. Record cold/warm
-  launch, save age, stalls and memory with honest measurement limits. This does
-  not close the separate broader import/compatibility or slice 2/6 work.
+2026-11-05. **Done for this bounded task.** Depends on
+completed 5a/5b. Implements the native measurement and output-verification part
+of [milestone acceptance](#verification-and-milestone-acceptance), with current
+autosave/assistance and both export helpers. The [measurement method](writing-responsiveness.md)
+records disposable preparation, synchronization, cadence, native versus physical
+input, process-first versus cold-machine launch, instrumentation and sampled
+memory limits.
+
+The new one-command runner and independent input-prefix/output checks are in
+place. The first complete native baseline independently verified all 76 PDFs
+and 116 Fountain exports but missed the primary Fountain request timing budget.
+Profiling found approximately 26 ms in GUI eligibility checking; streaming its
+spelling and bulk-appending plain text reduces that to about 7 ms while keeping
+canonical bytes/validation. A partial native recheck still missed 33 ms; a new
+scene-list test then reproduced unchanged QML rows being recreated after body
+edits. Display data now contains stable identities/names, while navigation keeps
+resolving live positions. The regression and all focused scene controls pass.
+The next complete run still missed Fountain at 35.0 ms p95. Removing redundant
+copies and legacy spacing scans, and validating plain ASCII body content without
+Unicode allocation, reduced eligibility to approximately 4–5 ms. Unicode/title
+checks, current spacing rules, canonical bytes and per-snapshot refusal behavior
+are retained; request payload ownership also transfers without another copy.
+
+The workload oracle also reproduced authored italic lyrics being read as bold.
+Both whole/partial unit cases failed against the old exporter. A located refusal
+now keeps that unsupported snapshot from publication, with exact source/prior
+output preserved and the independent reader's misinterpretation exercised by
+the process test. Synthetic preparation capitalizes only its generated title
+and removes the spike parser's implicit whole-lyric italic spans to match ordinary
+type authoring. Counts remain in the report; no import rule is relaxed and no
+user project is normalized.
+
+**Final native observations (Wayland/threaded OpenGL/Compose):** 600 keys per
+phase, 1,800 per workload, with actual helper overlap and exact save/reopen.
+These are one corrected run per workload, at an observed 931 × 978 px window
+size; the compositor did not grant the requested minimum width.
+
+| Observed result | Primary, 204 displayed pages after edits | Stress, 508 displayed pages after edits |
+| --- | ---: | ---: |
+| Typing key → synchronized frame p95 / max | 23.9 / 53.9 ms | 56.1 / 100.6 ms |
+| PDF-while-typing p95 / max, capture included | 28.9 / 36.1 ms | 66.6 / 78.6 ms |
+| Fountain-while-typing p95 / max, capture included | 32.7 / 62.0 ms | 77.9 / 85.6 ms |
+| Stalls >100 ms across all phases | 0 | 1 (ordinary typing) |
+| Process-first launch, warm OS caches | 905.0 ms | 1,047.2 ms |
+| Same-process warm reopen to frame | 532.6 ms | 817.9 ms |
+| PDF exports / maximum completion | 55 / 421.4 ms | 54 / 1,036.4 ms |
+| Fountain exports / maximum completion | 186 / 155.8 ms | 163 / 360.2 ms |
+| Mutation → verified save acknowledgment p95 / max | 627.5 / 999.9 ms | 888.3 / 1,119.3 ms |
+| GUI save capture p95 / max | 5.0 / 6.3 ms | 12.6 / 16.7 ms |
+| Sampled editor PSS maximum | 143.0 MiB | 245.6 MiB |
+| Sampled editor + helper PSS maximum | 161.7 MiB | 267.4 MiB |
+| Measured writing session duration | 61.6 s | 116.0 s |
+
+**The primary samples meet the retained budgets.** Stress is recorded separately:
+it exceeds primary typing/PSS targets and one-second acknowledgment age, without
+losing writing or output correctness. Acknowledgment age is not a crash-loss
+measurement; the existing heavy-I/O loss limit remains. Requested-50-ms memory
+sampling covered the writing/export phases, with maximum gaps of 131.3 /
+223.6 ms; startup/reopen peaks are unmeasured and no peak guarantee follows.
+Process-first starts used fresh isolated QML/application caches and warm OS
+caches, not a true cold-machine start. No physical/compositor key latency,
+fcitx, overnight memory growth or owner comfort acceptance follows.
+
+Every one of **109 PDFs and 349 Fountain exports** passed independent extraction/
+parsing against its captured writing/input prefix. The unchanged hand-derived
+fixtures remain the separate layout correctness oracle. Final aggregates,
+snapshots, input edits, helper intervals and environment are under
+`build/task-5c-native-corrected/`; its `summary.json` and
+`build/task-5c-native-corrected.log` pass. The original import measurement mode
+also passes its offscreen 12-key import/edit/save/reopen/re-export check with
+original bytes and imported-PDF refusal retained
+(`build/task-5c-original-workflow.log`).
+
+| Final check | Observed result |
+| --- | --- |
+| `mise run check` | **28/28 pass** on final code, including hand-derived fixtures, independent aw-parser, project flows and crash checks; `build/task-5c-release-verified.log` |
+| `mise run check-debug` | **28/28 pass** with address/undefined sanitizers on final code; `build/task-5c-debug-verified.log` |
+| `mise run check-engine` | **2/2 pass**; `build/task-5c-engine-verified.log` |
+| Focused regression checks | Original italic-lyric rows fail before the guard (`build/task-5c-lyric-red.log`); unchanged scene rows fail before their fix (`build/task-5c-scenes-red.log`); all five scene cases then pass (`build/task-5c-scenes-green-final.log`); removing snapshot-prefix validation is detected (`build/task-5c-verifier-mutation.log`) |
+| Completion review | Requirements, final tracked/untracked implementation, source/selection/export interactions and test necessity reviewed; concrete findings fixed; no unresolved in-scope finding. `git diff --check`, Python syntax and both runner `bash -n` checks pass |
+
+The one-command runner is `tools/check-writing-responsiveness.sh`; the full
+`tools/check-wayland.sh` also includes the new measurement. An earlier complete
+runner invocation correctly returned failure for the 35.0 ms Fountain result
+(`build/task-5c-runner-final.log`, `build/writing-responsiveness-whTkHh/`).
+Corrected native measurements and final release/sanitizer/engine stages pass
+separately in the final logs above. No runtime, dependency or font pins changed.
+
+Full fcitx/compositor checks cannot start here because `wtype` is absent; the Qt
+fcitx plugin is also unavailable. The Academy directory is empty, so no fresh
+Academy anchored comparison was possible. Neither automated success nor the
+primary budget result establishes owner comfort, physical input, production
+PDF acceptance or broader Fountain compatibility. Imported PDF, slice 2
+follow-ups and slice 6 remain separate; no additional owner decision was needed
+for this task's implemented behavior.

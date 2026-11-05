@@ -72,7 +72,11 @@ back with the frozen revision-1 interpreter, written atomically from a fixed
 snapshot while writing continues, and accompanied by a disclosure of omitted
 retained material. Hand-written expected text and the independent aw-parser
 check import → real edits → autosave/reopen → export. Unsupported content stays
-blocked; nothing is exported lossily.
+blocked; nothing is exported lossily. Task 5c's workload oracle found that the
+independent reader changes authored italic lyrics (`~*text*` becomes bold).
+Those snapshots now receive a located refusal; writing remains intact, plain
+lyrics remain supported, and widening that emphasis spelling stays in the
+broader compatibility work. See [eligibility](fountain-export.md#eligibility-checked-on-every-snapshot).
 
 The frozen revision-1 interpretation remains the immutable historical baseline,
 including its original conservative limitation messages. The working wrapper

@@ -51,6 +51,11 @@ snapshot (title fields only when the title page is included) must satisfy:
 - **Emphasis that Fountain can spell:** per line, never including a line break,
   not starting/ending with a space, not beginning inside a word, and properly
   nested; bold/italic runs may not touch or share a boundary (underline may).
+  Authored italic spans on lyrics are refused: the independently exercised
+  reader interprets `~*text*` as bold and can lose partial italics. The lyric's
+  text and styles remain saved; remove that emphasis explicitly before export.
+  This conservative correction was found by task 5c's workload oracle; plain
+  lyrics and the canonical spelling remain unchanged.
 - **Size:** at most 1 MiB of output, the bound of the verifying reader.
 
 Each refusal names the element by its position in saved order (title page
@@ -198,7 +203,8 @@ aw-parser gate and imported PDF restriction remain unchanged.
   second for process completion, then removes staging without publication.
   Normal departure uses the asynchronous choices above. Kernel-level filesystem
   stalls during capture, staging creation or publication are not established
-  as cancellable here; production responsiveness measurements remain task 5c.
+  as cancellable here. Task 5c records [production measurements](writing-responsiveness.md)
+  with their remaining limits.
 
 `export_job_tests` checks actual helper startup/stops, cancellation after full
 serialization, process reaping, bounded destruction, crashes, failed exits,
@@ -255,7 +261,8 @@ Historical measurements before task 5b (release build, synthetic repeats of the 
 2,106 elements / 40 KB take 4 ms for the GUI-thread check and 11 ms for the
 worker; 10,506 elements / 200 KB take 20 ms and 57 ms. These are not
 representative-script measurements and do not measure the new helper lifecycle.
-Current production measurements remain task 5c. The later
+Task 5c records [current production measurements](writing-responsiveness.md),
+including request capture and real helper overlap. The later
 [full-length assessment](fountain-compatibility.md#representative-full-length-assessment-2026-10-28)
 records the original assessment and subsequent workflow evidence. The owner
 reference's path requires explicit spacing and empty-speech choices; the second

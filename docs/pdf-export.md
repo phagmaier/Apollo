@@ -57,6 +57,8 @@ The task result and full-suite evidence are in
 [the writing plan](writing-build-plan.md#task-5a--bounded-pdf-export-lifecycle).
 
 Fountain now has its separate [bounded helper lifecycle](fountain-export.md#snapshot-files-and-departure)
-(task 5b). Measurements with all current writing assistance and autosave enabled
-remain task 5c. This bounded task does not
+(task 5b). Task 5c measures current writing assistance/autosave and both exports;
+see its [method and limits](writing-responsiveness.md) and
+[results](writing-build-plan.md#task-5c--production-export-responsiveness-and-remaining-evidence).
+This bounded task does not
 establish cancellation of a kernel-level filesystem stall during publication.

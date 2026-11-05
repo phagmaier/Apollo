@@ -15,7 +15,10 @@ namespace apollo::source {
 enum class WriterSubsetGap { character, authored_case, uncapitalized_letter, multiline, long_title, spacing };
 // Current character repertoire; punctuation is preserved, never transliterated.
 bool writer_subset_character(char32_t codepoint);
-std::vector<WriterSubsetGap> writer_subset_gaps(const Element& element, bool typographic_punctuation = true);
+// Export checks body spacing separately under its newer presentation rules;
+// it can omit the unused legacy spacing scan without omitting content checks.
+std::vector<WriterSubsetGap> writer_subset_gaps(const Element& element, bool typographic_punctuation = true,
+                                              bool check_spacing = true);
 // Conservative admission contracts; see docs/editable-fountain-subset.md.
 // Revision 5 preserves unfinished empty speeches for explicit correction and
 // permits a separate opt-in to normal scene spacing, retaining original gaps.

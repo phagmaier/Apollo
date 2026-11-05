@@ -68,6 +68,11 @@ frozen every visual detail.
   edits on each workload; `build/release/apollo_editor FILE` opens the editor,
   and `--measure` times synthetic typing. Passing these checks does not
   establish native-Wayland interaction, input methods, or performance.
+- For current-writer responsiveness, use `tools/check-writing-responsiveness.sh`.
+  It measures disposable primary/stress projects with autosave and current
+  assistance, PDF/Fountain exports while typing, and independent output checks.
+  It defaults to native Wayland/OpenGL/Compose; keep the windows focused. See
+  [measurement method and limits](docs/writing-responsiveness.md).
 - The pinned Courier Prime fonts and OFL license are in `assets/courier-prime/`;
   the build checks their hashes. Use the other pins in the spike brief and
   record deviations and upgrades.

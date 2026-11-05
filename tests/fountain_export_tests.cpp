@@ -157,6 +157,10 @@ private slots:
     QTest::newRow("spaces in a title field") << Elements{e(ElementType::title, " X")}
         << QString("Element 1, Title “ X”: has leading, trailing or repeated spaces, which the title page shows as written.");
     QTest::newRow("long title") << Elements{e(ElementType::title, "A TITLE THAT IS MUCH LONGER THAN FORTY EIGHT CHARACTERS")} << QString("longer than 48");
+    QTest::newRow("italic lyric") << Elements{e(ElementType::lyric, "A song.", {{0, 7, Style::italic}})}
+        << QString("Lyric “A song.”: has authored italics on a lyric, which Fountain readers can mistake for bold or lose");
+    QTest::newRow("partial italic lyric") << Elements{e(ElementType::lyric, "A distant song.", {{2, 9, Style::italic}})}
+        << QString("has authored italics on a lyric");
     QTest::newRow("multiline lyric") << Elements{e(ElementType::lyric, "La.\nLa.")} << QString("Lyric “La.”: contains a line break");
     QTest::newRow("orphan dialogue") << Elements{e(A, "Rain."), e(D, "Hello.")} << QString("Element 2, Dialogue “Hello.”: is not part of a speech");
     QTest::newRow("cue without dialogue") << Elements{e(C, "MAX"), e(P, "(nods)"), e(A, "Rain.")} << QString("Element 1, Character cue “MAX”: has no dialogue.");

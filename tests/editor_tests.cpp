@@ -16,6 +16,7 @@
 #include <QGuiApplication>
 #include <QInputMethodEvent>
 #include <QProcess>
+#include <QPointer>
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSet>
@@ -2556,6 +2557,18 @@ private slots:
     auto* page = view_->rootObject()->findChild<QQuickItem*>("editorPage");
     QVERIFY(page);
     QCOMPARE(page->property("currentSceneId").toString(), QString("one"));
+    // Body typing shifts later headings, but must not destroy/recreate all
+    // scene buttons. Navigation resolves the live position from identity.
+    press(Qt::Key_Backslash, Qt::ControlModifier);
+    QTest::qWait(40);
+    QPointer<QQuickItem> firstRow = find_item(view_->contentItem(), "sceneNavigate0");
+    QVERIFY(firstRow);
+    type("Earlier ");
+    QVERIFY2(firstRow, "Body typing rebuilt the unchanged scene list");
+    auto* later = find_item(view_->contentItem(), "sceneNavigate1");
+    QVERIFY(later);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, later->mapToScene(later->boundingRect().center()).toPoint());
+    QCOMPARE(cursor(), 38); // Preamble\n + heading\n + Earlier Body\n.
     editor_->setProperty("cursorPosition", document_->characterCount() - 1);
     type("ext. roof - night");
     scenes = commands->property("scenes").toList();

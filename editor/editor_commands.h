@@ -73,7 +73,8 @@ public:
   Q_INVOKABLE int editablePosition(int position, bool backward = false) const;
   const QString& pageBreakMessage() const { return page_break_message_; }
   bool eventFilter(QObject* watched, QEvent* event) override;
-  // Live headings: stable id, presented text and current UTF-16 position.
+  // Displayed headings: stable id and presented text. Positions are resolved
+  // by scenePosition(), so body typing does not rebuild unchanged QML rows.
   const QVariantList& scenes() const { return scenes_; }
   Q_INVOKABLE QString sceneAt(int position) const;
   Q_INVOKABLE int scenePosition(const QString& id) const;

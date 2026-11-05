@@ -103,14 +103,15 @@ bool FountainExportJob::request(const QString& destination, bool include_title) 
     return false;
   }
   staged_->close();
-  const auto payload = encode_export_snapshot({snapshot, include_title});
+  const ExportSnapshot export_snapshot{std::move(snapshot), include_title};
+  const auto payload = encode_export_snapshot(export_snapshot);
   busy_ = true;
   cancelling_ = attention_ = false;
   worker_start_ns_ = worker_verified_ns_ = worker_end_ns_ = 0;
   captured_ = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
-  omitted_title_ = !include_title && std::any_of(snapshot.begin(), snapshot.end(),
+  omitted_title_ = !include_title && std::any_of(export_snapshot.elements.begin(), export_snapshot.elements.end(),
                                                [](const Element& e) { return source::is_title_field(e.type); });
-  note_ = source::fountain_presentation_note(snapshot);
+  note_ = source::fountain_presentation_note(export_snapshot.elements);
   status_ = QStringLiteral("Exporting Fountain snapshot from %1 to %2 — keep writing").arg(captured_, target_);
   process_ = new QProcess(this);
   connect(process_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {

@@ -3,7 +3,7 @@
 # --preflight omits the full typing measurements.
 set -euo pipefail
 
-TOTAL_STAGES=6
+TOTAL_STAGES=7
 _STAGE_INDEX=0
 
 stage() {
@@ -96,7 +96,7 @@ run_wizard() {
   say 'The interaction tests also use the clipboard.'
 
   stage 'Build and automated checks'
-  run_logged build mise run check
+  run_logged build env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QSG_RENDER_LOOP=basic mise run check
   editor=$project_dir/build/release/apollo_editor
 
   stage 'Native interaction and input-method checks'
@@ -165,6 +165,12 @@ run_wizard() {
     }
     printf '\nExport while typing: %s scenes\n%s\n' "$scenes" "$timing_text" >> "$APOLLO_RESULTS"
   done
+
+  stage 'Current writer with autosave, assistance and both exports'
+  mkdir -m 700 "$APOLLO_RUN_DIR/current-writer"
+  run_logged current-writer timeout 600s env PYTHONDONTWRITEBYTECODE=1 uv run tools/check-writing-responsiveness.py \
+    --output "$APOLLO_RUN_DIR/current-writer"
+  printf '\nCurrent writer: see current-writer/summary.json for primary/stress timings, save age, memory and independently checked output.\n' >> "$APOLLO_RESULTS"
 
   stage 'Saved results'
   say "Send this file back: $APOLLO_RESULTS"

@@ -467,6 +467,27 @@ def title_authoring(editor, flow_tests, root):
             (output / "body.fountain", captured, False), (reopened, later, True)]
 
 
+def italic_lyric_refusal(editor, root, parser=None, node='node'):
+    project, out = root / 'italic-lyric', root / 'italic-lyric.fountain'
+    run(editor, project, '--create')
+    source = project / 'screenplay.json'
+    data = json.loads(source.read_text())
+    data['elements'][0].update(type='lyric', text='A song.', styles=[{'start': 0, 'end': 7, 'style': 'italic'}])
+    source.write_text(json.dumps(data))
+    before = source.read_bytes()
+    out.write_bytes(b'Keep this existing screenplay.\n')
+    result = run(editor, project, '--export-fountain', out, expect=3)
+    assert 'has authored italics on a lyric' in result.stdout + result.stderr
+    assert out.read_bytes() == b'Keep this existing screenplay.\n'
+    assert source.read_bytes() == before
+    if parser:
+        raw = root / 'ambiguous-lyric.fountain'
+        raw.write_text('~*A song.*\n')
+        # Independent evidence for the refusal: the pinned reader calls this
+        # bold, although the writing asked for italic. Do not publish it.
+        assert aw_reading(node, parser, raw) == ([], [('action', 'A song.', [(0, 7, 'bold')], False)])
+
+
 def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--editor", required=True, type=pathlib.Path)
@@ -480,6 +501,7 @@ def main():
     root.mkdir(parents=True)
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+    italic_lyric_refusal(editor, root, options.aw_parser, options.node)
     original = root / "writer-subset.fountain"
     shutil.copyfile(FIXTURES / "import/writer-subset.fountain", original)
     project, out = root / "project", root / "out.fountain"

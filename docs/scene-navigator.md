@@ -43,5 +43,11 @@ Editable imports retain their immutable originals/read-only material and their
 existing PDF gate. The list refresh follows the existing linear document scans;
 this task makes no new sustained-performance or crash-loss claim.
 
+Task 5c keeps the displayed list to identities and names; body typing no
+longer recreates every QML row merely because later heading offsets change.
+Click navigation still resolves each identity against the current document,
+and edits still cancel an active drag through its document revision guard.
+The linear scan and all existing scene boundaries/protections remain.
+
 Verification and remaining limits are recorded in the
 [task result](writing-build-plan.md#task-4e--live-scene-navigator).

@@ -102,24 +102,38 @@ Spelled spell(const std::string& source, std::size_t from, std::size_t to, const
     open.push_back(i);
   }
   static const char* delimiters[] = {"_", "*", "**", "***"};
-  std::vector<QByteArray> pieces; // A delimiter or one escaped literal character.
-  std::vector<bool> literal_backslash;
-  open.clear();
-  std::size_t next = 0;
-  for (std::size_t p = 0; p <= text.size(); ++p) {
-    while (!open.empty() && open.back().b == p) { pieces.push_back(delimiters[open.back().kind]); literal_backslash.push_back(false); open.pop_back(); }
-    while (next < intervals.size() && intervals[next].a == p) {
-      pieces.push_back(delimiters[intervals[next].kind]); literal_backslash.push_back(false); open.push_back(intervals[next++]);
-    }
-    if (p == text.size()) break;
-    const char c = text[p];
-    pieces.push_back(c == '*' ? QByteArray("\\*") : c == '_' ? QByteArray("\\_") : QByteArray(1, c));
-    literal_backslash.push_back(c == '\\');
-  }
   Spelled result;
-  for (std::size_t i = 0; i < pieces.size(); ++i) {
-    const bool escapes_next = literal_backslash[i] && i + 1 < pieces.size() && QByteArray("*_\\").contains(pieces[i + 1].front());
-    result.text += escapes_next ? QByteArray("\\\\") : pieces[i];
+  result.text.reserve(static_cast<qsizetype>(text.size() + intervals.size() * 6));
+  if (intervals.empty() && std::none_of(text.begin(), text.end(), [](char c) { return c == '*' || c == '_' || c == '\\'; })) {
+    result.text.append(text.data(), static_cast<qsizetype>(text.size()));
+  } else {
+    // Defer a literal backslash until the next emitted token is known: it
+    // must itself be escaped before a marker/escape, but stays literal before
+    // ordinary text or the end. Stream directly instead of allocating a byte
+    // array for every character during the GUI-thread eligibility check.
+    bool pending_backslash = false;
+    const auto append = [&](QByteArrayView piece, bool backslash = false) {
+      if (pending_backslash) {
+        result.text += QByteArrayView("*_\\").contains(piece.front()) ? "\\\\" : "\\";
+        pending_backslash = false;
+      }
+      if (backslash) pending_backslash = true;
+      else result.text.append(piece.data(), piece.size());
+    };
+    open.clear();
+    std::size_t next = 0;
+    for (std::size_t p = 0; p <= text.size(); ++p) {
+      while (!open.empty() && open.back().b == p) { append(delimiters[open.back().kind]); open.pop_back(); }
+      while (next < intervals.size() && intervals[next].a == p) {
+        append(delimiters[intervals[next].kind]); open.push_back(intervals[next++]);
+      }
+      if (p == text.size()) break;
+      const char c = text[p];
+      if (c == '*') append("\\*");
+      else if (c == '_') append("\\_");
+      else append(QByteArrayView(&c, 1), c == '\\');
+    }
+    if (pending_backslash) result.text += '\\';
   }
   for (const char* marker : {"[[", "]]", "/*", "*/"})
     if (result.text.contains(marker))
@@ -147,6 +161,8 @@ QString inner_line_problem(const QByteArray& line, bool dialogue) {
 bool presents_spacing(ElementType type) { return !is_title_field(type) && type != ElementType::page_break; }
 Element presented_spacing(Element e) {
   if (!presents_spacing(e.type)) return e;
+  if (e.text.find('\n') == std::string::npos &&
+      (e.text.empty() || (e.text.front() != ' ' && e.text.back() != ' '))) return e;
   std::string text;
   std::vector<StyleSpan> styles;
   for (std::size_t from = 0;;) {
@@ -172,13 +188,14 @@ Element presented_spacing(Element e) {
 QString spacing_problem(const Element& e) {
   const auto shown = presented_spacing(e).text;
   if (shown.find_first_not_of('\n') == std::string::npos) return "is empty; type its text or delete it";
+  if (e.type != ElementType::action && e.type != ElementType::dialogue && shown.find("  ") != std::string::npos)
+    return "has repeated spaces, which this export keeps only in action and dialogue";
+  if (shown.find('\n') == std::string::npos) return {};
   const auto lines = QString::fromStdString(shown).split('\n');
   if (e.type == ElementType::action && lines.contains(QString()))
     return "has a blank line, which Fountain reads as the end of the action";
   if (e.type == ElementType::dialogue && (lines.front().isEmpty() || lines.back().isEmpty()))
     return "begins or ends with a blank line, which Fountain cannot keep in the speech";
-  if (e.type != ElementType::action && e.type != ElementType::dialogue && shown.find("  ") != std::string::npos)
-    return "has repeated spaces, which this export keeps only in action and dialogue";
   return {};
 }
 
@@ -202,8 +219,8 @@ std::vector<QByteArray> Writer::lines(std::size_t i, bool& ok) {
     if (written[i].text.substr(span.start, span.end - span.start).find('\n') != std::string::npos) {
       block(i, "has emphasis that includes a line break"); ok = false; return {};
     }
-  const auto e = presented_spacing(written[i]);
-  const auto text = presented_text(e.type, e.text);
+  auto e = presented_spacing(written[i]);
+  const auto text = presented_text(e.type, std::move(e.text));
   std::vector<QByteArray> result;
   std::size_t from = 0;
   while (true) {
@@ -218,12 +235,19 @@ std::vector<QByteArray> Writer::lines(std::size_t i, bool& ok) {
 }
 
 Writer::Writer(const std::vector<Element>& snapshot, bool include_title) {
-  const auto ordered = canonical(Screenplay{0, snapshot}).elements;
+  auto ordered = canonical(Screenplay{0, snapshot}).elements;
+  written.reserve(ordered.size());
+  numbers.reserve(ordered.size());
   for (std::size_t i = 0; i < ordered.size(); ++i)
-    if (include_title || !is_title_field(ordered[i].type)) { written.push_back(ordered[i]); numbers.push_back(i); }
+    if (include_title || !is_title_field(ordered[i].type)) { written.push_back(std::move(ordered[i])); numbers.push_back(i); }
   std::vector<bool> usable(written.size(), true);
   for (std::size_t i = 0; i < written.size(); ++i) {
     const auto& e = written[i];
+    if (e.type == ElementType::lyric && std::any_of(e.styles.begin(), e.styles.end(),
+        [](const StyleSpan& span) { return span.style == Style::italic; })) {
+      block(i, "has authored italics on a lyric, which Fountain readers can mistake for bold or lose; remove that emphasis before exporting");
+      usable[i] = false;
+    }
     if (e.type == ElementType::more) { block(i, "is a generated layout marker, not writing"); usable[i] = false; continue; }
     if (e.type == ElementType::page_break) {
       if (!e.text.empty()) { block(i, "contains text"); usable[i] = false; }
@@ -232,7 +256,7 @@ Writer::Writer(const std::vector<Element>& snapshot, bool include_title) {
     // Spacing follows the presentation rules below, except in title fields.
     if (presents_spacing(e.type))
       if (const auto problem = spacing_problem(e); !problem.isEmpty()) { block(i, problem); usable[i] = false; }
-    for (const auto gap : writer_subset_gaps(e)) {
+    for (const auto gap : writer_subset_gaps(e, true, !presents_spacing(e.type))) {
       if (gap == WriterSubsetGap::spacing && presents_spacing(e.type)) continue;
       usable[i] = false;
       switch (gap) {
