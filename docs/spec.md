@@ -132,8 +132,9 @@ These capabilities come from the owner's brief. Except where explicitly noted, t
 - In an open suggestion menu, arrow keys select an option, Tab accepts it, and Escape dismisses the menu. When the menu is closed, Tab cycles element types.
 - Suggestions open automatically in the applicable contexts, with the first
   match highlighted. Enter keeps its normal writing behavior without accepting
-  that match; Escape dismisses without changing text. Ranking, reopening after
-  dismissal, and custom extension details remain to be designed. Suggestions
+  that match; Escape dismisses without changing text. The bounded conventions
+  for ranking, reopening and custom extensions are in
+  [task 4a](writing-build-plan.md#task-4a--context-restricted-writing-suggestions). Suggestions
   must not silently turn cue variants into duplicate characters.
 
 ### Fountain import

@@ -97,6 +97,10 @@ frozen every visual detail.
   preview, not the product scene navigator. Undo is Ctrl+Z; redo is Ctrl+Shift+Z.
   The rail's **Shortcuts** button or F1 opens the writing shortcut reference;
   **Edit** exposes Undo/Redo and clipboard actions with their key labels.
+  Writing suggestions cover current-script character names, cue extensions and
+  heading parts: arrows select, Tab accepts, Esc dismisses, Ctrl+Space reopens;
+  Enter keeps its ordinary writing action. See
+  [task 4a](docs/writing-build-plan.md#task-4a--context-restricted-writing-suggestions).
 - Project folders and autosave follow [source-format.md](docs/source-format.md).
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
   and `apollo_editor DIR` opens editable projects with autosave. Ordinary

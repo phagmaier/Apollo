@@ -160,7 +160,10 @@ class EditorTests : public QObject {
     if (!QTest::qWaitForWindowExposed(view_.get())) return false;
     view_->requestActivate();
     editor_->forceActiveFocus();
-    return QTest::qWaitForWindowActive(view_.get()) && editor_->hasActiveFocus() && layout()->error().isEmpty();
+    if (!QTest::qWaitForWindowActive(view_.get()) || !editor_->hasActiveFocus() || !layout()->error().isEmpty()) return false;
+    QSignalSpy frames(view_.get(), &QQuickWindow::frameSwapped);
+    view_->update();
+    return !frames.isEmpty() || frames.wait(1000);
   }
   int position_of(const QString& text) const { return document_->toPlainText().indexOf(text); }
   QRectF caret_rect(int position) const {
@@ -259,6 +262,358 @@ private slots:
   // Any warning, such as a QML binding error, fails the test.
   void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral(".*"))); }
   void cleanup() { view_.reset(); document_.reset(); }
+
+  void suggestions_character_keys_and_identity() {
+    QVERIFY(open_elements({{ElementType::cue, "JOHN (V.O.)"}, {ElementType::dialogue, "One."},
+        {ElementType::cue, "JOHN (O.S.)"}, {ElementType::dialogue, "Two."},
+        {ElementType::cue, "JOAN"}, {ElementType::dialogue, "Three."}, {ElementType::cue, ""}}));
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    type("jo");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"JOHN", "JOAN"}));
+    QCOMPARE(editor_->property("suggestionIndex").toInt(), 0);
+    const int before = cursor();
+    press(Qt::Key_Down);
+    QCOMPARE(cursor(), before);
+    QCOMPARE(editor_->property("suggestionIndex").toInt(), 1);
+    press(Qt::Key_Up);
+    press(Qt::Key_Tab);
+    QCOMPARE(document_->lastBlock().text(), QString("JOHN"));
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::cue);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_->lastBlock().text(), QString("jo"));
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_->lastBlock().text(), QString("JOHN"));
+    type(" (");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QVERIFY(editor_->property("suggestionChoices").toStringList().contains("O.S."));
+    QCOMPARE(editor_->property("suggestionChoices").toStringList().front(), QString("O.S."));
+    press(Qt::Key_Tab);
+    QCOMPARE(document_->lastBlock().text(), QString("JOHN (O.S.)"));
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::cue);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_->lastBlock().text(), QString("JOHN ("));
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    press(Qt::Key_Return);
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::dialogue);
+    type("jo");
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+  }
+
+  void suggestions_dismissal_enter_and_free_text() {
+    QVERIFY(open_elements({{ElementType::cue, "JOHN"}, {ElementType::dialogue, "Hi."}, {ElementType::cue, ""}}));
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    press(Qt::Key_Tab); // Empty elements never trap the type cycle.
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::parenthetical);
+    press(Qt::Key_Backtab, Qt::ShiftModifier);
+    type("jo");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    const auto before = document_elements(*document_);
+    press(Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::action);
+    QCOMPARE(document_->lastBlock().text(), QString("jo"));
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), before);
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Escape);
+    QCOMPARE(document_elements(*document_), before);
+    type("h");
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    const int dismissed_at = cursor();
+    editor_->setProperty("cursorPosition", 0);
+    editor_->setProperty("cursorPosition", dismissed_at);
+    type("n");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Escape);
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Return);
+    QCOMPARE(document_->lastBlock().previous().text(), QString("john"));
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::dialogue);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_->lastBlock().text(), QString("john"));
+    type("athan"); // A new name never requires choosing an existing character.
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(document_->lastBlock().text(), QString("johnathan"));
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Tab);
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::parenthetical);
+    QCOMPARE(document_->lastBlock().text(), QString("johnathan"));
+  }
+
+  void suggestions_heading_parts_and_local_replacement() {
+    QVERIFY(open_elements({{ElementType::heading, "INT. KITCHEN - DAY"},
+        {ElementType::heading, "EXT. KITCHEN - NIGHT"}, {ElementType::heading, "EXT. GARAGE - NIGHT"},
+        {ElementType::heading, ""}}));
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    type("i");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"INT.", "INT./EXT."}));
+    press(Qt::Key_Tab);
+    QCOMPARE(document_->lastBlock().text(), QString("INT."));
+    type(" ");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"KITCHEN", "GARAGE"}));
+    press(Qt::Key_Tab);
+    type(" - n");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"NIGHT"}));
+    press(Qt::Key_Tab);
+    QCOMPARE(document_->lastBlock().text(), QString("INT. KITCHEN - NIGHT"));
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::heading);
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/suggestions-heading-accepted.png")));
+    // Completing in the middle changes only the current component, retaining
+    // the delimiter/time, stable identity, emphasis and adjacent elements.
+    QVERIFY(open_elements({{ElementType::heading, "INT. KITCHEN - DAY"},
+        {ElementType::heading, "INT. ki - NIGHT", false, {{10, 15, Style::italic}}}}));
+    const auto original = document_elements(*document_);
+    const int at = document_->lastBlock().position() + 7;
+    editor_->setProperty("cursorPosition", at);
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/suggestions-location.png")));
+    press(Qt::Key_Tab);
+    auto expected = original;
+    expected.back().text = "INT. KITCHEN - NIGHT";
+    expected.back().styles = {{15, 20, Style::italic}};
+    QCOMPARE(document_elements(*document_), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), expected);
+  }
+
+  void suggestions_excluded_contexts_data() {
+    QTest::addColumn<int>("kind");
+    for (const auto kind : {ElementType::action, ElementType::dialogue, ElementType::parenthetical,
+                           ElementType::transition, ElementType::lyric, ElementType::centered, ElementType::title})
+      QTest::newRow(std::to_string(static_cast<int>(kind)).c_str()) << static_cast<int>(kind);
+  }
+
+  void suggestions_custom_extensions_suffixes_and_script_refresh() {
+    QVERIFY(open_elements({{ElementType::cue, "JOHN (RADIO)"}, {ElementType::dialogue, "Hi."},
+        {ElementType::cue, "JO (custom)", false, {{3, 11, Style::italic}}}}));
+    auto original = document_elements(*document_);
+    editor_->setProperty("cursorPosition", document_->lastBlock().position() + 2);
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Tab);
+    auto expected = original;
+    expected.back().text = "JOHN (custom)";
+    expected.back().styles = {{5, 13, Style::italic}};
+    QCOMPARE(document_elements(*document_), expected);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    // Existing closing parenthesis is retained once, caret goes after it.
+    editor_->setProperty("cursorPosition", document_->lastBlock().position() + 4);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, cursor()), Q_ARG(int, cursor() + 6));
+    type("r   ");
+    editor_->setProperty("cursorPosition", document_->lastBlock().position() + 5);
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"RADIO"}));
+    press(Qt::Key_Tab);
+    QCOMPARE(document_->lastBlock().text(), QString("JO (RADIO   )"));
+    QCOMPARE(cursor(), document_->characterCount() - 1);
+    // A changed cue immediately replaces the old suggestion source.
+    QTextCursor edit(document_.get());
+    edit.setPosition(0); edit.setPosition(4, QTextCursor::KeepAnchor); edit.insertText("JANE");
+    editor_->setProperty("cursorPosition", document_->lastBlock().position());
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, cursor()), Q_ARG(int, cursor() + 2));
+    type("ja");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"JANE"}));
+    press(Qt::Key_Escape);
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    type(" (private channel)");
+    QCOMPARE(document_->lastBlock().text(), QString("ja (RADIO   ) (private channel)"));
+    QVERIFY(layout()->error().isEmpty());
+  }
+
+  void wayland_suggestion_keys() {
+    if (qEnvironmentVariableIntValue("APOLLO_TEST_WAYLAND_INPUT") != 1)
+      QSKIP("Enable APOLLO_TEST_WAYLAND_INPUT=1 in a native session with wtype");
+    QCOMPARE(QGuiApplication::platformName(), QStringLiteral("wayland"));
+    QVERIFY(open_elements({{ElementType::heading, "INT. KITCHEN - DAY"},
+        {ElementType::cue, "JOHN (V.O.)"}, {ElementType::dialogue, "Hi."},
+        {ElementType::cue, "JOAN"}, {ElementType::dialogue, "Hello."},
+        {ElementType::cue, "ÉMILE"}, {ElementType::dialogue, "Bonjour."}, {ElementType::cue, ""}}));
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    auto send = [&](const QStringList& keys) { return compositor_keys(keys); };
+    QCOMPARE(send({"jo"}), QString());
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(send({"-k", "Down", "-k", "Tab"}), QString());
+    QTRY_COMPARE(document_->lastBlock().text(), QString("JOHN")); // Alphabetical tie: JOAN, JOHN.
+    QCOMPARE(send({"-M", "ctrl", "-k", "z", "-m", "ctrl"}), QString());
+    QTRY_COMPARE(document_->lastBlock().text(), QString("jo"));
+    QCOMPARE(send({"-M", "ctrl", "-M", "shift", "-k", "z", "-m", "shift", "-m", "ctrl"}), QString());
+    QTRY_COMPARE(document_->lastBlock().text(), QString("JOHN"));
+    QCOMPARE(send({" ("}), QString());
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList().front(), QString("V.O."));
+    QCOMPARE(send({"-k", "Tab", "-k", "Return"}), QString());
+    QTRY_COMPARE(document_->lastBlock().previous().text(), QString("JOHN (V.O.)"));
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::dialogue);
+    QCOMPARE(send({"jo"}), QString());
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(send({"-k", "Return", "-M", "ctrl", "-k", "1", "-m", "ctrl", "i"}), QString());
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(send({"-k", "Tab", " "}), QString());
+    QTRY_COMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"KITCHEN"}));
+    QCOMPARE(send({"-k", "Tab", " - n"}), QString());
+    QTRY_COMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"NIGHT"}));
+    QCOMPARE(send({"-k", "Escape", "-k", "Return"}), QString());
+    QTRY_COMPARE(document_->lastBlock().previous().text(), QString("INT. KITCHEN - n"));
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::action);
+    QCOMPARE(send({"-M", "ctrl", "-k", "3", "-m", "ctrl"}), QString());
+    InputMethodCommits commits;
+    editor_->installEventFilter(&commits);
+    QCOMPARE(send({"-k", "Multi_key", "-k", "apostrophe", "-k", "e"}), QString());
+    QTRY_COMPARE(document_->lastBlock().text(), QString("é"));
+    QCOMPARE(commits.text, QString("é"));
+    QTRY_COMPARE(editor_->property("suggestionChoices").toStringList(), QStringList({"ÉMILE"}));
+    QCOMPARE(send({"-k", "Escape", "-k", "Return"}), QString());
+    QTRY_COMPARE(document_->lastBlock().previous().text(), QString("é"));
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::dialogue);
+  }
+
+  void suggestions_bounded_menu_scroll_and_pointer_acceptance() {
+    std::vector<Element> elements;
+    for (int i = 0; i < 15; ++i) {
+      elements.push_back({ElementType::cue, QString("J%1").arg(i, 2, 10, QChar('0')).toStdString()});
+      elements.push_back({ElementType::dialogue, "Hi."});
+    }
+    elements.push_back({ElementType::cue, ""});
+    QVERIFY(open_elements(elements));
+    view_->resize(540, 480);
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    type("j");
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(editor_->property("suggestionChoices").toStringList().size(), 12);
+    press(Qt::Key_Up); // Wrap to the final candidate and scroll it into view.
+    QCOMPARE(editor_->property("suggestionIndex").toInt(), 11);
+    auto* list = find_item(view_->rootObject(), "writingSuggestionList");
+    QTRY_VERIFY(list && list->property("contentY").toReal() > 0);
+    QTest::qWait(50);
+    auto* menu = find_item(view_->rootObject(), "writingSuggestions");
+    QVERIFY(menu);
+    const auto bounds = menu->mapRectToScene(menu->boundingRect());
+    QVERIFY(QRectF(QPointF(), view_->size()).contains(bounds));
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/suggestions-small-scrolled.png")));
+    auto* choice = find_item(list, "writingSuggestion11");
+    QVERIFY(choice);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     choice->mapToScene(choice->boundingRect().center()).toPoint());
+    QCOMPARE(document_->lastBlock().text(), QString("J11"));
+    QVERIFY(editor_->hasActiveFocus());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_->lastBlock().text(), QString("j"));
+  }
+  void suggestions_excluded_contexts() {
+    QFETCH(int, kind);
+    std::vector<Element> elements{{ElementType::cue, "JOHN"}, {ElementType::dialogue, "Hi."}};
+    const auto type_ = static_cast<ElementType>(kind);
+    if (type_ == ElementType::title) elements.insert(elements.begin(), {type_, ""});
+    else elements.push_back({type_, ""});
+    QVERIFY(open_elements(elements));
+    editor_->setProperty("cursorPosition", type_ == ElementType::title ? 0 : document_->characterCount() - 1);
+    type("jo");
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(block_at(cursor()).text(), QString("jo"));
+  }
+
+  void suggestions_composition_selection_focus_and_stale_results() {
+    QVERIFY(open_elements({{ElementType::cue, "JOHN"}, {ElementType::dialogue, "Hi."}, {ElementType::cue, ""}}));
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    QInputMethodEvent preedit(QStringLiteral("jo"), {});
+    QCoreApplication::sendEvent(editor_, &preedit);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Tab);
+    QCOMPARE(element_type(document_->lastBlock()), ElementType::cue);
+    QInputMethodEvent commit;
+    commit.setCommitString(QStringLiteral("jo"));
+    QCoreApplication::sendEvent(editor_, &commit);
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(document_->lastBlock().text(), QString("jo"));
+    QCoreApplication::sendEvent(editor_, &preedit);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    QInputMethodEvent clear;
+    QCoreApplication::sendEvent(editor_, &clear);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, cursor() - 1), Q_ARG(int, cursor()));
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTRY_VERIFY(editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_F1);
+    QTRY_VERIFY(!editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    // Start asynchronous work, then move the caret before it can publish.
+    press(Qt::Key_Space, Qt::ControlModifier);
+    editor_->setProperty("cursorPosition", 0);
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTextCursor edit(document_.get());
+    edit.setPosition(0); edit.setPosition(4, QTextCursor::KeepAnchor); edit.insertText("JANE");
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Space, Qt::ControlModifier);
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    QCOMPARE(document_->lastBlock().text(), QString("jo"));
+  }
+
+  void suggestions_pending_typing_does_not_follow_later_keys() {
+    QVERIFY(open_elements({{ElementType::cue, "JOE"}, {ElementType::dialogue, "Hi."}, {ElementType::cue, "j"}}));
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    type("o");
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QTest::qWait(50);
+    QCOMPARE(document_->lastBlock().text(), QString("j"));
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    type("o");
+    press(Qt::Key_Left);
+    QTest::qWait(50);
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    press(Qt::Key_Right);
+    type("e");
+    press(Qt::Key_Escape);
+    QTest::qWait(50);
+    QCOMPARE(document_->lastBlock().text(), QString("joe"));
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+  }
+
+  void suggestions_composition_preserves_protected_paste_and_undo() {
+    QVERIFY(open_elements({{ElementType::title, "SIGNAL"}, {ElementType::action, "Body."}}));
+    const auto original = document_elements(*document_);
+    editor_->setProperty("cursorPosition", 3);
+    QInputMethodEvent preedit(QStringLiteral("pending"), {});
+    QCoreApplication::sendEvent(editor_, &preedit);
+    QVERIFY(editor_->property("inputMethodComposing").toBool());
+    QGuiApplication::clipboard()->setText(QStringLiteral("One.\nTwo."));
+    press(Qt::Key_V, Qt::ControlModifier);
+    auto expected = original;
+    expected.front().text = "SIGOne.\nTwo.NAL";
+    QCOMPARE(document_elements(*document_), expected); // One title field, with a deliberate break.
+    QVERIFY(!editor_->property("suggestionsOpen").toBool());
+    QInputMethodEvent clear;
+    QCoreApplication::sendEvent(editor_, &clear);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+  }
 
   void emphasis_shortcuts_toggle_partial_and_mixed_selections_data() {
     QTest::addColumn<int>("key");

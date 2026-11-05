@@ -16,6 +16,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QKeyEvent>
+#include <QProcess>
 #include <QQuickItem>
 #include <QQuickView>
 #include <QRawFont>
@@ -56,12 +57,31 @@ bool draws(const QFont& font, const QTextBlock& block, const QString& text) {
 struct Window {
   QQuickView view;
   ProjectAccessFlow flow;
-  Window(const QFont& font, const QString& state, const QString& project = {}, const QString& exporter = {}, const QString& fountain = {})
+  Window(const QFont& font, const QString& state, const QString& project = {}, const QString& exporter = {},
+         const QString& fountain = {}, bool wait_for_ready = true)
       : flow(view, font, QStringLiteral(APOLLO_FONT_DIR),
              exporter.isEmpty() ? QCoreApplication::applicationDirPath() + "/pdf_export" : exporter, state) {
     view.resize(1000, 1000);
     flow.start(project, fountain);
     view.show();
+    if (!wait_for_ready) return; // Explicit queued-result teardown check below.
+    // Window shortcuts require activation. A loaded document alone can become
+    // observable before Wayland has exposed/activated the new test window.
+    if (!QTest::qWaitForWindowExposed(&view)) {
+      QTest::qFail("Project test window was not exposed", __FILE__, __LINE__);
+      return;
+    }
+    view.requestActivate();
+    if (!QTest::qWaitForWindowActive(&view))
+      QTest::qFail("Project test window was not active", __FILE__, __LINE__);
+    if (!QTest::qWaitFor([this] { return !flow.busy(); }, 15000)) {
+      QTest::qFail("Initial project screen did not finish loading", __FILE__, __LINE__);
+      return;
+    }
+    QSignalSpy frames(&view, &QQuickWindow::frameSwapped);
+    view.update();
+    if (frames.isEmpty() && !frames.wait(1000))
+      QTest::qFail("Loaded project screen did not render", __FILE__, __LINE__);
   }
   QQuickItem* item(const char* name) {
     if (auto* found = view.rootObject()->findChild<QQuickItem*>(QString::fromLatin1(name))) return found;
@@ -106,6 +126,72 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void suggestions_acceptance_autosaves_reopens_and_stays_project_local() {
+    const auto p = create_project(path("suggestions"), {0, {{ElementType::heading, "INT. KITCHEN - DAY"},
+        {ElementType::cue, "JOHN (V.O.)"}, {ElementType::dialogue, "Hi."}, {ElementType::cue, ""}}});
+    const auto state = path("suggestions-state");
+    auto expected = open_project(p.directory).screenplay;
+    {
+      Window window(font_, state, p.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      auto* editor = window.flow.editor();
+      editor->setProperty("cursorPosition", window.flow.document()->characterCount() - 1);
+      window.type("jo");
+      QTRY_VERIFY(editor->property("suggestionsOpen").toBool());
+      QTest::keyClick(&window.view, Qt::Key_Tab);
+      QCOMPARE(window.flow.document()->lastBlock().text(), QString("JOHN"));
+      QVERIFY2(editor->hasActiveFocus(), "Completion acceptance must retain TextEdit focus");
+      window.type(" (");
+      QCOMPARE(window.flow.document()->lastBlock().text(), QString("JOHN ("));
+      QCOMPARE(editor->property("cursorPosition").toInt(), window.flow.document()->characterCount() - 1);
+      QTRY_VERIFY(editor->property("suggestionsOpen").toBool());
+      QTest::keyClick(&window.view, Qt::Key_Tab);
+      QCOMPARE(window.flow.document()->lastBlock().text(), QString("JOHN (V.O.)"));
+      expected.elements.back().text = "JOHN (V.O.)";
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      auto saved = open_project(p.directory).screenplay; saved.revision = 0;
+      QCOMPARE(saved, expected);
+      // Complete the new speech and check a fixed canonical export.
+      QTest::keyClick(&window.view, Qt::Key_Return);
+      window.type("Again.");
+      QCOMPARE(export_fountain(document_elements(*window.flow.document()), false).bytes,
+          QByteArray("INT. KITCHEN - DAY\n\nJOHN (V.O.)\nHi.\n\nJOHN (V.O.)\nAgain.\n"));
+      auto* pdf = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+      QVERIFY(pdf);
+      const auto output = path("suggestion-output") + ".pdf";
+      QSignalSpy complete(pdf, &PdfExportJob::completed);
+      QVERIFY(pdf->request(output, false));
+      QTRY_VERIFY(!pdf->busy());
+      QVERIFY(complete.size() == 1 && complete[0][0].toBool());
+      QProcess extract;
+      extract.start("pdftotext", {"-layout", output, "-"});
+      QVERIFY(extract.waitForFinished(5000));
+      QCOMPARE(extract.exitCode(), 0);
+      const auto printed = QString::fromUtf8(extract.readAllStandardOutput()).simplified();
+      QCOMPARE(printed.count("JOHN (V.O.)"), 2);
+      QVERIFY(printed.contains("Hi.") && printed.contains("Again."));
+      expected = {0, document_elements(*window.flow.document())};
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+    }
+    {
+      Window window(font_, state, p.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      QCOMPARE(document_elements(*window.flow.document()), expected.elements);
+      QVERIFY(!window.flow.editor()->property("suggestionsOpen").toBool());
+      window.flow.home();
+      QTRY_VERIFY(!window.flow.editor() && !window.flow.busy());
+      window.flow.create_project(root_.path(), "Other suggestion script");
+      QTRY_VERIFY(window.flow.editor() && !window.flow.busy() && window.flow.autosaver()->location() != p.directory);
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+      QTest::keyClick(&window.view, Qt::Key_3, Qt::ControlModifier);
+      window.type("jo");
+      QTest::keyClick(&window.view, Qt::Key_Space, Qt::ControlModifier);
+      QTest::qWait(100);
+      QVERIFY(!window.flow.editor()->property("suggestionsOpen").toBool());
+      QCOMPARE(window.flow.document()->toPlainText(), QString("jo"));
+    }
+  }
+
   void shortcut_reference_retains_writing_and_blocks_background_actions() {
     const auto p = project();
     Window window(font_, path("shortcuts-state"), p.directory);
@@ -2026,7 +2112,7 @@ private slots:
     const auto before_state = bytes(state);
     const auto before_source = bytes(p.screenplay_path());
     {
-      Window interrupted(font_, state, p.directory);
+      Window interrupted(font_, state, p.directory, {}, {}, false);
       // Destroy while the worker result is still queued, before activation.
     }
     QCOMPARE(bytes(state), before_state);

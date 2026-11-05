@@ -85,6 +85,8 @@ Popup {
             SectionTitle { text: "Writing and formatting" }
             ShortcutRow { width: parent.width; label: "Continue or split an element"; keys: "Enter / Shift+Enter"; detail: "Inside dialogue, insert a deliberate line break in the same speech. At its end, continue with action." }
             ShortcutRow { width: parent.width; label: "Next / previous common type"; keys: "Tab / Shift+Tab"; detail: "Scene heading → action → character → parenthetical → dialogue → transition." }
+            ShortcutRow { width: parent.width; label: "Choose a writing suggestion"; keys: "↑ / ↓, then Tab"; detail: "Character names/extensions and individual scene-heading parts only. Enter keeps writing without accepting. Shift+Tab dismisses and cycles backward." }
+            ShortcutRow { width: parent.width; label: "Dismiss / reopen suggestions"; keys: "Esc / Ctrl+Space"; detail: "Esc leaves text unchanged and suppresses this component's menu. Empty elements still allow Tab cycling." }
             ShortcutRow { width: parent.width; label: "Bold / italic / underline"; keys: "Ctrl+B / Ctrl+I / Ctrl+U"; detail: "Select text first. These keys do not set a style for future typing." }
             Repeater {
                 model: reference.elementTypes

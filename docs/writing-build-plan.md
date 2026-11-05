@@ -80,8 +80,17 @@ exposes Undo/Redo and clipboard actions with key labels and live availability.
 Release and sanitizer suites pass 24/24 each, engine-only 2/2, native project
 flows 47/47, plus focused final UI and compositor-key checks. See
 [the result and verification limits](#task-3g--shortcut-reference-and-action-labels).
-Next ready work is slice 4's context-restricted writing suggestions. Remaining
-Fountain compatibility, other assistance and scene navigation stay pending.
+
+**Task 4a — context-restricted writing suggestions is done for this bounded step
+(2026-11-04).** It covers
+current-script character names, cue extensions and individual heading parts,
+automatic first-match selection, real-key Tab/arrow/Escape/Enter behavior,
+free text, undo, persistence and excluded-context/input-method checks.
+Release and sanitizer checks pass 24/24 each, with final editor checks repeated
+after the composition-paste correction; engine-only passes 2/2. Native project flows pass 48/48;
+the native editor and focused compositor/Compose checks pass as recorded below.
+Next ready work is US English spelling and the personal dictionary. Find/replace,
+diagnostics, scene navigation and remaining Fountain compatibility stay pending.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1748,8 +1757,157 @@ were not reevaluated, and the existing heavy-I/O crash-loss limit remains.
 This step does not complete slice 3's broader Fountain compatibility, imported
 PDF, assistance/navigation or the writing milestone.
 
-Next ready bounded work: context-restricted character/cue-extension and
-scene-heading-part suggestions in slice 4, with the spec's real-key acceptance,
-dismissal and excluded-context rules. Spelling/dictionary, find/replace,
+Task 4a below completes the bounded character/cue-extension and
+scene-heading-part suggestion step in slice 4. Spelling/dictionary, find/replace,
 diagnostics and the live scene navigator remain separate work; the full
 Fountain compatibility gate remains required.
+
+### Task 4a — context-restricted writing suggestions
+
+2026-11-04. **Done for this bounded task.** Implements the
+[suggestion contract](spec.md#suggestions-and-character-identity) and
+[editing plan](#editing-and-assistance-contract). Dependencies: existing
+formatted editor, type controls and protected selection/clipboard behavior.
+This step provides automatic applicable suggestions with keyboard acceptance
+and dismissal, component-only headings, current-script character identity,
+custom free text, one-step acceptance undo, persistence and native input checks.
+Other slice 4 assistance and live scene navigation stay subsequent tasks.
+
+#### Interaction and implementation conventions
+
+These are bounded engineering choices within the owner's confirmed suggestion
+rules, not new Fountain compatibility or character metadata:
+
+| Context / key | Behavior |
+| --- | --- |
+| Typing a cue name | Prefix-match names from other cues in this script, ignoring trailing parenthesized qualifications for base-name lookup. Qualified JOHN cues contribute to one JOHN option. No global character dictionary. |
+| Typing `(` after a name | Offer V.O., O.S., CONT'D and extensions already used in this script. Acceptance replaces only the extension, supplies a missing closing parenthesis and places the caret after it; an existing closing parenthesis is kept once. Custom extensions stay ordinary authored text. Additional/nested parentheses remain editable without completion. |
+| Typing a heading | Offer INT., EXT. and INT./EXT.; after its space, offer previously used locations; after ` - `, offer time values. Recognize INT., EXT., INT./EXT., EXT./INT., INT/EXT. and I/E. for extracting heading parts. Use the final spaced dash as the time separator, preserving earlier dashes within a location. |
+| Time values | DAY, NIGHT, MORNING, AFTERNOON, EVENING, LATER and CONTINUOUS, plus values already used in this script. |
+| Ranking | Case-insensitive prefix lookup; uppercase options, ranked by occurrence count then alphabetical order. Built-in values contribute one initial occurrence. Exclude the active element; offer up to 12 distinct matches and omit textually identical no-ops. Narrowing the prefix finds later options. |
+| Opening | Printable typing or a committed input-method string opens applicable matches with the first highlighted. Empty cue/heading starts permit Tab cycling. A typed `(`, heading prefix plus space or time separator may open that component's empty-prefix choices. Navigation, paste, Undo and loading do not automatically open menus. |
+| Up / Down | Change selection, wrapping and scrolling within the menu; retain the caret. |
+| Tab / pointer option | Explicitly accept only the active component in one undo step. Retain surrounding text, delimiters, types, identities, dual flags and matching prefix/suffix emphasis. |
+| Shift+Tab | Dismiss and cycle to the previous common element type; never accept. |
+| Escape | Dismiss without changing writing. Suppress this component while typing continues; moving to another component or Ctrl+Space permits reopening. |
+| Ctrl+Space | Explicitly reopen at an unselected caret in a supported component. Other contexts remain unchanged. |
+| Enter / Shift+Enter | Dismiss and perform the existing writing action, without accepting the highlighted match. |
+| Selection, preedit, focus loss, revision/caret change | Hide/cancel results. Never apply completion to a selection or while composing. Structural completion keys reaching the editor during preedit cannot insert raw tabs/paragraphs. Other editing keys retain the existing protected commands, including clipboard and selected emphasis. |
+| Other elements | No writing completions in action, dialogue, parentheticals, transitions, lyrics, centered text, title fields or markers. Deliberate multiline cues/headings remain editable without completion. |
+
+The non-focusing menu sits by the scaled caret, stays within the writing
+viewport, scrolls long lists and supports pointer acceptance. It retains the
+stock TextEdit's selection and input-method ownership. F1's reference documents
+acceptance, dismissal, reverse cycling and explicit reopening.
+
+`WritingSuggestions` owns per-document transient queries. It reads at most 128
+elements per event-loop batch, counts only prefix matches and checks revision
+before publishing. Editing, moving or losing focus cancels pending work; applying
+an option rechecks revision/caret/component/selection. Each request rebuilds
+from current writing, so renaming/deleting cues and changing projects cannot
+leave stale character options. No persistent cache, source schema, dependency,
+font pin or import/export version changes.
+
+#### Verification and review
+
+The first real-key check failed on the absent menu before implementation.
+Focused checks cover duplicate qualified cues, frequency/tie ranking, arrows,
+Tab acceptance, reverse cycling, Escape suppression and component navigation,
+Ctrl+Space, Enter without acceptance, custom names/extensions, excluded types,
+selection/preedit/focus, stale revisions and queued requests after later keys.
+They verify exact surrounding text, identities and emphasis through acceptance
+Undo/Redo. A narrow-window check wraps/scrolls a 12-option list, checks its
+bounds and accepts a pointer option while retaining editor focus. Synthetic
+window captures were inspected.
+
+Project-flow checks author completions through the actual editor, compare exact
+autosaved source, reopen, create another project and verify that names do not
+carry across projects. They check fixed canonical Fountain and use Poppler to
+independently extract both qualified cues and their dialogue from the PDF.
+
+Completion review found a caret stopping too early when spaces precede an
+existing extension `)`. The focused reproducer reports expected position 30,
+actual 27 before the correction and 30 afterward; the permanent check retains
+the spaces and verifies the final caret. Deferred typing requests now carry
+their intended caret, revision and key generation, preventing reopening after
+Undo, navigation or Escape. Input-method requests use their expected committed
+caret while Qt finishes assigning the revision. The native Compose observer
+caught duplicate delivery in an intermediate implementation; commits now pass
+through Qt once, with deferred suggestions observing the result.
+
+A final composition-paste reproduction caught the early preedit guard letting
+Ctrl+V use stock Qt paste: an external paragraph split one title field into two
+(three total elements instead of two). The guard now reserves only structural
+completion keys; other editing keys retain their protected screenplay routes.
+The reproducer and permanent regression check now preserve one title field,
+its identity and deliberate break, with one-step Undo. Both complete editor
+suites and focused native checks pass again after this final correction.
+
+Native testing also exposed readiness gaps in the existing UI helpers. Project
+tests now wait for the initial screen to finish loading, window activation and
+a rendered frame before sending keys; the direct editor helper also waits for
+its first rendered frame. The intentional queued-worker-result teardown test
+explicitly bypasses this wait and retains its original evidence/lock assertions.
+Exact writing/shortcut assertions remain in place.
+Earlier non-isolated native runs included intermittent page-break/title/import
+and completion failures; their logs are retained below. No production fix is
+claimed for the earlier page-break transient.
+
+An isolated native Wayland/OpenGL probe used synthetic ordinary projects with
+autosave enabled and 40 one-letter cue requests each:
+
+| Workload | Key-handler p95 / max | Menu-ready p95 / max | Final sampled PSS |
+| --- | --- | --- | --- |
+| 203 pages (175 generated scenes) | 29.35 / 42.85 ms | 37.15 / 48.83 ms | 107.05 MiB |
+| 507 pages (444 generated scenes) | 46.80 / 47.16 ms | 68.05 / 73.75 ms | 175.03 MiB |
+
+These are synthetic key-to-handler and key-to-published-menu observations,
+not compositor/physical-key-to-frame timings, peak memory, sustained writing,
+cold opening or export-while-typing acceptance. The final probe waits for the
+query signal in an event loop. An earlier polling probe added a 10 ms sleep per
+batch and is not latency evidence; earlier harness attempts also omitted native
+activation or selected a paragraph separator when clearing a cue. The corrected
+probe selects only cue text. No production behavior was changed for those
+harness mistakes.
+
+| Check | Observed result |
+| --- | --- |
+| `mise run check` | **24/24 passed** on the final isolated release run, including crash checks and the independent Fountain oracle |
+| `mise run check-debug` | **24/24 passed** with address/undefined sanitizers |
+| Final editor rechecks after the composition-paste correction | **145 passed**, six platform/optional checks skipped, no failures in each of release and sanitizer builds |
+| `mise run check-engine` | **2/2 passed** |
+| Native Wayland / software project flows, Compose input context | **48 passed**, no failures/skips; includes the queued-result teardown exception |
+| Native Wayland / OpenGL editor, Compose input context | **145 passed**, five optional checks skipped; full final run includes temporary key-state tracing, removed afterward |
+| Final compositor (`wtype`) and focused native checks | **6 passed**, no failures/skips after removing tracing and fixing composition paste: completion/Undo/Redo/heading parts/Escape/Enter/Compose plus composition/stale-query/protected-paste and interleaved-title/page-break checks |
+| Completion review | Requirements, tracked/untracked implementation and test necessity reviewed; caret, stale-trigger, input-event-delivery, composition-paste and test-readiness findings corrected; final whitespace check passes |
+
+Final logs: `build/task-4a-{release,debug}-verified.log`,
+`build/task-4a-engine.log`, `build/task-4a-native-flows-ready-final.log`,
+`build/task-4a-native-editor-trace-final.log` and
+`build/task-4a-native-ime-final.log`. Final editor rechecks are
+`build/task-4a-{release,debug}-editor-final.log`.
+`build/task-4a-red.log` retains the initial missing-menu failure;
+`build/task-4a-extension-{red,green}.log` retain the caret reproduction.
+`build/task-4a-composition-clipboard-{red,green}.log` retain the paste reproduction.
+Synthetic menu captures are
+`build/release/editor-tests/suggestions-{location,small-scrolled}.png`.
+The disposable performance source is `build/task-4a-measure.cpp`, with final
+results in `build/task-4a-measure-{200,500}-event-loop.log` and matching isolated
+project folders. Earlier native/check/probe logs remain under `build/task-4a-*`.
+
+An intermediate release run failed when the crash harness's `committed:3`
+child exited normally before its planned kill; the final isolated release
+suite passes all phases. This is not a fix to that harness timing or the
+existing heavy-I/O crash-loss limit. Likewise, earlier direct-editor native
+transients were not assigned a proven production cause; final full and focused
+runs pass without weakening writing assertions.
+
+Native input uses the installed Compose plugin because fcitx5 is unavailable.
+The standard fcitx runner was not run. Physical-key latency, owner appearance/
+comfort and sustained typing/export performance were not reevaluated. The
+additional Academy reference is unavailable locally; independent synthetic
+fixtures/PDF and Fountain-oracle checks pass. Imported PDF, broader Fountain
+compatibility and the rest of the writing milestone retain their existing gates.
+
+Next ready bounded work: US English spelling and the personal dictionary.
+Find/replace, diagnostics and the live scene navigator remain separate tasks.

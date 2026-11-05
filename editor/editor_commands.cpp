@@ -1,4 +1,5 @@
 #include "editor/editor_commands.h"
+#include "editor/writing_suggestions.h"
 #include "editor/screenplay_layout.h"
 #include "source/screenplay_format.h"
 
@@ -337,11 +338,14 @@ int insert_between(QTextCursor& cursor, const std::vector<Element>& inserted) {
 }
 
 EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObject(parent), document_(document) {
+  suggestions_ = new WritingSuggestions(document, this);
   connect(document_, &QTextDocument::contentsChanged, this, &EditorCommands::refreshDocumentState);
   connect(document_, &QTextDocument::undoAvailable, this, &EditorCommands::historyChanged);
   connect(document_, &QTextDocument::redoAvailable, this, &EditorCommands::historyChanged);
   refreshDocumentState();
 }
+
+QObject* EditorCommands::suggestions() const { return suggestions_; }
 
 void EditorCommands::refreshDocumentState() {
   setTypeMessage({});
@@ -742,6 +746,7 @@ bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
   const int start = watched->property("selectionStart").toInt(), end = watched->property("selectionEnd").toInt();
   if (event->type() == QEvent::InputMethod) {
     const auto* input = static_cast<QInputMethodEvent*>(event);
+    suggestions_->dismiss();
     // Qt removes the selection first, then applies replacement offsets at its
     // left edge. Map that effective range back to original document positions.
     const auto [left, right] = std::minmax(start, end);
@@ -792,6 +797,12 @@ bool EditorCommands::eventFilter(QObject* watched, QEvent* event) {
         event->accept();
         return true;
       }
+    }
+    if (!input->commitString().isEmpty()) {
+      // Deliver the original event once through Qt. The deferred request sees
+      // its result; replacement offsets are relative to the selection's left
+      // edge after removal. Qt has not assigned the new revision yet (-1).
+      emit textCommitted(base + input->replacementStart() + static_cast<int>(input->commitString().size()), -1);
     }
   } else {
     const auto* mouse = static_cast<QMouseEvent*>(event);
@@ -847,6 +858,7 @@ int EditorCommands::typeText(int position, int selectionStart, int selectionEnd,
   if (!group) cursor.endEditBlock();
   typed_end_ = cursor.position();
   typed_steps_ = document_->availableUndoSteps();
+  emit textCommitted(typed_end_, document_->revision());
   return typed_end_;
 }
 

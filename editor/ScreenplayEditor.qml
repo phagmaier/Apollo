@@ -12,6 +12,8 @@ Rectangle {
     // Presentation scale only: the engine and TextEdit keep 96 dpi document
     // coordinates. 0.75 gives the prototype's 612 px Letter page and 12 px type.
     property real pageScale: 0.75
+    readonly property var suggestions: commands.suggestions
+    onEnabledChanged: { if (!enabled) suggestions.dismiss() }
     color: "#d4d9df"
     function focusEditor() { editor.forceActiveFocus() }
     readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
@@ -23,6 +25,7 @@ Rectangle {
     function edit(action) {
         if (!enabled)
             return
+        suggestions.dismiss()
         switch (action) {
         case "undo": editor.undo(); break
         case "redo": editor.redo(); break
@@ -136,6 +139,30 @@ Rectangle {
                 color: "black"
                 selectionColor: "#8fb4e8"
                 selectedTextColor: "black"
+                readonly property bool suggestionsOpen: suggestionMenu.visible
+                readonly property var suggestionChoices: root.suggestions.choices
+                readonly property int suggestionIndex: root.suggestions.selected
+                property int suggestionTrigger: 0
+                function offerSuggestions(explicitRequest = false) {
+                    if (activeFocus && root.enabled && !inputMethodComposing && preeditText.length === 0)
+                        root.suggestions.request(cursorPosition, selectionStart, selectionEnd, explicitRequest)
+                }
+                function offerCommittedSuggestions(position, revision, trigger) {
+                    if (cursorPosition === position && (revision < 0 || root.commands.documentRevision === revision)
+                            && suggestionTrigger === trigger)
+                        offerSuggestions()
+                }
+                onCursorPositionChanged: root.suggestions.cursorChanged(cursorPosition)
+                onSelectionStartChanged: root.suggestions.dismiss()
+                onSelectionEndChanged: root.suggestions.dismiss()
+                onActiveFocusChanged: { if (!activeFocus) root.suggestions.dismiss() }
+                onInputMethodComposingChanged: { if (inputMethodComposing) root.suggestions.dismiss() }
+                Connections {
+                    target: root.commands
+                    function onTextCommitted(position, revision) {
+                        Qt.callLater(editor.offerCommittedSuggestions, position, revision, editor.suggestionTrigger)
+                    }
+                }
                 function revealCursor() {
                     const rect = mapToItem(flick.contentItem, cursorRectangle)
                     if (rect.y < flick.contentY)
@@ -157,9 +184,47 @@ Rectangle {
                 Keys.priority: Keys.BeforeItem
 
                 Keys.onPressed: (event) => {
+                    ++suggestionTrigger
                     const shift = event.modifiers & Qt.ShiftModifier
                     const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
                     const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
+                    // Never accept/cycle or insert raw tabs/paragraphs during
+                    // preedit. Other editing keys keep the protected command
+                    // routes below, including clipboard and selected emphasis.
+                    if ((inputMethodComposing || preeditText.length > 0)
+                            && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab
+                                || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+                        // If the input method lets a structural key reach us,
+                        // do not let stock TextEdit insert a raw tab/paragraph.
+                        event.accepted = true
+                        return
+                    }
+                    if (event.key === Qt.Key_Space && event.modifiers === Qt.ControlModifier) {
+                        offerSuggestions(true)
+                        event.accepted = true
+                        return
+                    }
+                    if (suggestionsOpen && !command) {
+                        if (event.key === Qt.Key_Up || event.key === Qt.Key_Down
+                                || event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab
+                                || event.key === Qt.Key_Escape) {
+                            if (event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                                root.suggestions.move(event.key === Qt.Key_Up ? -1 : 1)
+                            else if (event.key === Qt.Key_Tab && !shift)
+                                place(root.suggestions.accept(cursorPosition, selectionStart, selectionEnd))
+                            else if (event.key === Qt.Key_Escape)
+                                root.suggestions.dismiss(true)
+                            else {
+                                root.suggestions.dismiss()
+                                root.commands.cycleType(cursorPosition, true)
+                            }
+                            event.accepted = true
+                            return
+                        }
+                    }
+                    // Enter and commands dismiss; they retain their normal
+                    // writing behavior and never accept a highlighted option.
+                    root.suggestions.dismiss()
                     if (event.modifiers === Qt.ControlModifier && event.key >= Qt.Key_1 && event.key <= Qt.Key_8) {
                         root.setElementType(root.elementTypes[event.key - Qt.Key_1].type)
                         event.accepted = true
@@ -277,6 +342,72 @@ Rectangle {
         }
         ScrollBar.horizontal: ScrollBar {
             contentItem: Rectangle { implicitHeight: 5; radius: 2; color: "#89939e"; opacity: parent.active ? 0.8 : 0.4 }
+        }
+    }
+
+    // A non-focusing overlay keeps caret, selection and input-method ownership
+    // in TextEdit. Coordinates include presentation scale and both scroll axes.
+    Rectangle {
+        id: suggestionMenu
+        objectName: "writingSuggestions"
+        visible: editor.activeFocus && root.enabled && !editor.inputMethodComposing
+                 && root.suggestions.choices.length > 0
+        z: 10
+        readonly property rect caret: {
+            flick.contentX; flick.contentY; pages.x; pages.y
+            return editor.mapToItem(root, editor.cursorRectangle)
+        }
+        width: Math.min(320, root.width - 16)
+        height: suggestionColumn.implicitHeight + 16
+        x: Math.max(8, Math.min(caret.x, root.width - width - 8))
+        y: caret.y + caret.height + height + 8 <= root.height
+           ? caret.y + caret.height + 4 : Math.max(8, caret.y - height - 4)
+        color: "#f5f4f1"; radius: 6; border.color: "#b9c0c7"
+        clip: true
+        Column {
+            id: suggestionColumn
+            x: 8; y: 8; width: parent.width - 16
+            Label {
+                width: parent.width; height: 26
+                text: root.suggestions.component
+                color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 12 }
+            }
+            ListView {
+                id: suggestionList
+                objectName: "writingSuggestionList"
+                width: parent.width
+                height: Math.min(6 * 28, count * 28, Math.max(28, root.height - 90))
+                clip: true
+                model: root.suggestions.choices
+                currentIndex: root.suggestions.selected
+                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+                delegate: Rectangle {
+                    required property string modelData
+                    required property int index
+                    objectName: "writingSuggestion" + index
+                    width: suggestionColumn.width; height: 28; radius: 3
+                    color: index === root.suggestions.selected ? "#dce4f2" : "transparent"
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            root.suggestions.select(index)
+                            editor.place(root.suggestions.accept(editor.cursorPosition, editor.selectionStart, editor.selectionEnd))
+                        }
+                    }
+                    Label {
+                        anchors { fill: parent; leftMargin: 7; rightMargin: 7 }
+                        text: modelData; textFormat: Text.PlainText; elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                        color: "#303843"; font { family: "Liberation Sans"; pixelSize: 13 }
+                    }
+                }
+            }
+            Label {
+                width: parent.width; height: 26
+                text: "↑↓ select · Tab accept · Esc dismiss"
+                color: "#626e78"; font { family: "Liberation Sans"; pixelSize: 11 }
+                verticalAlignment: Text.AlignVCenter
+            }
         }
     }
 }

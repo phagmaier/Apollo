@@ -89,7 +89,7 @@ if(APOLLO_BUILD_EDITOR)
   target_link_libraries(fountain_export_tests PRIVATE apollo_source Qt6::Test)
   target_compile_definitions(fountain_export_tests PRIVATE APOLLO_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
   add_test(NAME fountain_export_tests COMMAND fountain_export_tests)
-  add_library(apollo_editor_core editor/screenplay_layout.cpp editor/editor_commands.cpp editor/editor_view.cpp editor/pdf_export_job.cpp editor/fountain_export_job.cpp
+  add_library(apollo_editor_core editor/screenplay_layout.cpp editor/editor_commands.cpp editor/writing_suggestions.cpp editor/editor_view.cpp editor/pdf_export_job.cpp editor/fountain_export_job.cpp
                                  editor/autosave.cpp editor/session_state.cpp editor/project_library.cpp editor/project_access_flow.cpp)
   set_target_properties(apollo_editor_core PROPERTIES AUTOMOC ON)
   target_link_libraries(apollo_editor_core PUBLIC apollo_layout apollo_source apollo_export_snapshot Qt6::Gui Qt6::Quick)

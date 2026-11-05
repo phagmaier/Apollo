@@ -32,14 +32,17 @@ speech of a dual pair requires explicit unpairing first, following the owner's
 [dual-dialogue policy](dual-dialogue.md). Ordinary incomplete speeches can still
 be authored and saved; the existing diagnostics and export refusals apply.
 
-Tab retains its caret-only six-type cycle: heading, action, character, parenthetical,
+With suggestions closed, Tab retains its caret-only six-type cycle: heading, action, character, parenthetical,
 dialogue, transition. Shift+Tab reverses it. From lyric or centered text, either
-Tab direction returns to action. Enter retains the existing element rules:
+Tab direction returns to action. An open writing suggestion menu gives Tab
+acceptance priority; Shift+Tab dismisses and cycles backward. See
+[task 4a](writing-build-plan.md#task-4a--context-restricted-writing-suggestions).
+Enter retains the existing element rules:
 splitting text within lyric/centered keeps its type, and Enter at its end makes
 a following action. These are bounded authoring conventions within the
 [build plan](writing-build-plan.md#editing-and-assistance-contract); full
 selection/clipboard conventions are now in the [task 3f contract](selection-and-clipboard.md);
-writing assistance remains separate work.
+spelling, find/replace and broader assistance remain separate work.
 
 ## Verification and retained limits
 
