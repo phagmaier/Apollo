@@ -25,15 +25,15 @@ Rectangle {
     property bool includeTitle: true
     property bool showReloadStatus: false
     property string sessionNotice: ""
-    property var emptySpeechIssues: commands.emptySpeeches
-    property string emptySpeechId: ""
-    property string emptySpeechNotice: ""
+    property var structureIssues: commands.structureIssues
+    property string issueKey: ""
+    property string issueNotice: ""
     readonly property bool dialogOpen: shortcutPanel.visible || titlePanel.visible || importedPanel.visible
-            || emptySpeechPanel.visible || exportPanel.visible || copyPanel.visible || reloadPanel.visible
+            || issuePanel.visible || exportPanel.visible || copyPanel.visible || reloadPanel.visible
             || failurePanel.visible || leavePanel.visible || editorPage.spellingOpen || editorPage.findOpen
-    property var selectedEmptySpeech: {
-        for (const issue of emptySpeechIssues) {
-            if (issue.id === emptySpeechId)
+    property var selectedIssue: {
+        for (const issue of structureIssues) {
+            if (issue.key === issueKey)
                 return issue
         }
         return null
@@ -80,28 +80,33 @@ Rectangle {
                 + (fountainPresentationNote.length > 0 ? "\n" + fountainPresentationNote : "")
                 + (fountainJob.omissions.length > 0 ? "\n" + fountainJob.omissions : "")
     }
-    function selectEmptySpeech(id) {
-        const position = commands.locateEmptySpeech(id)
-        emptySpeechNotice = ""
-        if (position < 0) {
-            emptySpeechNotice = "This speech changed. Choose a current cue to review."
-            return
-        }
-        emptySpeechId = id
-        editorPage.selectElement(position, selectedEmptySpeech.text.length)
+    function issueLabel(kind) {
+        return kind === "emptySpeech" ? "Empty speech"
+             : kind === "speechWithoutCue" ? "Dialogue without a cue"
+             : kind === "adjacentDialogue" ? "Dialogue that runs together"
+             : "Incomplete Dual Dialogue"
     }
-    function treatSelectedSpeechAsAction() {
-        if (!selectedEmptySpeech)
-            return
-        const length = selectedEmptySpeech.text.length
-        const position = commands.treatSpeechAsAction(emptySpeechId)
-        if (position < 0) {
-            emptySpeechNotice = "This speech changed or has a dual-dialogue relationship. Choose a current cue to review."
+    function selectIssue(key) {
+        const range = commands.locateStructureIssue(key)
+        issueNotice = ""
+        if (range.start === undefined) {
+            issueNotice = "This issue changed. Choose a current issue to review."
             return
         }
-        emptySpeechId = ""
-        emptySpeechNotice = ""
-        editorPage.selectElement(position, length)
+        issueKey = key
+        editorPage.selectElement(range.start, range.end - range.start)
+    }
+    function correctSelectedIssue(action) {
+        if (!selectedIssue)
+            return
+        const position = commands.correctStructureIssue(issueKey, action)
+        if (position < 0) {
+            issueNotice = "This issue changed or now needs a manual edit. Choose a current issue to review."
+            return
+        }
+        issueKey = ""
+        issueNotice = ""
+        editorPage.selectElement(position, 0)
     }
     Shortcut {
         sequence: "F1"
@@ -433,8 +438,8 @@ Rectangle {
     }
 
     Popup {
-        id: emptySpeechPanel
-        objectName: "emptySpeechPanel"
+        id: issuePanel
+        objectName: "issuePanel"
         parent: desk
         x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
         width: Math.min(600, desk.width - 16)
@@ -443,38 +448,39 @@ Rectangle {
         background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
         onClosed: editorPage.focusEditor()
         Text {
-            id: emptySpeechTitle
-            text: desk.emptySpeechIssues.length + (desk.emptySpeechIssues.length === 1 ? " empty speech" : " empty speeches")
+            id: issueTitle
+            text: desk.structureIssues.length + (desk.structureIssues.length === 1 ? " speech issue" : " speech issues")
             color: "#303843"; font { family: "Liberation Sans"; pixelSize: 16; weight: Font.DemiBold }
         }
         Text {
-            id: emptySpeechHelp
-            anchors { left: parent.left; right: parent.right; top: emptySpeechTitle.bottom; topMargin: 8 }
-            text: "Choose any cue to go to it. Nothing changes until you edit it or choose Treat speech as action."
+            id: issueHelp
+            anchors { left: parent.left; right: parent.right; top: issueTitle.bottom; topMargin: 8 }
+            text: "Choose an issue to go to it. Nothing changes until you edit the writing or choose a correction; each correction is one Undo step."
             wrapMode: Text.Wrap; color: "#4d5965"
             font { family: "Liberation Sans"; pixelSize: 12 }
         }
         ListView {
-            objectName: "emptySpeechList"
-            anchors { left: parent.left; right: parent.right; top: emptySpeechHelp.bottom; topMargin: 12; bottom: parent.bottom }
+            objectName: "issueList"
+            anchors { left: parent.left; right: parent.right; top: issueHelp.bottom; topMargin: 12; bottom: parent.bottom }
             clip: true; spacing: 4
-            model: desk.emptySpeechIssues
+            model: desk.structureIssues
             delegate: DeskButton {
                 required property var modelData
                 required property int index
-                objectName: "emptySpeechIssue" + index
+                objectName: "structureIssue" + index
                 width: ListView.view.width
-                text: (index + 1) + ". " + (modelData.text.length ? modelData.text : "(empty cue)")
-                ink: "#303843"; fill: modelData.id === desk.emptySpeechId ? "#d4d9df" : "white"
-                Accessible.name: "Go to empty speech " + (index + 1) + ": " + modelData.text
+                text: (index + 1) + ". " + desk.issueLabel(modelData.kind) + ": "
+                      + (modelData.text.length ? modelData.text : "(empty)")
+                ink: "#303843"; fill: modelData.key === desk.issueKey ? "#d4d9df" : "white"
+                Accessible.name: "Go to issue " + text
                 contentItem: Text {
                     text: parent.text; font: parent.font; color: "#303843"
                     textFormat: Text.PlainText
                     elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
                 }
                 onClicked: {
-                    desk.selectEmptySpeech(modelData.id)
-                    emptySpeechPanel.close()
+                    desk.selectIssue(modelData.key)
+                    issuePanel.close()
                 }
             }
             ScrollBar.vertical: ScrollBar {}
@@ -689,42 +695,49 @@ Rectangle {
             }
         }
         Rectangle {
-            id: emptySpeechBar
-            objectName: "emptySpeechBar"
+            id: issueBar
+            objectName: "issueBar"
             anchors { left: parent.left; right: parent.right; top: workbar.bottom }
             height: visible ? 78 : 0
-            visible: desk.emptySpeechIssues.length > 0
+            visible: desk.structureIssues.length > 0
             color: "#e9edf0"
             DeskButton {
-                id: reviewEmptySpeech
-                objectName: "reviewEmptySpeeches"
+                id: reviewIssues
+                objectName: "reviewIssues"
                 x: 12; y: 4
-                text: desk.emptySpeechIssues.length + (desk.emptySpeechIssues.length === 1 ? " empty speech…" : " empty speeches…")
+                text: desk.structureIssues.length + (desk.structureIssues.length === 1 ? " speech issue…" : " speech issues…")
                 ink: "#303843"; fill: "#d4d9df"
-                Accessible.name: "Review every cue without dialogue"
-                onClicked: emptySpeechPanel.open()
+                Accessible.name: "Review speech structure issues"
+                onClicked: issuePanel.open()
             }
             Text {
-                anchors { left: reviewEmptySpeech.right; leftMargin: 12; right: treatSpeech.left; rightMargin: 12; verticalCenter: reviewEmptySpeech.verticalCenter }
-                text: desk.selectedEmptySpeech ? desk.selectedEmptySpeech.text : "Choose a cue to review"
+                anchors { left: reviewIssues.right; leftMargin: 12; right: corrections.left; rightMargin: 12; verticalCenter: reviewIssues.verticalCenter }
+                text: desk.selectedIssue ? desk.issueLabel(desk.selectedIssue.kind) + ": " + desk.selectedIssue.text
+                                         : "Choose an issue to review"
                 textFormat: Text.PlainText; elide: Text.ElideRight
                 color: "#303843"; font { family: "Liberation Sans"; pixelSize: 12 }
             }
-            DeskButton {
-                id: treatSpeech
-                objectName: "treatSpeechAsAction"
+            Row {
+                id: corrections
                 anchors { right: parent.right; rightMargin: 12; top: parent.top; topMargin: 4 }
-                text: "Treat speech as action"
-                ink: "#303843"; fill: "#d4d9df"
-                enabled: desk.selectedEmptySpeech !== null && desk.selectedEmptySpeech.canTreatAsAction
-                         && (!desk.autosaver || !desk.autosaver.reloadBusy) && !desk.departing
-                Accessible.name: "Treat the selected cue and its parentheticals as action; undo restores the speech"
-                onClicked: desk.treatSelectedSpeechAsAction()
+                spacing: 8
+                Repeater {
+                    model: desk.selectedIssue ? desk.selectedIssue.corrections : []
+                    DeskButton {
+                        required property var modelData
+                        objectName: modelData.action
+                        text: modelData.label
+                        ink: "#303843"; fill: "#d4d9df"
+                        enabled: modelData.enabled && (!desk.autosaver || !desk.autosaver.reloadBusy) && !desk.departing
+                        Accessible.name: modelData.label + "; Undo restores the writing"
+                        onClicked: desk.correctSelectedIssue(modelData.action)
+                    }
+                }
             }
             Text {
-                anchors { left: parent.left; right: parent.right; top: reviewEmptySpeech.bottom; margins: 12; topMargin: 3 }
-                text: desk.emptySpeechNotice || (desk.selectedEmptySpeech ? desk.selectedEmptySpeech.explanation
-                      : "Saved as written. Clean Fountain export needs dialogue after every cue, or an explicit correction.")
+                anchors { left: parent.left; right: parent.right; top: reviewIssues.bottom; margins: 12; topMargin: 3 }
+                text: desk.issueNotice || (desk.selectedIssue ? desk.selectedIssue.explanation
+                      : "Saved as written. Clean Fountain export needs complete speeches, or an explicit correction.")
                 textFormat: Text.PlainText; wrapMode: Text.Wrap
                 color: "#4d5965"; font { family: "Liberation Sans"; pixelSize: 11 }
             }
@@ -738,7 +751,7 @@ Rectangle {
         }
         Rectangle {
             id: dualNotice
-            anchors { left: parent.left; right: parent.right; top: emptySpeechBar.bottom }
+            anchors { left: parent.left; right: parent.right; top: issueBar.bottom }
             visible: notice.text.length > 0
             height: visible ? notice.implicitHeight + 20 : 0
             color: "#f4e4cf"
@@ -748,7 +761,7 @@ Rectangle {
                 anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
                 text: desk.screenplayLayout.error.indexOf("dual dialogue exceeds one page") >= 0
                       ? "Dual Dialogue exceeds this profile's one-page limit. All writing and pairing are kept in a reading preview; PDF export is refused. Shorten the speeches or explicitly turn Dual Dialogue off."
-                      : desk.commands.dualMessage || desk.commands.dualWarning
+                      : desk.commands.dualMessage
                 textFormat: Text.PlainText; wrapMode: Text.Wrap
                 color: "#6b3d13"; font { family: "Liberation Sans"; pixelSize: 12 }
             }

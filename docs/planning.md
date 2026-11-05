@@ -428,6 +428,22 @@ Measurement-only corrections and disposable rehearsal choices are not owner
 acceptance. The [readiness evidence](fountain-compatibility.md#owner-reference-writing-readiness-2026-10-29)
 is a separate engineering record; it does not settle additional product choices.
 
+## Round 26 — speech-structure diagnostics (settled, 2026-11-04)
+
+Before task 4d, the spec left exact diagnostics open. The owner chose:
+
+1. **Speech structure** as the bounded diagnostic set: dialogue without a
+   character cue, empty speeches, incomplete Dual Dialogue and dialogue
+   elements that run together without a parenthetical, in one located list.
+   Deliberate breaks and blank dialogue lines are not flagged. Export-only
+   refusals (spelling ambiguity, emphasis, characters) are not shown live.
+2. For dialogue without a cue, offer **both** explicit corrections: **Add
+   character cue** (an empty cue before the run, caret in it) and **Treat as
+   action**. Neither changes words; each is one Undo step.
+
+Other diagnostics, the mixed-case exception and blank-spacing advisories remain
+to be specified. See [diagnostics.md](diagnostics.md).
+
 ## Subsequent decision branches
 
 Visual exploration: [editor prototype](../prototype/editor.html) presents three
@@ -450,7 +466,7 @@ Ask these as their prerequisites settle, rather than presenting the entire list 
 - Notes and stash: settled project-wide sharing, explicit capture/reinsertion, annotations/tags, title search for notes, and export exclusion; still define detailed search/tag controls, partial selections, deletion/undo, history restoration, and tentative script links through a prototype.
 - History: settled distinction between local recovery and deliberate versions, alternative drafts, and restoration as a new version after preserving current work; still define comparison granularity and shared-material restoration.
 - Git/GitHub: settled whole-project manual sync and merge previews; still define detailed tracked-file layout, existing repositories, credentials, sync failures, offline behavior, remote divergence, conflict details, and safe restoration.
-- Formatting assistance: settled US English and personal-dictionary behavior; still define dictionary persistence/sync, diagnostic rules and intentional exceptions. Formatting suggestions are explicitly applied and undoable.
+- Formatting assistance: settled US English and personal-dictionary behavior and the speech-structure diagnostics (round 26); still define dictionary persistence/sync, further diagnostic rules and intentional exceptions. Formatting suggestions are explicitly applied and undoable.
 - Export: selected American feature submission profile, title-page form, required element coverage, and note/stash conversion/exclusion; still define full numeric rules, remaining Fountain mappings, pagination, font packaging, failures, and acceptance checks.
 - Performance: 200-page primary workload and 500-page stress test on the current machine accepted; proposed numeric targets are in the stack evaluation and need measurement.
 - Delivery: Qt/C++/QML retained after spike acceptance (round 17), with Electron + ProseMirror as fallback if later reassessment is needed. Still define package/install workflow on Arch/Omarchy, dependency pins, maintenance, and license if relevant.

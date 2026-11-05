@@ -1199,6 +1199,45 @@ private slots:
   }
 
 private:
+  // Hand-counted UTF-16 positions: each element is followed by one separator.
+  static std::vector<Element> structure_model() {
+    return {{ElementType::action, "Rain."},                                   // 0-5
+            {ElementType::dialogue, "Lost line."},                            // 6-16, no cue
+            {ElementType::parenthetical, "(aside)"},                          // 17-24
+            {ElementType::cue, "MARA"},                                       // 25-29
+            {ElementType::dialogue, "One.\n\nTwo.", false, {{0, 3, Style::bold}}}, // 30-40
+            {ElementType::dialogue, "Three.", false, {{0, 5, Style::italic}}},    // 41-47
+            {ElementType::parenthetical, "(beat)"},
+            {ElementType::dialogue, "Four."},
+            {ElementType::action, "Beat."},
+            {ElementType::cue, "THEO", true},
+            {ElementType::dialogue, ""},
+            {ElementType::action, "End."},
+            {ElementType::cue, "JUNE"}};
+  }
+
+  static int original_position(const std::vector<Element>& elements, std::size_t index) {
+    int position = 0;
+    for (std::size_t i = 0; i < index; ++i) position += static_cast<int>(QString::fromStdString(elements[i].text).size()) + 1;
+    return position;
+  }
+
+  void select_issue(int index) {
+    click(view_->rootObject()->findChild<QQuickItem*>("reviewIssues"));
+    const auto name = QStringLiteral("structureIssue%1").arg(index);
+    QTRY_VERIFY(find_item(view_->contentItem(), name));
+    QTest::qWait(30); // Let the Popup and delegate geometry polish.
+    click(find_item(view_->contentItem(), name));
+    QTRY_VERIFY(editor_->hasActiveFocus());
+  }
+  void click(QQuickItem* item) {
+    QVERIFY(item);
+    // A newly created Row/Repeater button is positioned at the next polish.
+    const auto center = [&] { return item->mapToScene(item->boundingRect().center()).toPoint(); };
+    QTRY_VERIFY(view_->contentItem()->contains(center()));
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, center());
+  }
+
   // The open document's lines, decorations included, at the hand-derived
   // pages, slots and profile columns of a fixture expectation, and no others.
   void follows_expected(const QString& name) {
@@ -1778,30 +1817,23 @@ private slots:
                            {ElementType::action, "After."}}));
     auto* root = view_->rootObject();
     auto* commands = document_->findChild<EditorCommands*>();
-    auto* review = root->findChild<QQuickItem*>("reviewEmptySpeeches");
-    auto* treat = root->findChild<QQuickItem*>("treatSpeechAsAction");
-    QVERIFY(commands && review && treat);
+    auto* review = root->findChild<QQuickItem*>("reviewIssues");
+    QVERIFY(commands && review);
     QVERIFY(review->isVisible());
-    QVERIFY(review->property("text").toString().startsWith(QStringLiteral("2 empty speeches")));
-    QVERIFY(!treat->isEnabled());
+    QVERIFY(review->property("text").toString().startsWith(QStringLiteral("2 speech issues")));
+    // No correction is offered until an issue is chosen.
+    QVERIFY(!find_item(view_->contentItem(), QStringLiteral("treatAsAction")));
     const auto original = document_elements(*document_);
     for (int index : {0, 1}) {
-      QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
-                       review->mapToScene(review->boundingRect().center()).toPoint());
-      const auto name = QStringLiteral("emptySpeechIssue%1").arg(index);
-      QTRY_VERIFY(find_item(view_->contentItem(), name));
-      auto* issue = find_item(view_->contentItem(), name);
-      QTest::qWait(30); // Let the Popup and delegate geometry polish.
-      QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
-                       issue->mapToScene(issue->boundingRect().center()).toPoint());
-      QTRY_VERIFY(editor_->hasActiveFocus());
-      const auto diagnostic = commands->emptySpeeches()[index].toMap();
+      select_issue(index);
+      const auto diagnostic = commands->structureIssues()[index].toMap();
+      QCOMPARE(diagnostic["kind"].toString(), QStringLiteral("emptySpeech"));
       QCOMPARE(editor_->property("selectionStart").toInt(), diagnostic["position"].toInt());
       QCOMPARE(editor_->property("selectedText").toString(), QStringLiteral("Mara"));
-      QVERIFY(treat->isEnabled());
+      QTRY_VERIFY(find_item(view_->contentItem(), QStringLiteral("treatAsAction")));
+      QVERIFY(find_item(view_->contentItem(), QStringLiteral("treatAsAction"))->isEnabled());
     }
-    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
-                     treat->mapToScene(treat->boundingRect().center()).toPoint());
+    click(find_item(view_->contentItem(), QStringLiteral("treatAsAction")));
     auto expected = original;
     expected[2].type = expected[3].type = ElementType::action;
     QCOMPARE(document_elements(*document_), expected);
@@ -1812,6 +1844,208 @@ private slots:
     QCOMPARE(commands->emptySpeeches().size(), 2);
   }
 
+  void structure_issues_are_located_in_document_order() {
+    QVERIFY(open_elements(structure_model()));
+    auto* commands = document_->findChild<EditorCommands*>();
+    QVERIFY(commands);
+    const auto ids = document_elements(*document_);
+    const auto issues = commands->structureIssues();
+    QCOMPARE(issues.size(), 4);
+    const auto issue = [&](int index) { return issues[index].toMap(); };
+    QCOMPARE(issue(0)["kind"].toString(), QStringLiteral("speechWithoutCue"));
+    QCOMPARE(issue(0)["id"].toString(), QString::fromStdString(ids[1].id));
+    QCOMPARE(issue(0)["key"].toString(), QStringLiteral("speechWithoutCue:") + QString::fromStdString(ids[1].id));
+    QCOMPARE(issue(0)["position"].toInt(), 6);
+    QCOMPARE(issue(0)["end"].toInt(), 24);
+    QCOMPARE(issue(0)["text"].toString(), QStringLiteral("Lost line."));
+    QCOMPARE(issue(1)["kind"].toString(), QStringLiteral("adjacentDialogue"));
+    QCOMPARE(issue(1)["id"].toString(), QString::fromStdString(ids[4].id));
+    QCOMPARE(issue(1)["position"].toInt(), 30);
+    QCOMPARE(issue(1)["end"].toInt(), 47);
+    QCOMPARE(issue(1)["text"].toString(), QStringLiteral("One.  Two."));
+    QCOMPARE(issue(2)["kind"].toString(), QStringLiteral("incompleteDual"));
+    QCOMPARE(issue(2)["id"].toString(), QString::fromStdString(ids[9].id));
+    QCOMPARE(issue(3)["kind"].toString(), QStringLiteral("emptySpeech"));
+    QCOMPARE(issue(3)["id"].toString(), QString::fromStdString(ids[12].id));
+    QCOMPARE(commands->emptySpeeches().size(), 1);
+    const auto actions = [&](int index) {
+      QStringList names;
+      for (const auto& option : issue(index)["corrections"].toList())
+        if (option.toMap()["enabled"].toBool()) names << option.toMap()["action"].toString();
+      return names;
+    };
+    QCOMPARE(actions(0), (QStringList{"addCharacterCue", "treatAsAction"}));
+    QCOMPARE(actions(1), QStringList{"joinDialogue"});
+    QCOMPARE(actions(2), QStringList{"turnDualOff"});
+    QCOMPARE(actions(3), QStringList{"treatAsAction"});
+    const auto range = commands->locateStructureIssue(issue(1)["key"].toString());
+    QCOMPARE(range["start"].toInt(), 30);
+    QCOMPARE(range["end"].toInt(), 47);
+
+    // Real keys: typing before an issue moves it; a parenthetical between the
+    // adjacent dialogue resolves that issue; Undo brings it back.
+    editor_->setProperty("cursorPosition", 0);
+    type(QStringLiteral("Dark "));
+    QCOMPARE(commands->structureIssues()[0].toMap()["position"].toInt(), 11);
+    QCOMPARE(commands->locateStructureIssue(issue(1)["key"].toString())["start"].toInt(), 35);
+    editor_->setProperty("cursorPosition", 0);
+    press(Qt::Key_Tab); // Action -> cue: the run now belongs to a speech.
+    QCOMPARE(commands->structureIssues().size(), 3);
+    QVERIFY(commands->locateStructureIssue(issue(0)["key"].toString()).isEmpty());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(commands->structureIssues().size(), 4);
+    const int three = position_of(QStringLiteral("Three."));
+    editor_->setProperty("cursorPosition", three);
+    press(Qt::Key_Tab); // Dialogue -> transition separates the dialogue.
+    QVERIFY(commands->locateStructureIssue(issue(1)["key"].toString()).isEmpty());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QVERIFY(!commands->locateStructureIssue(issue(1)["key"].toString()).isEmpty());
+    // Deliberate and blank dialogue lines are never issues.
+    QVERIFY(open_elements({{ElementType::cue, "MARA"}, {ElementType::dialogue, "One.\n\nTwo.\n"},
+                           {ElementType::parenthetical, "(beat)"}, {ElementType::dialogue, " "}}));
+    QVERIFY(document_->findChild<EditorCommands*>()->structureIssues().isEmpty());
+  }
+
+  void structure_corrections_keep_words_and_are_one_undo_step_data() {
+    QTest::addColumn<int>("issue");
+    QTest::addColumn<QString>("action");
+    QTest::newRow("add cue") << 0 << QStringLiteral("addCharacterCue");
+    QTest::newRow("orphan as action") << 0 << QStringLiteral("treatAsAction");
+    QTest::newRow("join dialogue") << 1 << QStringLiteral("joinDialogue");
+    QTest::newRow("dual off") << 2 << QStringLiteral("turnDualOff");
+    QTest::newRow("empty speech as action") << 3 << QStringLiteral("treatAsAction");
+  }
+  void structure_corrections_keep_words_and_are_one_undo_step() {
+    QFETCH(int, issue);
+    QFETCH(QString, action);
+    QVERIFY(open_elements(structure_model()));
+    auto* commands = document_->findChild<EditorCommands*>();
+    const auto original = document_elements(*document_);
+    const auto key = commands->structureIssues()[issue].toMap()["key"].toString();
+    auto expected = original;
+    int caret = 0;
+    switch (issue) {
+      case 0:
+        caret = 6;
+        if (action == QLatin1String("addCharacterCue")) expected.insert(expected.begin() + 1, Element{ElementType::cue, ""});
+        else expected[1].type = expected[2].type = ElementType::action;
+        break;
+      case 1:
+        caret = 30;
+        // Byte offsets: "One.\n\nTwo.\n" is 11 bytes before "Three.".
+        expected[4].text = "One.\n\nTwo.\nThree.";
+        expected[4].styles = {{0, 3, Style::bold}, {11, 16, Style::italic}};
+        expected.erase(expected.begin() + 5);
+        break;
+      case 2: caret = original_position(original, 9); expected[9].dual_right = false; break;
+      case 3: caret = original_position(original, 12); expected[12].type = ElementType::action; break;
+    }
+    QVERIFY(!document_->isUndoAvailable());
+    QCOMPARE(commands->correctStructureIssue(key, action), caret);
+    auto corrected = document_elements(*document_);
+    if (action == QLatin1String("addCharacterCue")) {
+      QVERIFY(!corrected[1].id.empty() && corrected[1].id != original[1].id);
+      corrected[1].id.clear();
+    }
+    QCOMPARE(corrected, expected);
+    QVERIFY(commands->locateStructureIssue(key).isEmpty());
+    const int steps = document_->availableUndoSteps();
+    QCOMPARE(commands->correctStructureIssue(key, action), -1); // Stale: no edit.
+    QCOMPARE(document_->availableUndoSteps(), steps);
+    document_->undo(); // One step restores the exact original.
+    QVERIFY(!document_->isUndoAvailable());
+    QCOMPARE(document_elements(*document_), original);
+    QCOMPARE(commands->structureIssues().size(), 4);
+    document_->redo();
+    corrected = document_elements(*document_);
+    if (action == QLatin1String("addCharacterCue")) corrected[1].id.clear();
+    QCOMPARE(corrected, expected);
+  }
+  void structure_corrections_refuse_unsafe_or_mismatched_requests() {
+    // A cue before this run would pair it with the following dual speech;
+    // a flagged dialogue part cannot be joined or retyped without review.
+    QVERIFY(open_elements({{ElementType::action, "Rain."}, {ElementType::dialogue, "Lost."},
+                           {ElementType::cue, "THEO", true}, {ElementType::dialogue, "Reply."},
+                           {ElementType::cue, "MARA"}, {ElementType::dialogue, "A."},
+                           {ElementType::dialogue, "B.", true},
+                           {ElementType::cue, "JUNE"}, {ElementType::dialogue, "Left."},
+                           {ElementType::cue, "KAI", true}, {ElementType::dialogue, ""},
+                           {ElementType::cue, "LEE", true}, {ElementType::dialogue, "Third."}}));
+    auto* commands = document_->findChild<EditorCommands*>();
+    const auto original = document_elements(*document_);
+    const int steps = document_->availableUndoSteps();
+    const auto issues = commands->structureIssues();
+    QHash<QString, QVariantMap> by_kind;
+    QStringList kinds;
+    for (const auto& value : issues) {
+      kinds << value.toMap()["kind"].toString();
+      by_kind.insert(value.toMap()["kind"].toString() + value.toMap()["text"].toString(), value.toMap());
+    }
+    const auto orphan = by_kind.value(QStringLiteral("speechWithoutCueLost.")),
+               joined = by_kind.value(QStringLiteral("adjacentDialogueA.")),
+               chain = by_kind.value(QStringLiteral("incompleteDualKAI"));
+    QVERIFY(!orphan.isEmpty() && !joined.isEmpty() && !chain.isEmpty());
+    QCOMPARE(commands->correctStructureIssue(orphan["key"].toString(), QStringLiteral("addCharacterCue")), -1);
+    QCOMPARE(commands->correctStructureIssue(joined["key"].toString(), QStringLiteral("joinDialogue")), -1);
+    QCOMPARE(commands->correctStructureIssue(chain["key"].toString(), QStringLiteral("turnDualOff")), -1);
+    QCOMPARE(commands->correctStructureIssue(orphan["key"].toString(), QStringLiteral("joinDialogue")), -1);
+    QCOMPARE(commands->correctStructureIssue(QStringLiteral("speechWithoutCue:missing"), QStringLiteral("treatAsAction")), -1);
+    QCOMPARE(document_elements(*document_), original);
+    QCOMPARE(document_->availableUndoSteps(), steps);
+    // The safe alternative remains: types change, the dual cue keeps its flag.
+    QCOMPARE(commands->correctStructureIssue(orphan["key"].toString(), QStringLiteral("treatAsAction")), 6);
+    auto expected = original;
+    expected[1].type = ElementType::action;
+    QCOMPARE(document_elements(*document_), expected);
+    // Joining inside a complete pair is a boundary edit; unpair first.
+    QVERIFY(open_elements({{ElementType::cue, "MARA"}, {ElementType::dialogue, "A."}, {ElementType::dialogue, "B."},
+                           {ElementType::cue, "THEO", true}, {ElementType::dialogue, "Reply."}}));
+    commands = document_->findChild<EditorCommands*>();
+    const auto paired = document_elements(*document_);
+    QCOMPARE(commands->structureIssues().size(), 1);
+    const auto join = commands->structureIssues()[0].toMap();
+    QCOMPARE(join["kind"].toString(), QStringLiteral("adjacentDialogue"));
+    QVERIFY(!join["corrections"].toList()[0].toMap()["enabled"].toBool());
+    QCOMPARE(commands->correctStructureIssue(join["key"].toString(), QStringLiteral("joinDialogue")), -1);
+    QCOMPARE(document_elements(*document_), paired);
+    QVERIFY(!document_->isUndoAvailable());
+  }
+
+  void writing_desk_adds_a_cue_for_dialogue_without_one() {
+    QVERIFY(open_elements({{ElementType::action, "Rain."}, {ElementType::dialogue, "Lost line."},
+                           {ElementType::action, "After."}}));
+    auto* commands = document_->findChild<EditorCommands*>();
+    auto* review = view_->rootObject()->findChild<QQuickItem*>("reviewIssues");
+    QVERIFY(commands && review && review->isVisible());
+    QVERIFY(review->property("text").toString().startsWith(QStringLiteral("1 speech issue")));
+    const auto original = document_elements(*document_);
+    select_issue(0);
+    QCOMPARE(editor_->property("selectedText").toString(), QStringLiteral("Lost line."));
+    QTRY_VERIFY(find_item(view_->contentItem(), QStringLiteral("addCharacterCue")));
+    auto* treat = find_item(view_->contentItem(), QStringLiteral("treatAsAction"));
+    QVERIFY(treat && treat->isEnabled());
+    QTest::qWait(30);
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/speech-issues.png")));
+    view_->resize(640, view_->height()); // Both corrections stay reachable on a smaller desk.
+    QTest::qWait(30);
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/speech-issues-small.png")));
+    click(find_item(view_->contentItem(), QStringLiteral("addCharacterCue")));
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    QCOMPARE(cursor(), 6);
+    QCOMPARE(element_type(block_at(cursor())), ElementType::cue);
+    type(QStringLiteral("Ann"));
+    auto elements = document_elements(*document_);
+    QCOMPARE(elements.size(), 4u);
+    QCOMPARE(elements[1].type, ElementType::cue);
+    QCOMPARE(elements[1].text, std::string("Ann"));
+    QCOMPARE(elements[2], original[1]);
+    QVERIFY(commands->structureIssues().isEmpty());
+    QTRY_VERIFY(!review->isVisible());
+    press(Qt::Key_Z, Qt::ControlModifier); // The typed name.
+    press(Qt::Key_Z, Qt::ControlModifier); // The inserted cue.
+    QCOMPARE(document_elements(*document_), original);
+    QTRY_VERIFY(review->isVisible());
+  }
   // Enter inside dialogue keeps one speech element and an authored break.
   void enter_inside_element_splits_it() {
     QVERIFY(open(QStringLiteral("01-element-geometry")));

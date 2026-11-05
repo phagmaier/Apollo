@@ -22,6 +22,8 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   centered act labels, the six-type Tab cycle and protected structures.
 - [Selection and clipboard](docs/selection-and-clipboard.md): replacement,
   paragraph/line-break paste, emphasis, undo and protected title/speech boundaries.
+- [Diagnostics](docs/diagnostics.md): the owner-chosen speech-structure issues
+  list and its explicit, one-step-undo corrections.
 - [Export profile](docs/export-profile.md) and [fixture guide](fixtures/README.md):
   layout rules, independent expectations, and verification procedures.
 - [Stack recommendation](docs/stack-recommendation.md): technical
@@ -104,7 +106,9 @@ frozen every visual detail.
   **Find / Find and Replace** are available through Edit or Ctrl+F / Ctrl+H.
   Literal authored-text search offers case/whole-word and opening-selection
   scope, next/previous and one-step Replace All Undo; see
-  [find-and-replace.md](docs/find-and-replace.md).
+  [find-and-replace.md](docs/find-and-replace.md). When a speech-structure
+  issue exists, the bar above the page lists it (**N speech issues…**) with
+  explicit corrections; see [diagnostics.md](docs/diagnostics.md).
 - Project folders and autosave follow [source-format.md](docs/source-format.md).
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
   and `apollo_editor DIR` opens editable projects with autosave. Ordinary

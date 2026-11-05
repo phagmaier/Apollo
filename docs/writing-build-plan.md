@@ -107,6 +107,15 @@ reliability retains the documented Qt/wtype lookup limitation. See the
 [contract](find-and-replace.md) and [task evidence](#task-4c--find-and-replace).
 Diagnostics, scene navigation and remaining Fountain compatibility stay pending.
 
+**Task 4d — speech-structure diagnostics is done for this bounded step (2026-11-04).**
+The owner chose the speech-structure set and both corrections for dialogue
+without a cue ([round 26](planning.md#round-26--speech-structure-diagnostics-settled-2026-11-04)).
+One located issue list offers explicit, one-step-undo corrections that never
+change words. Release and sanitizer suites pass 26/26 each, engine 2/2, plus
+focused native Wayland checks. See [the contract](diagnostics.md) and
+[task evidence](#task-4d--speech-structure-diagnostics). The live scene
+navigator and remaining Fountain compatibility stay pending.
+
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
 the accepted Qt/Writing desk foundation, measurements, and known limitations.
@@ -2101,3 +2110,53 @@ memory, Academy-reference, broader Fountain compatibility or imported-PDF
 acceptance follows from this task. Existing heavy-I/O crash-loss limits remain.
 Diagnostics and the live scene navigator are the next separate slice 4 tasks;
 this does not complete slice 4 or the writing milestone.
+
+### Task 4d — speech-structure diagnostics
+
+2026-11-04. **Done for this bounded task.** Dependencies: empty-speech review (2.6c),
+dual dialogue, element-type controls (3e), selection/clipboard (3f) and
+suggestions (4a). Implements the
+[writing requirement](spec.md#writing-and-formatting) for flagged structural
+problems with undoable corrections. The owner chose the bounded
+speech-structure set and both corrections for dialogue without a cue
+([round 26](planning.md#round-26--speech-structure-diagnostics-settled-2026-11-04)).
+The [contract](diagnostics.md) records issue rules, corrections and refusals.
+
+One located list replaces the empty-speech bar: dialogue without a cue (**Add
+character cue** / **Treat as action**), empty speeches, dialogue elements that
+run together (**Join as one dialogue**) and incomplete Dual Dialogue (**Turn
+Dual Dialogue off**, which also moves the former warning line into the list).
+Every correction is revalidated against the live document, changes no words
+and is one Undo step. Corrections that could create, reassign or structurally
+edit a pairing are disabled with their reason. That includes joining inside a
+pair, because the owner's dual contract requires unpairing first. Source,
+Fountain/PDF contracts, import admission, dependencies and tool pins are
+unchanged. `emptySpeeches` remains the empty-speech subset; the measurement
+tool and existing flows now use the shared controls.
+
+Evidence and review:
+
+| Check | Observed result |
+| --- | --- |
+| Focused editor cases | Hand-counted issue positions/ranges and order; real-key Tab/Undo resolving and restoring issues; deliberate/blank dialogue lines never flagged; each correction against a hand-written expected model (inserted cue, types, joined text with `\n` breaks and shifted emphasis byte offsets, identity retention); a single Undo restores the exact original and Redo reapplies; stale and disabled requests leave writing and undo history unchanged |
+| Mutation checks | Joining with a space instead of a line break, and offering Add character cue before a following dual cue, each fail the new cases; restored code passes |
+| Real Writing desk controls | Issue list selection, both cue-less corrections, cue typing with ordinary keys, bar hiding and two-step Undo; captures inspected at 1100 and 640 px (`build/release/editor-tests/speech-issues{,-small}.png`) |
+| Project flow | Real controls add a cue, type `THEO`, join dialogue; autosave, reopen and clean Fountain equal hand-written bytes; Fountain is refused before correction |
+| `mise run check` | **26/26 passed** on the final code (editor 156 passed, six platform/optional skips; project flows 50 passed) |
+| `mise run check-debug` | **26/26 passed** with address/undefined sanitizers, including the independent Fountain oracle and crash checks |
+| `mise run check-engine` | **2/2 passed** |
+| Native Wayland, Compose input context | The three focused desk/editor cases pass on OpenGL; the project-flow case passes with software rendering |
+| Measurement tool | `--offscreen` on a disposable unfinished-speech file corrects one empty speech through the renamed controls; exact save/reopen/re-export |
+| Completion review / whitespace | Requirements, implementation and test necessity reviewed; a join inside a pair was found allowed against the dual contract, fixed and covered; `git diff --check` passes |
+
+Logs: `build/task-4d-release-final.log`, `build/task-4d-debug.log`,
+`build/task-4d-engine.log`, `build/task-4d-native-editor.log` and
+`build/task-4d-native-flow.log`. The earlier `build/task-4d-release.log` ran
+before the pair-join correction.
+
+Limits: compositor-delivered keys, fcitx and physical input were not exercised
+for these controls. Owner comfort with the issue bar was not assessed, and no
+performance was measured beyond the existing linear refresh per document change.
+Other diagnostics, the mixed-case exception and blank-spacing advisories remain
+unspecified. The live scene navigator is the next separate slice 4 task; this
+does not complete slice 4 or the writing milestone.

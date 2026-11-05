@@ -337,6 +337,104 @@ int insert_between(QTextCursor& cursor, const std::vector<Element>& inserted) {
   insert_elements(cursor, elements);
   return caret;
 }
+
+bool dual_flag(const QTextBlock& block) { return block.blockFormat().boolProperty(dual_right_property); }
+
+// The last block of the consecutive run of speech parts starting at first.
+QTextBlock speech_run_end(QTextBlock first, bool dialogue_only = false) {
+  auto last = first;
+  for (auto next = last.next(); next.isValid(); next = next.next()) {
+    const auto type = element_type(next);
+    if (dialogue_only ? type != ElementType::dialogue : !speech_part(type)) break;
+    last = next;
+  }
+  return last;
+}
+
+QVariantMap correction(const QString& action, const QString& label, bool enabled) {
+  return {{"action", action}, {"label", label}, {"enabled", enabled}};
+}
+
+QVariantMap structure_issue(const QString& kind, const QTextBlock& first, const QTextBlock& last,
+                            const QString& explanation, const QVariantList& corrections) {
+  const auto id = first.blockFormat().stringProperty(element_id_property);
+  return {{"key", kind + QLatin1Char(':') + id}, {"kind", kind}, {"id", id},
+          {"position", first.position()}, {"end", last.position() + last.length() - 1},
+          {"text", QString(first.text()).replace(QChar::LineSeparator, QLatin1Char(' '))},
+          {"explanation", explanation}, {"corrections", corrections}};
+}
+
+struct StructureScan {
+  QVariantList issues;
+  QString title, dual_warning;
+};
+
+// Speech-structure diagnostics in document order (docs/diagnostics.md). Each
+// issue is keyed by kind and its first element's persistent id; corrections
+// are explicit and never change words. One linear pass per document change.
+StructureScan scan_structure(QTextDocument* document) {
+  StructureScan scan;
+  for (auto block = document->begin(); block.isValid();) {
+    const auto type = element_type(block);
+    if (type == ElementType::title)
+      scan.title = QString(block.text()).replace(QChar::LineSeparator, QLatin1Char(' '));
+    if (speech_part(type)) {
+      // A cue's own parts are consumed below, so this run has no cue.
+      const auto last = speech_run_end(block);
+      bool flagged = false;
+      for (auto part = block;; part = part.next()) { flagged |= dual_flag(part); if (part == last) break; }
+      const auto following = last.next();
+      const bool pairs = following.isValid() && element_type(following) == ElementType::cue && dual_flag(following);
+      scan.issues.append(structure_issue(QStringLiteral("speechWithoutCue"), block, last,
+          flagged ? QStringLiteral("This dialogue has no character cue and carries a dual-dialogue flag. Edit it manually; an automatic correction could change a pairing.")
+          : pairs ? QStringLiteral("This dialogue has no character cue. A cue here would pair with the following Dual Dialogue speech, so only Treat as action is offered; or turn that speech's Dual Dialogue off first.")
+                  : QStringLiteral("This dialogue has no character cue. Add a cue before it, or explicitly treat it as action. Its words are not changed."),
+          {correction(QStringLiteral("addCharacterCue"), QStringLiteral("Add character cue"), !flagged && !pairs),
+           correction(QStringLiteral("treatAsAction"), QStringLiteral("Treat as action"), !flagged)}));
+      block = last.next();
+      continue;
+    }
+    if (type != ElementType::cue) { block = block.next(); continue; }
+    const auto state = speech_state(block);
+    if (dual_flag(block)) {
+      const auto left = speech_cue(block.previous());
+      if (!left.isValid() || dual_flag(left) || !complete_speech(left) || !complete_speech(block)) {
+        scan.dual_warning = QStringLiteral("Incomplete or invalid Dual Dialogue: the pairing is retained. Complete both adjacent speeches, or turn Dual Dialogue off in the second speech. Fountain export may be refused; incomplete layout is a preview.");
+        // Clearing a flag that a following dual cue depends on is refused.
+        const bool chained = state.end.isValid() && element_type(state.end) == ElementType::cue && dual_flag(state.end);
+        scan.issues.append(structure_issue(QStringLiteral("incompleteDual"), block, block,
+            chained ? QStringLiteral("This speech is in an invalid chain of Dual Dialogue speeches. Turn Dual Dialogue off in the last speech of the chain first, so no partner is silently reassigned.")
+                    : QStringLiteral("This speech is marked Dual Dialogue without two complete adjacent speeches to pair. The pairing is kept. Complete both speeches, or turn Dual Dialogue off; the words are not changed."),
+            {correction(QStringLiteral("turnDualOff"), QStringLiteral("Turn Dual Dialogue off"), !chained)}));
+      }
+    }
+    if (!state.has_dialogue) {
+      auto issue = structure_issue(QStringLiteral("emptySpeech"), block, block,
+          state.dual_related
+              ? QStringLiteral("This speech has a dual-dialogue relationship. Treating it as action could change its pairing; edit the speech manually.")
+              : QStringLiteral("This cue has no dialogue. Add dialogue, or explicitly treat the cue and its parentheticals as action."),
+          {correction(QStringLiteral("treatAsAction"), QStringLiteral("Treat speech as action"), !state.dual_related)});
+      issue.insert(QStringLiteral("canTreatAsAction"), !state.dual_related);
+      scan.issues.append(issue);
+    }
+    for (auto part = block.next(); part.isValid() && part != state.end; part = part.next()) {
+      if (element_type(part) != ElementType::dialogue || part.next() == state.end ||
+          element_type(part.next()) != ElementType::dialogue) continue;
+      const auto last = speech_run_end(part, true);
+      // Joining is a structural boundary edit: a pair must be explicitly
+      // unpaired first (docs/dual-dialogue.md).
+      bool paired = dual_member(part);
+      for (auto joined = part;; joined = joined.next()) { paired |= dual_flag(joined); if (joined == last) break; }
+      scan.issues.append(structure_issue(QStringLiteral("adjacentDialogue"), part, last,
+          paired ? QStringLiteral("These dialogue elements follow one another in a Dual Dialogue speech. Turn Dual Dialogue off in the second speech before joining them, then pair the speeches again.")
+                 : QStringLiteral("These dialogue elements follow one another without a parenthetical, so they read as one speech but are kept apart. Join them into one dialogue with line breaks, or put a parenthetical between them."),
+          {correction(QStringLiteral("joinDialogue"), QStringLiteral("Join as one dialogue"), !paired)}));
+      part = last;
+    }
+    block = state.end;
+  }
+  return scan;
+}
 }
 
 EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObject(parent), document_(document) {
@@ -356,40 +454,23 @@ QObject* EditorCommands::spelling() const { return spelling_; }
 void EditorCommands::refreshDocumentState() {
   setTypeMessage({});
   emit documentStateChanged();
-  QVariantList issues;
-  QString title, dual_warning;
-  for (auto block = document_->begin(); block.isValid();) {
-    if (element_type(block) == ElementType::title)
-      title = QString(block.text()).replace(QChar::LineSeparator, QLatin1Char(' '));
-    if (element_type(block) != ElementType::cue) { block = block.next(); continue; }
-    const auto state = speech_state(block);
-    if (block.blockFormat().boolProperty(dual_right_property)) {
-      const auto left = speech_cue(block.previous());
-      if (!left.isValid() || left.blockFormat().boolProperty(dual_right_property) ||
-          !complete_speech(left) || !complete_speech(block))
-        dual_warning = QStringLiteral("Incomplete or invalid Dual Dialogue: the pairing is retained. Complete both adjacent speeches, or turn Dual Dialogue off in the second speech. Fountain export may be refused; incomplete layout is a preview.");
-    }
-    if (!state.has_dialogue) {
-      issues.push_back(QVariantMap{
-          {"id", block.blockFormat().stringProperty(element_id_property)},
-          {"position", block.position()}, {"text", block.text()},
-          {"canTreatAsAction", !state.dual_related},
-          {"explanation", state.dual_related
-              ? QStringLiteral("This speech has a dual-dialogue relationship. Treating it as action could change its pairing; edit the speech manually.")
-              : QStringLiteral("This cue has no dialogue. Add dialogue, or explicitly treat the cue and its parentheticals as action.")}});
-    }
-    block = state.end;
-  }
-  if (dual_warning != dual_warning_) {
-    dual_warning_ = dual_warning;
+  auto scan = scan_structure(document_);
+  if (scan.dual_warning != dual_warning_) {
+    dual_warning_ = scan.dual_warning;
     emit dualStateChanged();
   }
-  if (title != title_text_) {
-    title_text_ = std::move(title);
+  if (scan.title != title_text_) {
+    title_text_ = std::move(scan.title);
     emit titleTextChanged();
   }
-  if (issues == empty_speeches_) return;
-  empty_speeches_ = std::move(issues);
+  if (scan.issues == structure_issues_) return;
+  structure_issues_ = std::move(scan.issues);
+  QVariantList empty;
+  for (const auto& issue : structure_issues_)
+    if (issue.toMap().value(QStringLiteral("kind")) == QLatin1String("emptySpeech")) empty.append(issue);
+  emit structureIssuesChanged();
+  if (empty == empty_speeches_) return;
+  empty_speeches_ = std::move(empty);
   emit emptySpeechesChanged();
 }
 
@@ -455,6 +536,61 @@ int EditorCommands::treatSpeechAsAction(const QString& id) {
   for (auto block = cue; block != state.end; block = block.next()) {
     cursor.setPosition(block.position());
     set_type(cursor, ElementType::action);
+  }
+  cursor.endEditBlock();
+  return position;
+}
+
+QVariantMap EditorCommands::locateStructureIssue(const QString& key) const {
+  for (const auto& value : scan_structure(document_).issues) {
+    const auto issue = value.toMap();
+    if (issue.value(QStringLiteral("key")) == key)
+      return {{"start", issue.value(QStringLiteral("position"))}, {"end", issue.value(QStringLiteral("end"))}};
+  }
+  return {};
+}
+
+int EditorCommands::correctStructureIssue(const QString& key, const QString& action) {
+  // Revalidate against the live document: the issue must still exist and
+  // offer this correction. A stale or refused request changes nothing.
+  QVariantMap issue;
+  for (const auto& value : scan_structure(document_).issues)
+    if (value.toMap().value(QStringLiteral("key")) == key) { issue = value.toMap(); break; }
+  bool offered = false;
+  for (const auto& value : issue.value(QStringLiteral("corrections")).toList()) {
+    const auto option = value.toMap();
+    offered |= option.value(QStringLiteral("action")) == action && option.value(QStringLiteral("enabled")).toBool();
+  }
+  if (!offered) return -1;
+  const auto kind = issue.value(QStringLiteral("kind")).toString();
+  const auto id = issue.value(QStringLiteral("id")).toString();
+  const auto first = block_with_id(document_, id);
+  const int position = first.position();
+  if (kind == QLatin1String("emptySpeech")) return treatSpeechAsAction(id);
+  if (kind == QLatin1String("incompleteDual")) {
+    toggleDualDialogue(position, position, position);
+    return dual_flag(first) ? -1 : position;
+  }
+  QTextCursor cursor(document_);
+  cursor.beginEditBlock();
+  typed_end_ = typed_steps_ = -1;
+  if (kind == QLatin1String("speechWithoutCue") && action == QLatin1String("addCharacterCue")) {
+    insert_before(cursor, first, ElementType::cue);
+  } else if (kind == QLatin1String("speechWithoutCue")) {
+    const auto last = speech_run_end(first);
+    for (auto block = first;; block = block.next()) {
+      cursor.setPosition(block.position());
+      set_type(cursor, ElementType::action);
+      if (block == last) break;
+    }
+  } else {
+    // Each separator between the dialogue elements becomes an authored line
+    // break without emphasis; the first element keeps its identity.
+    while (first.next().isValid() && element_type(first.next()) == ElementType::dialogue) {
+      cursor.setPosition(first.position() + first.length() - 1);
+      cursor.deleteChar();
+      cursor.insertText(QString(QChar::LineSeparator), QTextCharFormat());
+    }
   }
   cursor.endEditBlock();
   return position;

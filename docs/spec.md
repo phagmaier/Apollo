@@ -95,9 +95,10 @@ These capabilities come from the owner's brief. Except where explicitly noted, t
   syntax; Fountain conversion uses explicit import. The bounded writer's
   implementation conventions for line breaks, selections and partial elements
   are recorded in the [selection and clipboard contract](selection-and-clipboard.md).
-- Apply element spacing and indentation automatically, and uppercase character cues and scene headings as normal editing behavior. Flag structural or ambiguous formatting problems with suggested corrections the owner can apply and undo. Do not silently rewrite dialogue or action. Exact diagnostics and exceptions remain to be specified.
+- Apply element spacing and indentation automatically, and uppercase character cues and scene headings as normal editing behavior. Flag structural or ambiguous formatting problems with suggested corrections the owner can apply and undo. Do not silently rewrite dialogue or action. The first set covers speech structure, recorded in [diagnostics](diagnostics.md); other diagnostics and exceptions remain to be specified.
 - Dialogue without an associated character cue is a structural problem to flag
-  with an undoable suggested correction. Intentional blank spacing within
+  with an undoable suggested correction: the owner chooses Add character cue
+  or Treat as action. Intentional blank spacing within
   dialogue remains possible and is not silently removed; its creation controls
   remain to be specified. A normal deliberate line break is not an error.
 - Edit title pages through structured fields: title, writing credit (such as Written by), author(s), source/based-on credit, contact information, and draft date. Apollo handles placement. Choose whether to include the title page in an export.

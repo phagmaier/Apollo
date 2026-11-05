@@ -126,6 +126,58 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void speech_issue_corrections_autosave_reopen_and_export() {
+    const auto project = create_project(path("issue-project"), {0, {
+        {ElementType::heading, "INT. ROOM - DAY"}, {ElementType::dialogue, "Lost line."},
+        {ElementType::cue, "MARA"}, {ElementType::dialogue, "One."}, {ElementType::dialogue, "Two.", false, {{0, 3, Style::italic}}},
+        {ElementType::action, "End."}}});
+    auto expected = open_project(project.directory).screenplay.elements;
+    const auto state = path("issue-state");
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      auto* fountain = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QVERIFY(fountain);
+      QVERIFY(fountain->check(true).contains("is not part of a speech"));
+      const auto choose = [&] {
+        QVERIFY(window.click("reviewIssues"));
+        QTRY_VERIFY(find_item(window.view.contentItem(), "structureIssue0"));
+        QTest::qWait(30); // Let the Popup and delegate geometry polish.
+        auto* issue = find_item(window.view.contentItem(), "structureIssue0");
+        QTest::mouseClick(&window.view, Qt::LeftButton, Qt::NoModifier, issue->mapToScene(issue->boundingRect().center()).toPoint());
+        QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+        QTest::qWait(30); // Position the issue's correction buttons.
+      };
+      choose();
+      QVERIFY(window.click("addCharacterCue"));
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+      window.type("THEO");
+      choose();
+      QVERIFY(window.click("joinDialogue"));
+      auto edited = document_elements(*window.flow.document());
+      QCOMPARE(edited.size(), expected.size());
+      QVERIFY(!edited[1].id.empty());
+      expected.insert(expected.begin() + 1, Element{ElementType::cue, "THEO", false, {}, edited[1].id});
+      expected[4].text = "One.\nTwo.";
+      expected[4].styles = {{5, 8, Style::italic}};
+      expected.erase(expected.begin() + 5);
+      QCOMPARE(edited, expected);
+      QVERIFY(window.flow.document()->findChild<EditorCommands*>()->structureIssues().isEmpty());
+      QTRY_VERIFY(!window.item("issueBar")->isVisible());
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(open_project(project.directory).screenplay.elements, expected);
+    }
+    Window window(font_, state, project.directory);
+    QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+    QCOMPARE(document_elements(*window.flow.document()), expected);
+    auto* fountain = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+    QVERIFY(fountain);
+    const auto output = path("issue-output.fountain");
+    QVERIFY(fountain->request(output, false));
+    QTRY_VERIFY(!fountain->busy());
+    QCOMPARE(bytes(output), QByteArray("INT. ROOM - DAY\n\nTHEO\nLost line.\n\nMARA\nOne.\n*Two*.\n\nEnd.\n"));
+  }
+
   void find_replace_autosaves_reopens_and_exports() {
     const auto project = create_project(path("find-project"), {0, {
         {ElementType::heading, "INT. ROOM - DAY"},
@@ -1204,14 +1256,14 @@ private slots:
       QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/empty-speech-review.png")));
       // Select and explicitly correct each issue through the actual controls.
       for (int correction = 0; correction < 2; ++correction) {
-        QVERIFY(window.click("reviewEmptySpeeches"));
-        QTRY_VERIFY(find_item(window.view.contentItem(), "emptySpeechIssue0"));
+        QVERIFY(window.click("reviewIssues"));
+        QTRY_VERIFY(find_item(window.view.contentItem(), "structureIssue0"));
         QTest::qWait(30);
-        auto* issue = find_item(window.view.contentItem(), "emptySpeechIssue0");
+        auto* issue = find_item(window.view.contentItem(), "structureIssue0");
         QTest::mouseClick(&window.view, Qt::LeftButton, Qt::NoModifier,
                          issue->mapToScene(issue->boundingRect().center()).toPoint());
         QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
-        QVERIFY(window.click("treatSpeechAsAction"));
+        QVERIFY(window.click("treatAsAction"));
         const auto before = expected;
         expected.elements[3 + correction * 2].type = expected.elements[4 + correction * 2].type = ElementType::action;
         QCOMPARE(canonical(Screenplay{0, document_elements(*window.flow.document())}), expected);

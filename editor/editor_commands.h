@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QTextDocument>
 #include <QVariantList>
+#include <QVariantMap>
 
 class QMimeData;
 
@@ -19,6 +20,7 @@ class FindReplace;
 class EditorCommands : public QObject {
   Q_OBJECT
   Q_PROPERTY(QVariantList emptySpeeches READ emptySpeeches NOTIFY emptySpeechesChanged)
+  Q_PROPERTY(QVariantList structureIssues READ structureIssues NOTIFY structureIssuesChanged)
   Q_PROPERTY(QString titleText READ titleText NOTIFY titleTextChanged)
   Q_PROPERTY(QString pageBreakMessage READ pageBreakMessage NOTIFY pageBreakMessageChanged)
   Q_PROPERTY(QString dualMessage READ dualMessage NOTIFY dualStateChanged)
@@ -75,6 +77,16 @@ public:
   Q_INVOKABLE int moveSceneUp(int position);
   // Cached diagnostics, refreshed when the document changes. Locations are
   // current UTF-16 positions; ids survive edits and undo/redo.
+  // Speech-structure issues in document order (docs/diagnostics.md): {key,
+  // kind, id, position, end, text, explanation, corrections: [{action, label,
+  // enabled}]}. Kinds: emptySpeech, speechWithoutCue, adjacentDialogue and
+  // incompleteDual. emptySpeeches is the emptySpeech subset.
+  const QVariantList& structureIssues() const { return structure_issues_; }
+  // {start, end} of the issue's current elements; empty once it is resolved.
+  Q_INVOKABLE QVariantMap locateStructureIssue(const QString& key) const;
+  // Applies one offered correction in one undo step and returns the caret
+  // position, or -1 without editing when the issue/correction is stale.
+  Q_INVOKABLE int correctStructureIssue(const QString& key, const QString& action);
   const QVariantList& emptySpeeches() const { return empty_speeches_; }
   Q_INVOKABLE int locateEmptySpeech(const QString& id) const;
   // One undoable type-only change. Refuses stale, valid, or dual-related speech.
@@ -89,6 +101,7 @@ public:
 
 signals:
   void emptySpeechesChanged();
+  void structureIssuesChanged();
   void titleTextChanged();
   void pageBreakMessageChanged();
   void dualStateChanged();
@@ -103,7 +116,7 @@ private:
   Spelling* spelling_;
   FindReplace* find_replace_;
   int typed_end_ = -1, typed_steps_ = -1;
-  QVariantList empty_speeches_;
+  QVariantList empty_speeches_, structure_issues_;
   QString title_text_;
   QString page_break_message_;
   QString dual_message_, dual_warning_;
