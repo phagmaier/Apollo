@@ -126,6 +126,68 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void scene_drag_autosaves_reopens_and_exports() {
+    const auto project = create_project(path("scene-project"), {0, {
+        {ElementType::title, "NAVIGATOR"}, {ElementType::action, "Preamble."},
+        {ElementType::heading, "INT. FIRST - DAY"}, {ElementType::action, "First action.", false, {{0, 5, Style::bold}}},
+        {ElementType::heading, "EXT. SECOND - NIGHT"}, {ElementType::cue, "THEO"},
+        {ElementType::dialogue, "Second line."}}});
+    const auto initial = open_project(project.directory).screenplay.elements;
+    const std::vector<Element> expected{initial[0], initial[1], initial[4], initial[5], initial[6], initial[2], initial[3]};
+    const auto state = path("scene-state");
+    {
+      Window window(font_, state, project.directory);
+      // Native tiling can reconfigure a newly exposed window after its first
+      // frame. Keep this pointer-driven fixture large enough for both rows.
+      window.view.setMinimumSize(QSize(800, 700));
+      QTRY_VERIFY(window.view.width() >= 800 && window.view.height() >= 700);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      QVERIFY(window.click("outlineToggle"));
+      QTest::qWait(40);
+      auto* handle = window.item("sceneHandle1");
+      auto* row = window.item("sceneRow0");
+      QVERIFY(handle && row);
+      const auto from = handle->mapToScene(handle->boundingRect().center()).toPoint();
+      const auto to = row->mapToScene(QPointF(row->width() - 15, 2)).toPoint();
+      QTest::mousePress(&window.view, Qt::LeftButton, Qt::NoModifier, from);
+      QTest::mouseMove(&window.view, (from + to) / 2, 20);
+      QTest::mouseMove(&window.view, to, 20);
+      QTest::mouseRelease(&window.view, Qt::LeftButton, Qt::NoModifier, to);
+      QCOMPARE(document_elements(*window.flow.document()), expected);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*window.flow.document()), initial);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*window.flow.document()), expected);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(open_project(project.directory).screenplay.elements, expected);
+    }
+    Window window(font_, state, project.directory);
+    QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+    QCOMPARE(document_elements(*window.flow.document()), expected);
+    auto* fountain = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+    auto* pdf = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(fountain && pdf);
+    const auto output = path("scene-output.fountain");
+    QVERIFY2(fountain->request(output, true), qPrintable(fountain->status()));
+    QTRY_VERIFY(!fountain->busy());
+    QCOMPARE(bytes(output), QByteArray("Title: NAVIGATOR\n\nPreamble.\n\nEXT. SECOND - NIGHT\n\nTHEO\nSecond line.\n\nINT. FIRST - DAY\n\n!**First** action.\n"));
+    const auto pdfOutput = path("scene-output.pdf");
+    QVERIFY(pdf->request(pdfOutput, false));
+    QTRY_VERIFY(!pdf->busy());
+    QProcess text;
+    text.start("pdftotext", {"-layout", pdfOutput, "-"});
+    QVERIFY(text.waitForFinished());
+    QCOMPARE(text.exitCode(), 0);
+    const auto printed = text.readAllStandardOutput();
+    const auto preamble = printed.indexOf("Preamble.");
+    const auto second = printed.indexOf("EXT. SECOND - NIGHT");
+    const auto cue = printed.indexOf("THEO");
+    const auto dialogue = printed.indexOf("Second line.");
+    const auto first = printed.indexOf("INT. FIRST - DAY");
+    const auto action = printed.indexOf("First action.");
+    QVERIFY(preamble >= 0 && second > preamble && cue > second && dialogue > cue && first > dialogue && action > first);
+  }
+
   void speech_issue_corrections_autosave_reopen_and_export() {
     const auto project = create_project(path("issue-project"), {0, {
         {ElementType::heading, "INT. ROOM - DAY"}, {ElementType::dialogue, "Lost line."},

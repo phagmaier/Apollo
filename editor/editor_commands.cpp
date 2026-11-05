@@ -454,6 +454,18 @@ QObject* EditorCommands::spelling() const { return spelling_; }
 void EditorCommands::refreshDocumentState() {
   setTypeMessage({});
   emit documentStateChanged();
+  QVariantList scenes;
+  for (auto block = document_->begin(); block.isValid(); block = block.next()) {
+    if (element_type(block) != ElementType::heading) continue;
+    auto text = QString::fromStdString(presented_text(ElementType::heading, element_text(block.text())));
+    if (text.trimmed().isEmpty()) text = QStringLiteral("Untitled scene");
+    scenes.append(QVariantMap{{"id", block.blockFormat().stringProperty(element_id_property)},
+                              {"text", text}, {"position", block.position()}});
+  }
+  if (scenes != scenes_) {
+    scenes_ = std::move(scenes);
+    emit scenesChanged();
+  }
   auto scan = scan_structure(document_);
   if (scan.dual_warning != dual_warning_) {
     dual_warning_ = scan.dual_warning;
@@ -1289,28 +1301,50 @@ int EditorCommands::pasteData(int position, int selectionStart, int selectionEnd
   return caret;
 }
 
-int EditorCommands::moveSceneUp(int position) {
-  auto heading = document_->findBlock(position);
-  while (heading.isValid() && element_type(heading) != ElementType::heading) heading = heading.previous();
-  if (!heading.isValid()) return -1;
-  auto previous = heading.previous();
-  while (previous.isValid() && element_type(previous) != ElementType::heading) previous = previous.previous();
-  if (!previous.isValid()) return -1;
+QString EditorCommands::sceneAt(int position) const {
+  auto block = document_->findBlock(position);
+  while (block.isValid() && element_type(block) != ElementType::heading) block = block.previous();
+  return block.isValid() ? block.blockFormat().stringProperty(element_id_property) : QString();
+}
+
+int EditorCommands::scenePosition(const QString& id) const {
+  const auto block = block_with_id(document_, id);
+  return block.isValid() && element_type(block) == ElementType::heading ? block.position() : -1;
+}
+
+QVariantMap EditorCommands::moveScene(const QString& id, const QString& beforeId, int revision, int position, int anchor) {
+  if (revision != document_->revision() || id.isEmpty() || id == beforeId) return {};
+  const auto heading = block_with_id(document_, id);
+  const auto target = beforeId.isEmpty() ? QTextBlock() : block_with_id(document_, beforeId);
+  if (!heading.isValid() || element_type(heading) != ElementType::heading ||
+      (!beforeId.isEmpty() && (!target.isValid() || element_type(target) != ElementType::heading))) return {};
   auto next = heading.next();
   while (next.isValid() && element_type(next) != ElementType::heading) next = next.next();
-  std::vector<Element> scene, earlier;
-  for (auto block = heading; block != next; block = block.next()) scene.push_back(block_element(block));
-  for (auto block = previous; block != heading; block = block.next()) earlier.push_back(block_element(block));
-  const int start = previous.position(), offset = position - heading.position();
-  const int end = next.isValid() ? next.position() - 1 : document_->characterCount() - 1;
-  scene.insert(scene.end(), earlier.begin(), earlier.end());
+  if ((!next.isValid() && !target.isValid()) || next == target) return {}; // Already immediately before the requested boundary.
+  const auto caretBlock = document_->findBlock(position), anchorBlock = document_->findBlock(anchor);
+  if (!caretBlock.isValid() || !anchorBlock.isValid()) return {};
+  const auto caretId = caretBlock.blockFormat().stringProperty(element_id_property);
+  const auto anchorId = anchorBlock.blockFormat().stringProperty(element_id_property);
+  const int caretOffset = position - caretBlock.position(), anchorOffset = anchor - anchorBlock.position();
+  const bool upward = target.isValid() && target.position() < heading.position();
+  const auto first = upward ? target : heading;
+  const auto end = upward ? next : target;
+  std::vector<Element> moved, others;
+  for (auto block = heading; block.isValid() && block != next; block = block.next()) moved.push_back(block_element(block));
+  for (auto block = upward ? target : next; block.isValid() && block != (upward ? heading : target); block = block.next())
+    others.push_back(block_element(block));
+  if (upward) moved.insert(moved.end(), others.begin(), others.end());
+  else { others.insert(others.end(), moved.begin(), moved.end()); moved = std::move(others); }
   QTextCursor cursor(document_);
   cursor.beginEditBlock();
-  cursor.setPosition(start);
-  cursor.setPosition(end, QTextCursor::KeepAnchor);
+  cursor.setPosition(first.position());
+  cursor.setPosition(end.isValid() ? end.position() - 1 : document_->characterCount() - 1, QTextCursor::KeepAnchor);
   cursor.removeSelectedText();
-  insert_elements(cursor, scene);
+  insert_elements(cursor, moved);
   cursor.endEditBlock();
-  return start + offset;
+  typed_end_ = typed_steps_ = -1;
+  return {{"position", block_with_id(document_, caretId).position() + caretOffset},
+          {"anchor", block_with_id(document_, anchorId).position() + anchorOffset}};
 }
+
 }

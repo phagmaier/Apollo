@@ -106,7 +106,8 @@ Popup {
             ShortcutRow { width: parent.width; label: "Edit title page"; keys: "Ctrl+Shift+T"; detail: "In the title form, Ctrl+Enter applies changes; Esc cancels." }
             ShortcutRow { width: parent.width; label: "Save a Copy…"; keys: "Ctrl+Shift+S"; detail: "Writing saves automatically. A successful copy becomes the active project." }
             ShortcutRow { width: parent.width; label: "Save and return Home"; keys: "Ctrl+Shift+H" }
-            ShortcutRow { width: parent.width; label: "Show / hide scene outline"; keys: "Ctrl+\\"; detail: "The current outline is a read-only preview." }
+            ShortcutRow { width: parent.width; label: "Show / hide scene outline"; keys: "Ctrl+\\"; detail: "Live headings follow writing and the caret. Click a heading to navigate; drag its handle to move the whole scene. Esc cancels a drag." }
+            ShortcutRow { width: parent.width; label: "Move current scene up"; keys: "Alt+Shift+↑"; detail: "Moves the entire scene with its selection in one Undo step. Preamble and title fields stay put." }
             ShortcutRow { width: parent.width; label: "Export PDF immediately"; keys: "Ctrl+E"; keyName: "shortcutPdf"; detail: "Uses the current PDF destination and title-page choice. Use Export to review options. Imported PDF remains unavailable." }
             ShortcutRow { width: parent.width; label: "Open Fountain export options"; keys: "Ctrl+Shift+E"; keyName: "shortcutFountain"; detail: "Clean export depends on the current writing's eligibility." }
 

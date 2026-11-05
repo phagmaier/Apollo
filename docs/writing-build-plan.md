@@ -6,7 +6,7 @@ within the implementation slices. No owner question from this interview remains
 pending. Implementation requires task-specific authorization; the progress
 record below distinguishes completed work from remaining proposals.
 
-**Current status (2026-11-04):** slice 1 and tasks **2.1–2.5** are done.
+**Current status (2026-11-05):** slice 1 and tasks **2.1–2.5** are done.
 Project sessions are guarded; Save a Copy becomes active without resetting the
 editor; Reload preserves current writing first; recovery/emergency packages and
 explicit failure-close choices are implemented and verified as recorded below.
@@ -105,7 +105,8 @@ All is one Undo step. Release, final affected rechecks, sanitizer and engine
 checks pass. Native Qt controls pass individually; compositor shortcut
 reliability retains the documented Qt/wtype lookup limitation. See the
 [contract](find-and-replace.md) and [task evidence](#task-4c--find-and-replace).
-Diagnostics, scene navigation and remaining Fountain compatibility stay pending.
+Tasks 4d and 4e below complete bounded diagnostics/navigation; broader Fountain
+compatibility remains pending.
 
 **Task 4d — speech-structure diagnostics is done for this bounded step (2026-11-04).**
 The owner chose the speech-structure set and both corrections for dialogue
@@ -113,8 +114,16 @@ without a cue ([round 26](planning.md#round-26--speech-structure-diagnostics-set
 One located issue list offers explicit, one-step-undo corrections that never
 change words. Release and sanitizer suites pass 26/26 each, engine 2/2, plus
 focused native Wayland checks. See [the contract](diagnostics.md) and
-[task evidence](#task-4d--speech-structure-diagnostics). The live scene
-navigator and remaining Fountain compatibility stay pending.
+[task evidence](#task-4d--speech-structure-diagnostics). Task 4e below completes
+the bounded navigator; broader Fountain compatibility remains pending.
+
+**Task 4e — live scene navigator is done for this bounded step (2026-11-05).**
+Live headings/current-scene tracking, click navigation and whole-scene drag
+moves preserve authored content and selection, with one-step Undo/Redo.
+Release passes 26/26, sanitizers pass across the full run and affected recheck,
+engine 2/2, and focused native Wayland controls/persistence/export pass. See
+[the contract](scene-navigator.md) and [task evidence](#task-4e--live-scene-navigator).
+Broader Fountain compatibility, slice 2 follow-ups and slices 5–6 remain pending.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -2160,3 +2169,48 @@ performance was measured beyond the existing linear refresh per document change.
 Other diagnostics, the mixed-case exception and blank-spacing advisories remain
 unspecified. The live scene navigator is the next separate slice 4 task; this
 does not complete slice 4 or the writing milestone.
+
+### Task 4e — live scene navigator
+
+2026-11-05. **Done for this bounded task.**
+Depends on the source adapter, scene-boundary decisions, element/selection
+controls and speech protections. Implements slice 4's click navigation and
+undoable whole-scene dragging. The [contract](scene-navigator.md) records the
+interaction conventions; confirmed scene boundaries remain unchanged.
+
+The outline follows heading edits/types and the caret, uses stable identities
+for duplicate/empty headings, and reveals the selected heading on click. Drag
+handles show insertion lines and scroll at the list edges. Moves preserve exact
+text/types/styles/identities, deliberate/blank lines, markers and dual flags;
+title/preamble/imported material remain separate. Selection endpoints follow
+their elements. Esc, edits and stale requests cancel without changing writing.
+Alt+Shift+Up uses the same general move command; Undo/Redo retain Qt's history.
+
+The initial live-outline test failed against the opening-only implementation. A new
+move-to-end test also detected an appended empty element caused by comparing
+two different invalid Qt text-block sentinels; bounded valid-block iteration
+fixes it. Real row/handle tests cover navigation, reversed selections, Escape,
+edit cancellation, composition, both move directions and autoscroll. A project
+flow checks autosave/reopen, hand-written canonical Fountain bytes and
+independently extracted PDF scene order.
+
+| Check | Observed result |
+| --- | --- |
+| `mise run check` | **26/26 passed** on final code and tests: editor 160 passed with six existing platform/optional skips; project flows 51 passed; independent fixtures, aw-parser oracle and crash checks included |
+| `mise run check-debug` and final `ctest --preset debug --rerun-failed` | All **26 checks pass across the full run and affected recheck** with address/undefined sanitizers. The full run passed 25/26; the new project-flow case failed only on an incidental capitalized status-string expectation. That assertion was removed in favor of independently reading the actual PDF, and the entire affected suite then passed |
+| `mise run check-engine` | **2/2 passed** |
+| Native smoke, Wayland/OpenGL/Compose | `QT_IM_MODULE=compose tools/inspect-writing-desk.sh --smoke` passes the six desk/editor cases (eight including setup/cleanup), creates the disposable writer and checks its sample editor/PDF export |
+| Native project flow, Wayland/software/Compose | Drag, Undo/Redo, exact source/autosave/reopen, hand-written Fountain bytes and Poppler PDF scene order pass on the final test. A transient compositor resize had made an earlier pointer run too small; the fixture now requests/waits for its minimum geometry |
+| Completion review | Requirements, actual changes and test necessity reviewed; removed the superseded scene-up-only API; fixed the end sentinel bug and the runner's separate create/open commands. `git diff --check` and `bash -n tools/inspect-writing-desk.sh` pass |
+
+Logs: `build/task-4e-release-final.log`, `build/task-4e-debug.log`,
+`build/task-4e-debug-recheck.log`, `build/task-4e-engine.log`,
+`build/task-4e-native-smoke-final.log` and `build/task-4e-native-flow-final.log`.
+The earlier release/flow logs contain the fixture expectation corrections,
+not final passing results.
+
+The Writing desk smoke runner now exercises the navigator and sample export;
+its manual path opens a disposable autosaving writer. Screenshots at 1100 and
+640 px were inspected. Full native-compositor pointer input, fcitx, physical
+input, owner comfort and fresh sustained typing/crash-loss measurements remain
+unverified. Existing import/PDF and broader Fountain gates remain in force.

@@ -19,6 +19,7 @@ class FindReplace;
 // return its new position.
 class EditorCommands : public QObject {
   Q_OBJECT
+  Q_PROPERTY(QVariantList scenes READ scenes NOTIFY scenesChanged)
   Q_PROPERTY(QVariantList emptySpeeches READ emptySpeeches NOTIFY emptySpeechesChanged)
   Q_PROPERTY(QVariantList structureIssues READ structureIssues NOTIFY structureIssuesChanged)
   Q_PROPERTY(QString titleText READ titleText NOTIFY titleTextChanged)
@@ -72,9 +73,14 @@ public:
   Q_INVOKABLE int editablePosition(int position, bool backward = false) const;
   const QString& pageBreakMessage() const { return page_break_message_; }
   bool eventFilter(QObject* watched, QEvent* event) override;
-  // Moves the scene containing position above the previous scene. Returns
-  // the caret's new position, or -1 when there is no previous scene.
-  Q_INVOKABLE int moveSceneUp(int position);
+  // Live headings: stable id, presented text and current UTF-16 position.
+  const QVariantList& scenes() const { return scenes_; }
+  Q_INVOKABLE QString sceneAt(int position) const;
+  Q_INVOKABLE int scenePosition(const QString& id) const;
+  // Move before another heading, or to the end with an empty beforeId.
+  // A stale revision, missing id or unchanged order refuses without editing.
+  // Both selection endpoints follow their original element and offset.
+  Q_INVOKABLE QVariantMap moveScene(const QString& id, const QString& beforeId, int revision, int position, int anchor);
   // Cached diagnostics, refreshed when the document changes. Locations are
   // current UTF-16 positions; ids survive edits and undo/redo.
   // Speech-structure issues in document order (docs/diagnostics.md): {key,
@@ -100,6 +106,7 @@ public:
   const QString& titleText() const { return title_text_; }
 
 signals:
+  void scenesChanged();
   void emptySpeechesChanged();
   void structureIssuesChanged();
   void titleTextChanged();
@@ -116,7 +123,7 @@ private:
   Spelling* spelling_;
   FindReplace* find_replace_;
   int typed_end_ = -1, typed_steps_ = -1;
-  QVariantList empty_speeches_, structure_issues_;
+  QVariantList empty_speeches_, structure_issues_, scenes_;
   QString title_text_;
   QString page_break_message_;
   QString dual_message_, dual_warning_;

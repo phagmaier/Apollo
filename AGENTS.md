@@ -22,6 +22,8 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   centered act labels, the six-type Tab cycle and protected structures.
 - [Selection and clipboard](docs/selection-and-clipboard.md): replacement,
   paragraph/line-break paste, emphasis, undo and protected title/speech boundaries.
+- [Scene navigator](docs/scene-navigator.md): live headings, navigation, whole-scene
+  dragging, selection and undo.
 - [Diagnostics](docs/diagnostics.md): the owner-chosen speech-structure issues
   list and its explicit, one-step-undo corrections.
 - [Export profile](docs/export-profile.md) and [fixture guide](fixtures/README.md):
@@ -95,8 +97,11 @@ frozen every visual detail.
   `tools/inspect-writing-desk.sh` for the prototype/QML comparison, or `--smoke`
   for its automated native launch/outline/export check. See
   `docs/spike-report.md` and `docs/spike-handoff.md` for the owner's acceptance
-  and the remaining limits. The opening scene list is a read-only visual
-  preview, not the product scene navigator. Undo is Ctrl+Z; redo is Ctrl+Shift+Z.
+  and the remaining limits. The live **Scenes** navigator (Ctrl+\) follows
+  headings and the caret; click a row to navigate or drag its handle to reorder
+  a whole scene in one Undo step. Alt+Shift+Up moves the current scene up; Esc
+  cancels a drag. See [scene-navigator.md](docs/scene-navigator.md).
+  Undo is Ctrl+Z; redo is Ctrl+Shift+Z.
   The rail's **Shortcuts** button or F1 opens the writing shortcut reference;
   **Edit** exposes Undo/Redo and clipboard actions with their key labels.
   Writing suggestions cover current-script character names, cue extensions and

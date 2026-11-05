@@ -2,8 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import "../editor"
 
-// Bounded look check: the rail and opening scene list reproduce prototype B.
-// The outline is read-only; navigation/reordering and other workspaces wait.
+// Writing desk foundation with the live scene navigator.
 Rectangle {
     id: desk
     required property var screenplayLayout
@@ -20,7 +19,7 @@ Rectangle {
     property string exportDestination: ""
     property string documentTitle: "Screenplay"
     readonly property string shownTitle: commands.titleText.length > 0 ? commands.titleText : documentTitle
-    property var outlineScenes: []
+    readonly property var outlineScenes: commands.scenes
     property bool outlineVisible: false
     property bool includeTitle: true
     property bool showReloadStatus: false
@@ -402,35 +401,181 @@ Rectangle {
             elide: Text.ElideRight; color: "#777f7c"
             font { family: "Liberation Sans"; pixelSize: 11 }
         }
+        property string draggedId: ""
+        property int dragRevision: -1
+        property var dragSelection: null
+        property bool dragging: false
+        property real pressY: 0
+        property real pointerX: 0
+        property real pointerY: 0
+        property int dropIndex: -1
+        function cancelDrag() {
+            draggedId = ""
+            dragging = false
+            dropIndex = -1
+        }
+        function beginDrag(id, y) {
+            cancelDrag()
+            if (!editorPage.sceneInteractionAllowed || desk.dialogOpen) return
+            draggedId = id
+            dragRevision = desk.commands.documentRevision
+            dragSelection = editorPage.sceneSelection()
+            pressY = y
+        }
+        function updateDrag(x, y) {
+            if (draggedId.length === 0) return
+            pointerX = x
+            pointerY = y
+            if (!dragging && Math.abs(y - pressY) < Qt.styleHints.startDragDistance) return
+            dragging = true
+            dropIndex = outlineList.count
+            const contentY = y - outlineList.y + outlineList.contentY
+            for (let i = 0; i < outlineList.count; ++i) {
+                const item = outlineList.itemAtIndex(i)
+                if (item && contentY < item.y + item.height / 2) {
+                    dropIndex = i
+                    break
+                }
+            }
+        }
+        function finishDrag() {
+            const id = draggedId
+            const revision = dragRevision
+            const selection = dragSelection
+            const valid = dragging && dropIndex >= 0 && pointerX >= outlineList.x
+                    && pointerX <= outlineList.x + outlineList.width && pointerY >= outlineList.y - 12
+                    && pointerY <= outlineList.y + outlineList.height + 12
+            const before = dropIndex < outlineList.count && dropIndex >= 0 ? desk.outlineScenes[dropIndex].id : ""
+            cancelDrag()
+            if (valid)
+                editorPage.moveScene(id, before, revision, selection.position, selection.anchor)
+        }
+        onVisibleChanged: if (!visible) cancelDrag()
+        Connections {
+            target: desk.commands
+            function onDocumentStateChanged() { outline.cancelDrag() }
+        }
+        Connections {
+            target: desk
+            function onDialogOpenChanged() { if (desk.dialogOpen) outline.cancelDrag() }
+            function onDepartingChanged() { if (desk.departing) outline.cancelDrag() }
+        }
+        Shortcut {
+            sequence: "Esc"; enabled: outline.draggedId.length > 0
+            onActivated: outline.cancelDrag()
+        }
+        Timer {
+            interval: 40; repeat: true; running: outline.dragging
+            onTriggered: {
+                const y = outline.pointerY - outlineList.y
+                const step = y < 28 ? -14 : y > outlineList.height - 28 ? 14 : 0
+                if (step !== 0) {
+                    outlineList.contentY = Math.max(0, Math.min(Math.max(0, outlineList.contentHeight - outlineList.height), outlineList.contentY + step))
+                    outline.updateDrag(outline.pointerX, outline.pointerY)
+                }
+            }
+        }
         Text {
-            x: 24; y: 98
-            text: desk.outlineScenes.length + " scenes · at opening"
+            x: 24; y: 98; width: parent.width - 48
+            text: desk.outlineScenes.length + " scenes · drag a handle to reorder"
+            wrapMode: Text.Wrap
             color: "#777f7c"; font { family: "Liberation Sans"; pixelSize: 11 }
         }
+        Text {
+            x: 24; y: 150; width: parent.width - 48
+            visible: desk.outlineScenes.length === 0
+            text: "Scene headings will appear here as you write."
+            wrapMode: Text.Wrap; color: "#69706d"
+            font { family: "Liberation Sans"; pixelSize: 12 }
+        }
         ListView {
+            id: outlineList
             objectName: "outlineList"
-            anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 125; bottom: parent.bottom; margins: 18 }
+            anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 140; bottom: parent.bottom; margins: 18 }
             clip: true; spacing: 5
             model: desk.outlineScenes
+            readonly property string currentId: editorPage.currentSceneId
+            function followCursor() {
+                if (outline.draggedId.length > 0) return
+                for (let i = 0; i < count; ++i)
+                    if (desk.outlineScenes[i].id === currentId) {
+                        positionViewAtIndex(i, ListView.Contain)
+                        return
+                    }
+            }
+            onModelChanged: Qt.callLater(followCursor)
+            onCurrentIdChanged: Qt.callLater(followCursor)
+            onCountChanged: Qt.callLater(followCursor)
+            onVisibleChanged: if (visible) Qt.callLater(followCursor)
             delegate: Rectangle {
-                required property string modelData
+                id: sceneRow
+                required property var modelData
                 required property int index
+                objectName: "sceneRow" + index
                 width: ListView.view.width
                 height: sceneLabel.implicitHeight + 42
                 radius: 8
-                color: index === 0 ? "white" : "transparent"
-                Text {
-                    id: sceneLabel
-                    x: 12; y: 13; width: parent.width - 24
-                    text: (index + 1) + "   " + modelData
-                    wrapMode: Text.Wrap
-                    color: index === 0 ? "#3a4651" : "#69706d"
-                    font { family: "Liberation Sans"; pixelSize: 11; weight: Font.DemiBold }
+                color: modelData.id === editorPage.currentSceneId ? "white" : "transparent"
+                opacity: outline.dragging && outline.draggedId === modelData.id ? 0.5 : 1
+                Button {
+                    objectName: "sceneNavigate" + sceneRow.index
+                    anchors { left: parent.left; right: handle.left; top: parent.top; bottom: parent.bottom }
+                    enabled: editorPage.sceneInteractionAllowed && !desk.dialogOpen
+                    Accessible.name: "Go to scene " + (sceneRow.index + 1) + ": " + sceneRow.modelData.text
+                    background: Rectangle { color: "transparent"; radius: 8; border.color: parent.activeFocus ? "#637080" : "transparent" }
+                    contentItem: Item {
+                        Text {
+                            id: sceneLabel
+                            x: 12; y: 13; width: parent.width - 18
+                            text: (sceneRow.index + 1) + "   " + sceneRow.modelData.text
+                            textFormat: Text.PlainText; wrapMode: Text.Wrap
+                            color: sceneRow.modelData.id === editorPage.currentSceneId ? "#3a4651" : "#69706d"
+                            font { family: "Liberation Sans"; pixelSize: 11; weight: Font.DemiBold }
+                        }
+                        Text {
+                            x: 12; y: sceneLabel.y + sceneLabel.implicitHeight + 6
+                            text: "Scene " + (sceneRow.index + 1)
+                            color: "#7b827d"; font { family: "Liberation Sans"; pixelSize: 11 }
+                        }
+                    }
+                    padding: 0
+                    onClicked: editorPage.navigateScene(sceneRow.modelData.id)
                 }
-                Text {
-                    x: 12; y: sceneLabel.y + sceneLabel.implicitHeight + 6
-                    text: "Scene " + (index + 1)
-                    color: "#7b827d"; font { family: "Liberation Sans"; pixelSize: 11 }
+                Item {
+                    id: handle
+                    objectName: "sceneHandle" + sceneRow.index
+                    anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
+                    width: 30
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Drag scene " + (sceneRow.index + 1) + " to reorder"
+                    Text { anchors.centerIn: parent; text: "⋮⋮"; color: "#69706d"; font.pixelSize: 18 }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: editorPage.sceneInteractionAllowed && !desk.dialogOpen
+                        preventStealing: true
+                        cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                        onPressed: (mouse) => outline.beginDrag(sceneRow.modelData.id, mapToItem(outline, mouse.x, mouse.y).y)
+                        onPositionChanged: (mouse) => {
+                            if (pressed) {
+                                const point = mapToItem(outline, mouse.x, mouse.y)
+                                outline.updateDrag(point.x, point.y)
+                            }
+                        }
+                        onReleased: outline.finishDrag()
+                        onCanceled: outline.cancelDrag()
+                    }
+                }
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right; top: parent.top }
+                    height: 3; color: "#637080"
+                    visible: outline.dragging && outline.dropIndex === sceneRow.index
+                }
+            }
+            footer: Rectangle {
+                width: outlineList.width; height: 12; color: "transparent"
+                Rectangle {
+                    width: parent.width; height: 3; color: "#637080"
+                    visible: outline.dragging && outline.dropIndex === outlineList.count
                 }
             }
             ScrollBar.vertical: ScrollBar {}
@@ -744,6 +889,7 @@ Rectangle {
         }
         ScreenplayEditor {
             id: editorPage
+            objectName: "editorPage"
             enabled: (!desk.autosaver || !desk.autosaver.reloadBusy) && !desk.departing
             anchors { left: parent.left; right: parent.right; top: dualNotice.bottom; bottom: parent.bottom }
             screenplayLayout: desk.screenplayLayout

@@ -117,7 +117,8 @@ These capabilities come from the owner's brief. Except where explicitly noted, t
   action. A scene starts at its heading and includes every screenplay element
   before the next heading. Material before the first heading stays at the
   beginning; title-page fields and project-wide imported notes/stash do not move
-  with scenes. Selection and detailed drag interaction remain to be designed.
+  with scenes. [Scene navigator](scene-navigator.md) records the bounded
+  selection, drag interaction and Undo conventions.
 
 ### Suggestions and character identity
 

@@ -2118,7 +2118,7 @@ private slots:
   void presentation_capitalizes_ascii_letters_only() {
     QVERIFY(open_elements({{ElementType::heading, "int. caf\xc3\xa9 - day"}, {ElementType::action, "Rain."}}));
     QVERIFY(draws(document_->begin(), QString::fromUtf8("INT. CAF\xc3\xa9 - DAY")));
-    QCOMPARE(view_->rootObject()->property("outlineScenes").toStringList(), QStringList{QString::fromUtf8("INT. CAF\xc3\xa9 - DAY")});
+    QCOMPARE(view_->rootObject()->property("outlineScenes").toList()[0].toMap()["text"].toString(), QString::fromUtf8("INT. CAF\xc3\xa9 - DAY"));
     QCOMPARE(block_element(document_->begin()).text, std::string("int. caf\xc3\xa9 - day"));
   }
 
@@ -2539,6 +2539,204 @@ private slots:
     QCOMPARE(document_->toPlainText(), QString(typed).replace(QStringLiteral("waits."), QStringLiteral("waxits.")));
     press(Qt::Key_Z, Qt::ControlModifier);
     QCOMPARE(document_->toPlainText(), typed);
+  }
+
+  void scene_outline_follows_edits_types_and_cursor() {
+    QVERIFY(open_elements({{ElementType::action, "Preamble", false, {}, "pre"},
+        {ElementType::heading, "int. room - day", false, {}, "one"},
+        {ElementType::action, "Body", false, {}, "body"},
+        {ElementType::heading, "", false, {}, "two"}}));
+    auto* commands = view_->rootObject()->property("commands").value<QObject*>();
+    auto scenes = commands->property("scenes").toList();
+    QCOMPARE(scenes.size(), 2);
+    QCOMPARE(scenes[0].toMap()["id"].toString(), QString("one"));
+    QCOMPARE(scenes[0].toMap()["text"].toString(), QString("INT. ROOM - DAY"));
+    QCOMPARE(scenes[1].toMap()["text"].toString(), QString("Untitled scene"));
+    editor_->setProperty("cursorPosition", position_of("Body"));
+    auto* page = view_->rootObject()->findChild<QQuickItem*>("editorPage");
+    QVERIFY(page);
+    QCOMPARE(page->property("currentSceneId").toString(), QString("one"));
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    type("ext. roof - night");
+    scenes = commands->property("scenes").toList();
+    QCOMPARE(scenes[1].toMap()["text"].toString(), QString("EXT. ROOF - NIGHT"));
+    QCOMPARE(page->property("currentSceneId").toString(), QString("two"));
+    press(Qt::Key_2, Qt::ControlModifier);
+    QCOMPARE(commands->property("scenes").toList().size(), 1);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(commands->property("scenes").toList().size(), 2);
+    editor_->setProperty("cursorPosition", 0);
+    QCOMPARE(page->property("currentSceneId").toString(), QString());
+  }
+
+  void scene_navigator_click_drag_cancel_and_selection() {
+    const std::vector<Element> original{
+        {ElementType::action, "Preamble", false, {}, "pre"},
+        {ElementType::heading, "INT. FIRST - DAY", false, {}, "one"},
+        {ElementType::action, "First action.", false, {}, "a"},
+        {ElementType::heading, "INT. SECOND - DAY", false, {}, "two"},
+        {ElementType::action, "Second action.", false, {{0, 6, Style::italic}}, "b"},
+        {ElementType::heading, "EXT. THIRD - NIGHT", false, {}, "three"},
+        {ElementType::action, "Third action.", false, {}, "c"}};
+    QVERIFY(open_elements(original));
+    press(Qt::Key_Backslash, Qt::ControlModifier);
+    QTest::qWait(40);
+    auto* third = find_item(view_->contentItem(), "sceneNavigate2");
+    QVERIFY(third);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, third->mapToScene(third->boundingRect().center()).toPoint());
+    QCOMPARE(cursor(), position_of("EXT. THIRD"));
+    QVERIFY(!document_->isUndoAvailable());
+    QVERIFY(editor_->hasActiveFocus());
+    const int start = position_of("Second action."), end = start + 6;
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, end), Q_ARG(int, start)); // Reversed selection.
+    const auto drag = [&](const char* handleName, const char* rowName, bool below, bool cancel) {
+      QTest::qWait(40);
+      auto* handle = find_item(view_->contentItem(), handleName);
+      auto* row = find_item(view_->contentItem(), rowName);
+      QVERIFY(handle && row);
+      const auto from = handle->mapToScene(handle->boundingRect().center()).toPoint();
+      const auto to = row->mapToScene(QPointF(row->width() - 15, below ? row->height() - 2 : 2)).toPoint();
+      QTest::mousePress(view_.get(), Qt::LeftButton, Qt::NoModifier, from);
+      QTest::mouseMove(view_.get(), (from + to) / 2, 20);
+      QTest::mouseMove(view_.get(), to, 20);
+      if (cancel) press(Qt::Key_Escape);
+      QTest::mouseRelease(view_.get(), Qt::LeftButton, Qt::NoModifier, to);
+      QTest::qWait(40);
+    };
+    drag("sceneHandle1", "sceneRow0", false, true);
+    QCOMPARE(document_elements(*document_), original);
+    QCOMPARE(cursor(), start);
+    drag("sceneHandle1", "sceneRow0", false, false);
+    const std::vector<Element> moved{original[0], original[3], original[4], original[1], original[2], original[5], original[6]};
+    QCOMPARE(document_elements(*document_), moved);
+    QCOMPARE(editor_->property("selectedText").toString(), QString("Second"));
+    QCOMPARE(cursor(), position_of("Second action."));
+    QVERIFY(editor_->hasActiveFocus());
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/scene-navigator.png")));
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), moved);
+    drag("sceneHandle0", "sceneRow2", true, false);
+    const std::vector<Element> last{original[0], original[1], original[2], original[5], original[6], original[3], original[4]};
+    QCOMPARE(document_elements(*document_), last);
+    view_->resize(640, 800);
+    QTest::qWait(40);
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/scene-navigator-small.png")));
+    // A document edit after grabbing a handle cancels the pending move.
+    auto* handle = find_item(view_->contentItem(), "sceneHandle0");
+    auto* row = find_item(view_->contentItem(), "sceneRow2");
+    QVERIFY(handle && row);
+    const auto from = handle->mapToScene(handle->boundingRect().center()).toPoint();
+    const auto to = row->mapToScene(QPointF(row->width() - 15, row->height() - 2)).toPoint();
+    QTest::mousePress(view_.get(), Qt::LeftButton, Qt::NoModifier, from);
+    QTest::mouseMove(view_.get(), to, 20);
+    QTextCursor edit(document_.get()); edit.insertText("New ");
+    QTest::mouseRelease(view_.get(), Qt::LeftButton, Qt::NoModifier, to);
+    auto edited = last; edited[0].text = "New Preamble";
+    QCOMPARE(document_elements(*document_), edited);
+    QInputMethodEvent preedit(QStringLiteral("´"), {});
+    QCoreApplication::sendEvent(editor_, &preedit);
+    QCOMPARE(editor_->property("preeditText").toString(), QStringLiteral("´"));
+    QVERIFY(!find_item(view_->contentItem(), "sceneNavigate0")->isEnabled());
+    press(Qt::Key_Up, Qt::AltModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), edited);
+    QInputMethodEvent cancelPreedit;
+    QCoreApplication::sendEvent(editor_, &cancelPreedit);
+    QVERIFY(find_item(view_->contentItem(), "sceneNavigate0")->isEnabled());
+  }
+
+  void scene_drag_autoscrolls_and_keeps_preamble() {
+    std::vector<Element> original{{ElementType::action, "Preamble", false, {}, "pre"}};
+    for (int i = 0; i < 16; ++i) {
+      original.push_back({ElementType::heading, "INT. ROOM " + std::to_string(i) + " - DAY", false, {}, "h" + std::to_string(i)});
+      original.push_back({ElementType::action, "Writing.", false, {}, "a" + std::to_string(i)});
+    }
+    QVERIFY(open_elements(original));
+    view_->resize(800, 650);
+    press(Qt::Key_Backslash, Qt::ControlModifier);
+    QTest::qWait(40);
+    auto* list = find_item(view_->contentItem(), "outlineList");
+    auto* handle = find_item(view_->contentItem(), "sceneHandle0");
+    QVERIFY(list && handle);
+    const auto from = handle->mapToScene(handle->boundingRect().center()).toPoint();
+    const auto to = list->mapToScene(QPointF(list->width() - 15, list->height() - 1)).toPoint();
+    QTest::mousePress(view_.get(), Qt::LeftButton, Qt::NoModifier, from);
+    QTest::mouseMove(view_.get(), to, 30);
+    QTRY_VERIFY_WITH_TIMEOUT(list->property("contentY").toReal() >= list->property("contentHeight").toReal() - list->height() - 1, 5000);
+    QTest::mouseRelease(view_.get(), Qt::LeftButton, Qt::NoModifier, to);
+    auto expected = original;
+    expected.erase(expected.begin() + 1, expected.begin() + 3);
+    expected.push_back(original[1]); expected.push_back(original[2]);
+    QCOMPARE(document_elements(*document_), expected);
+    QCOMPARE(cursor(), 0); // An unrelated caret in the preamble stays there.
+    QVERIFY(editor_->hasActiveFocus());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    // The current scene follows caret movement and scrolls back into view.
+    editor_->setProperty("cursorPosition", position_of("INT. ROOM 15"));
+    QTRY_VERIFY(list->property("contentY").toReal() > 0);
+    editor_->setProperty("cursorPosition", position_of("INT. ROOM 0"));
+    QTRY_COMPARE(list->property("contentY").toReal(), 0.0);
+  }
+
+  void scene_moves_preserve_content_selection_and_reject_stale_requests() {
+    const std::vector<Element> original{
+        {ElementType::title, "The Script", false, {}, "title"},
+        {ElementType::action, "Preamble", false, {}, "pre"},
+        {ElementType::heading, "INT. FIRST - DAY", false, {}, "one"},
+        {ElementType::action, "Café", false, {{0, 5, Style::bold}}, "a"},
+        {ElementType::page_break, "", false, {}, "break"},
+        {ElementType::heading, "INT. SECOND - DAY", false, {}, "two"},
+        {ElementType::cue, "MARA", false, {}, "cue1"},
+        {ElementType::dialogue, "One.\n\nTwo.", false, {{6, 10, Style::italic}}, "speech1"},
+        {ElementType::cue, "THEO", true, {}, "cue2"},
+        {ElementType::dialogue, "Three.", false, {}, "speech2"},
+        {ElementType::heading, "", false, {}, "three"},
+        {ElementType::centered, "END", false, {{0, 3, Style::underline}}, "end"}};
+    QVERIFY(open_elements(original));
+    auto* commands = qobject_cast<EditorCommands*>(view_->rootObject()->property("commands").value<QObject*>());
+    QVERIFY(commands);
+    const int caret = position_of("Two.") + 2, anchor = position_of("One.") + 1;
+    const auto move = [&](const QString& id, const QString& before, int revision, int position, int selectionAnchor) {
+      return commands->moveScene(id, before, revision, position, selectionAnchor);
+    };
+    auto result = move("two", "one", document_->revision(), caret, anchor);
+    QVERIFY(!result.isEmpty());
+    const std::vector<Element> moved{original[0], original[1], original[5], original[6], original[7],
+        original[8], original[9], original[2], original[3], original[4], original[10], original[11]};
+    QCOMPARE(document_elements(*document_), moved);
+    QCOMPARE(result["position"].toInt(), position_of("Two.") + 2);
+    QCOMPARE(result["anchor"].toInt(), position_of("One.") + 1);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_elements(*document_), moved);
+    const auto steps = document_->availableUndoSteps();
+    QVERIFY(move("two", "one", document_->revision(), 0, 0).isEmpty()); // Already there.
+    QVERIFY(move("one", "three", document_->revision() - 1, 0, 0).isEmpty());
+    QVERIFY(move("missing", "three", document_->revision(), 0, 0).isEmpty());
+    QVERIFY(move("one", "missing", document_->revision(), 0, 0).isEmpty());
+    QVERIFY(move("one", "one", document_->revision(), 0, 0).isEmpty());
+    QCOMPARE(document_->availableUndoSteps(), steps);
+    QCOMPARE(document_elements(*document_), moved);
+    result = move("two", "", document_->revision(), position_of("Café") + 1, 1);
+    QVERIFY(!result.isEmpty());
+    const std::vector<Element> last{original[0], original[1], original[2], original[3], original[4],
+        original[10], original[11], original[5], original[6], original[7], original[8], original[9]};
+    const auto actualLast = document_elements(*document_);
+    QCOMPARE(actualLast.size(), last.size());
+    for (std::size_t i = 0; i < last.size(); ++i) {
+      QCOMPARE(actualLast[i].id, last[i].id);
+      QCOMPARE(actualLast[i].text, last[i].text);
+      QCOMPARE(actualLast[i].type, last[i].type);
+      QCOMPARE(actualLast[i].styles, last[i].styles);
+      QCOMPARE(actualLast[i].dual_right, last[i].dual_right);
+    }
+    QCOMPARE(result["position"].toInt(), position_of("Café") + 1); // Caret outside moved scene follows its element too.
+    QCOMPARE(result["anchor"].toInt(), 1);
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), moved);
   }
 
   // The scene move command puts a whole scene above the previous one as one

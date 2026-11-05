@@ -135,6 +135,28 @@ Rectangle {
             editor.place(commands.removePageBreak(position, position, position))
         editor.forceActiveFocus()
     }
+    readonly property bool sceneInteractionAllowed: enabled && !editor.inputMethodComposing && editor.preeditText.length === 0
+    readonly property string currentSceneId: {
+        commands.documentRevision
+        return commands.sceneAt(editor.cursorPosition)
+    }
+    function navigateScene(id) {
+        if (!enabled || editor.inputMethodComposing || editor.preeditText.length > 0) return
+        selectElement(commands.scenePosition(id), 0)
+    }
+    function moveScene(id, beforeId, revision, position, anchor) {
+        if (!enabled || editor.inputMethodComposing || editor.preeditText.length > 0) return
+        const result = commands.moveScene(id, beforeId, revision, position, anchor)
+        if (result.position !== undefined) {
+            editor.select(result.anchor, result.position)
+            editor.revealCursor()
+        }
+        editor.forceActiveFocus()
+    }
+    function sceneSelection() {
+        return { position: editor.cursorPosition,
+            anchor: editor.cursorPosition === editor.selectionStart ? editor.selectionEnd : editor.selectionStart }
+    }
     function selectElement(position, length) {
         if (position < 0)
             return
@@ -320,7 +342,14 @@ Rectangle {
                     } else if (event.matches(StandardKey.Cut)) {
                         place(root.commands.cut(selectionStart, selectionEnd))
                     } else if (event.key === Qt.Key_Up && (event.modifiers & Qt.AltModifier) && shift) {
-                        place(root.commands.moveSceneUp(cursorPosition))
+                        const id = root.currentSceneId
+                        const scenes = root.commands.scenes
+                        for (let i = 1; i < scenes.length; ++i)
+                            if (scenes[i].id === id) {
+                                const selection = root.sceneSelection()
+                                root.moveScene(id, scenes[i - 1].id, root.commands.documentRevision, selection.position, selection.anchor)
+                                break
+                            }
                     } else if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete
                                || event.matches(StandardKey.DeleteEndOfLine)) {
                         const result = root.commands.deleteText(cursorPosition, selectionStart, selectionEnd,
