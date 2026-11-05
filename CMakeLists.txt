@@ -42,7 +42,12 @@ if(APOLLO_BUILD_PDF)
   target_compile_options(apollo_pdf PRIVATE -Wall -Wextra -Wpedantic)
   add_executable(pdf_export tools/pdf_export.cpp)
   target_link_libraries(pdf_export PRIVATE apollo_pdf apollo_export_snapshot)
-  target_compile_definitions(pdf_export PRIVATE APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime")
+  # Keep build and installed executables independent of source-tree paths.
+  add_custom_target(apollo_runtime_assets ALL
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime" "${CMAKE_CURRENT_BINARY_DIR}/assets/courier-prime"
+    VERBATIM)
+  add_dependencies(pdf_export apollo_runtime_assets)
+  add_dependencies(apollo_runtime_assets check_fonts)
   find_program(UV_EXECUTABLE uv REQUIRED)
   foreach(tool pdftotext pdffonts pdfinfo pdftohtml pdftoppm)
     find_program(${tool}_EXECUTABLE ${tool} REQUIRED)
@@ -98,14 +103,29 @@ if(APOLLO_BUILD_EDITOR)
   set_target_properties(apollo_editor_core PROPERTIES AUTOMOC ON)
   target_link_libraries(apollo_editor_core PUBLIC apollo_hunspell apollo_layout apollo_source apollo_export_snapshot Qt6::Gui Qt6::Quick)
   target_compile_options(apollo_editor_core PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_definitions(apollo_editor_core PRIVATE
-    APOLLO_SPELLING_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/spelling"
-    APOLLO_EDITOR_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/WritingDesk.qml"
-    APOLLO_ACCESS_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/ProjectAccess.qml")
-  target_compile_definitions(apollo_editor_core PRIVATE APOLLO_INTAKE_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/ImportedMaterial.qml")
+  add_custom_target(apollo_editor_assets ALL
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/spelling" "${CMAKE_CURRENT_BINARY_DIR}/assets/spelling"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/app" "${CMAKE_CURRENT_BINARY_DIR}/assets/app"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/assets/editor"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/editor/ScreenplayEditor.qml" "${CMAKE_CURRENT_BINARY_DIR}/assets/editor/ScreenplayEditor.qml"
+    VERBATIM)
+  add_dependencies(apollo_editor_core apollo_editor_assets)
   add_executable(apollo_editor tools/apollo_editor.cpp)
   target_link_libraries(apollo_editor PRIVATE apollo_editor_core apollo_pdf)
   add_dependencies(apollo_editor pdf_export fountain_export)
+  install(TARGETS apollo_editor pdf_export fountain_export RUNTIME DESTINATION lib/apollo COMPONENT Runtime)
+  install(PROGRAMS tools/apollo DESTINATION bin COMPONENT Runtime)
+  install(DIRECTORY assets/courier-prime assets/spelling DESTINATION lib/apollo/assets COMPONENT Runtime)
+  install(DIRECTORY app/ DESTINATION lib/apollo/assets/app COMPONENT Runtime FILES_MATCHING PATTERN "*.qml")
+  install(FILES editor/ScreenplayEditor.qml DESTINATION lib/apollo/assets/editor COMPONENT Runtime)
+  # Retain the unmodified statically linked engine's source and upstream notices.
+  install(DIRECTORY "${hunspell_SOURCE_DIR}/" DESTINATION share/apollo/third-party/hunspell COMPONENT Runtime)
+  add_test(NAME local_runtime_tests COMMAND "${UV_EXECUTABLE}" run
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/local_runtime_tests.py"
+    --build "${CMAKE_CURRENT_BINARY_DIR}" --cmake "${CMAKE_COMMAND}"
+    --spelling-tests "$<TARGET_FILE:spelling_tests>"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/local-runtime-tests")
+  set_tests_properties(local_runtime_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1" TIMEOUT 90)
   add_test(NAME writing_measurement_verifier_tests COMMAND "${UV_EXECUTABLE}" run
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/writing_measurement_verifier_tests.py")
   set_tests_properties(writing_measurement_verifier_tests PROPERTIES ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
@@ -141,7 +161,6 @@ if(APOLLO_BUILD_EDITOR)
   add_dependencies(project_access_flow_tests pdf_export fountain_export)
   add_test(NAME project_access_flow_tests COMMAND project_access_flow_tests)
   set_tests_properties(project_access_flow_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-  target_compile_definitions(apollo_editor PRIVATE APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime")
   add_executable(spelling_tests tests/spelling_tests.cpp)
   add_executable(find_replace_tests tests/find_replace_tests.cpp)
   set_target_properties(find_replace_tests PROPERTIES AUTOMOC ON)

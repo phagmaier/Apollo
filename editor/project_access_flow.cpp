@@ -1,4 +1,5 @@
 #include "editor/project_access_flow.h"
+#include "app/runtime_assets.h"
 #include "source/fountain_conversion.h"
 #include "source/fountain_working.h"
 #include "editor/autosave.h"
@@ -83,7 +84,7 @@ QString ProjectAccessFlow::local_folder(const QUrl& url) const { return url.isLo
 void ProjectAccessFlow::show_access() {
   view_.setResizeMode(QQuickView::SizeRootObjectToView);
   view_.setInitialProperties({{"access", QVariant::fromValue<QObject*>(this)}});
-  view_.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_ACCESS_QML)));
+  view_.setSource(QUrl::fromLocalFile(runtime_asset(QStringLiteral("app/ProjectAccess.qml"))));
   if (view_.status() != QQuickView::Ready) throw std::runtime_error("cannot load project access QML");
 }
 
@@ -153,7 +154,7 @@ void ProjectAccessFlow::create_project(const QString& parent, const QString& nam
 
 void ProjectAccessFlow::show_intake() {
   view_.setInitialProperties({{"access", QVariant::fromValue<QObject*>(this)}});
-  view_.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_INTAKE_QML)));
+  view_.setSource(QUrl::fromLocalFile(runtime_asset(QStringLiteral("app/ImportedMaterial.qml"))));
   if (view_.status() != QQuickView::Ready) throw std::runtime_error("cannot load imported material QML");
 }
 

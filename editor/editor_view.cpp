@@ -1,4 +1,5 @@
 #include "editor/editor_view.h"
+#include "app/runtime_assets.h"
 #include "editor/autosave.h"
 #include "editor/editor_commands.h"
 #include "editor/screenplay_layout.h"
@@ -24,7 +25,7 @@ QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob*
                              {"fountainJob", QVariant::fromValue<QObject*>(fountain_job)},
                              {"documentTitle", title}});
   view.setResizeMode(QQuickView::SizeRootObjectToView);
-  view.setSource(QUrl::fromLocalFile(QStringLiteral(APOLLO_EDITOR_QML)));
+  view.setSource(QUrl::fromLocalFile(runtime_asset(QStringLiteral("app/WritingDesk.qml"))));
   if (view.status() != QQuickView::Ready) {
     QString errors;
     for (const auto& error : view.errors()) errors += error.toString() + '\n';

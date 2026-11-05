@@ -59,6 +59,14 @@ frozen every visual detail.
 
 ## Working and verification
 
+- `tools/package-local.sh NEW_DIRECTORY` builds a private relocatable runtime
+  with editor/helpers, QML, fonts, dictionary, notices and dependency inventory;
+  run `NEW_DIRECTORY/bin/apollo [PROJECT]`. It uses system Qt and refuses existing
+  destinations. `tools/check-owner-handoff.sh` runs required checks and native
+  packaging/writing/recovery/export checks, then opens a disposable manual
+  session with isolated state; `--smoke` omits the owner session. See
+  [local-launch.md](docs/local-launch.md); owner comfort and full milestone
+  acceptance remain separate.
 - Install the tools in `mise.toml` using `mise install`. Run `mise run check` for
   the release configure/build/test cycle and `mise run check-debug` for the
   sanitizer build. They check engine lines and point geometry, the fixture

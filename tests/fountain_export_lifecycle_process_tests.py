@@ -38,6 +38,7 @@ def main():
     isolated.mkdir()
     editor = isolated / "apollo_editor"
     shutil.copy2(options.editor, editor)
+    shutil.copytree(options.editor.resolve().parent / "assets", isolated / "assets")
     pid_file = root / "worker.pid"
     worker = isolated / "fountain_export"
     worker.write_text(f"#!/bin/sh\necho $$ > {shlex.quote(str(pid_file))}\nkill -STOP $$\n")

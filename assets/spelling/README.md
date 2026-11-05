@@ -19,4 +19,6 @@ Hunspell is offered under MPL 1.1 / GPL 2.0-or-later / LGPL 2.1-or-later;
 upstream copyright notices remain in the downloaded source. Copies of the MPL
 and LGPL texts accompany this directory for the linked engine. Packaging a
 binary must retain these notices and meet the selected license's source and
-relinking obligations; the local spike has no distribution packaging yet.
+relinking obligations. The private [local runtime](../../docs/local-launch.md)
+includes the unmodified engine source and upstream notices; public distribution
+and a project license remain undecided.

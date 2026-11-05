@@ -154,8 +154,19 @@ and 349 Fountain exports verify independently, with exact saves/reopen. Final
 release and sanitizers pass 28/28 each, engine 2/2. A repeatable runner and the
 profiled request/scene-list fixes are implemented and reviewed.
 [Results and retained limits](#task-5c--production-export-responsiveness-and-remaining-evidence) distinguish
-stress, save age, sampled memory and remaining milestone gates. Slice 6's local
-launch/owner handoff and the separate compatibility/slice 2 follow-ups remain open.
+stress, save age, sampled memory and remaining milestone gates. Task 6a below
+completes bounded local launch/handoff tooling; owner assessment and the separate
+compatibility/slice 2 follow-ups remain open.
+
+**Task 6a — reproducible local runtime and handoff runner is done for this
+bounded step (2026-11-05).** The relocated runtime includes both helpers, all
+QML, pinned fonts, dictionary, source/notices and dependency inventory.
+Release/sanitizer suites pass 29/29 each, engine 2/2, plus final affected
+rechecks and native packaging/writing/recovery/export checks. The
+[launch contract](local-launch.md) and [task evidence](#task-6a--reproducible-local-runtime-and-handoff-runner)
+record the commands and limits. **6b — owner writing session and comfort
+assessment remains pending**; it requires owner observations and does not
+close the independent compatibility, recovery or PDF acceptance gates.
 
 ## Intended result and boundary
 
@@ -2475,3 +2486,80 @@ primary budget result establishes owner comfort, physical input, production
 PDF acceptance or broader Fountain compatibility. Imported PDF, slice 2
 follow-ups and slice 6 remain separate; no additional owner decision was needed
 for this task's implemented behavior.
+
+### Task 6a — reproducible local runtime and handoff runner
+
+2026-11-05. **Done for this bounded task.** Depends on 5a–5c. Slice 6 is
+split into independently verifiable local launch/tooling (6a) and the owner's
+writing/comfort observations (6b); no owner assessment is inferred from tests.
+The [launch contract](local-launch.md) documents the runtime layout, exact
+system baseline, local packaging and one-command handoff.
+
+`tools/package-local.sh NEW_DIRECTORY` builds/stages a release runtime and
+publishes without replacing existing folders, files or dangling links. It
+includes the editor, both export helpers, application/editor QML, pinned fonts
+with OFL, US dictionary/notices, unmodified Hunspell source/notices, dependency
+inventory and file checksums. The launcher preserves relative arguments and
+spaces and supports a user-created symlink. Runtime assets resolve beside the
+executable, with explicit failures for missing QML/fonts and visible spelling
+failure for missing dictionary data. System Qt/plugins remain dependencies;
+no system installation or public distribution is claimed.
+
+The initial regression fails because the old build installs no launcher
+(`build/task-6a-red.log`). The relocated-runtime check now exercises the actual
+editor from a temporary directory outside the checkout: exact typing/save,
+SIGKILL/reopen and cursor activation, both helpers, independently expected
+Fountain bytes and extracted PDF text/embedded Unicode fonts. It reuses the
+existing spelling replacement/personal-word test against relocated data.
+Missing-asset controls demonstrate that checkout fallback cannot hide omissions.
+
+Review found a checksum omission for Hunspell's README symlink. The exact-package
+check reproduces it (`build/task-6a-manifest-red.log`); manifest enumeration now
+includes symlink files, and the native check validates every packaged file and
+hash before copying/relocating that exact package. Existing destination kinds
+are refused with their bytes/links intact. No new general test framework or
+writing/import/export behavior was introduced.
+
+| Check | Observed result |
+| --- | --- |
+| Release | `mise run check`: **29/29 pass**, including fixtures, aw-parser and crash checks; final strengthened runtime suite also passes |
+| Sanitizers | `mise run check-debug`: **29/29 pass** with address/undefined sanitizers; final runtime recheck passes |
+| Engine | `mise run check-engine`: **2/2 pass** |
+| Native Wayland/Compose | Full handoff smoke passes. Actual relocated runtime uses OpenGL; packaged project flows use their existing software renderer: 9/9 including setup/cleanup; spelling 3/3. Title/find/suggestions, scene move, damaged-save recovery, failed destinations/Copy, Home, persistence and outputs pass |
+| Exact final package | Corrected `runtime-reviewed` manifest, all-file coverage, relocation, both helpers, source text and missing-asset/collision checks pass on native Wayland/OpenGL |
+| Manual preparation | The exact disposable five-page, 91-element owner sample is prepared and its PDF/Fountain commands pass; no interactive owner session was run |
+| Completion review | Actual tracked/untracked implementation, requirements, scripts and test necessity reviewed directly. Watchdog-fixture and manifest findings fixed; no unresolved in-scope finding. `git diff --check`, Python syntax and all three runner/launcher `bash -n` checks pass |
+
+The full runner's passing stages are saved in
+`build/task-6a-handoff-final.log` and `build/owner-handoff-WomwBx/`.
+Its first attempt stopped on the existing watchdog fixture, which copied only
+the editor executable; that fixture now copies its required assets as well.
+The unchanged production 30-second watchdog assertions then pass in both full
+suites. The full smoke passed before the final manifest correction; subsequent
+exact-package native validation and affected release/sanitizer rechecks pass in
+`build/task-6a-final-native-runtime.log`,
+`build/task-6a-final-release-focused.log` and
+`build/task-6a-final-debug-focused.log`. The corrected runtime is retained at
+`build/owner-handoff-WomwBx/runtime-reviewed/`; package output is
+`build/task-6a-package-reviewed.log`. `build/task-6a-native-render.log` records
+the actual packaged editor's Wayland/OpenGL context and five-page sample.
+
+The owner command is **`tools/check-owner-handoff.sh`**. `--smoke` verifies the
+automated stages and manual preparation without asking for comfort acceptance.
+The default then opens isolated disposable writing, offers a normal-close/resume
+checkpoint and records observations in `results.txt`. Tests use Qt input events;
+physical/compositor input, fcitx, owner comfort and a new sustained responsiveness/
+crash-loss/memory assessment remain unverified. `wtype` is absent and the local
+Academy directory is empty. Existing hand-derived fixtures and independent
+Fountain checks pass; broader compatibility, imported PDF, production PDF and
+slice 2 follow-ups retain their gates. No tool/font/dependency pin changed.
+
+### Task 6b — owner writing session and comfort assessment
+
+**Pending owner observations.** Depends on 6a. Run
+`tools/check-owner-handoff.sh` from the desktop, use its disposable project for
+an extended writing/revision/export session, close/reopen and record the actual
+comfort, appearance and input observations or defects. Review saved logs and
+observations before recording acceptance or creating focused corrections.
+This task supplies owner evidence; completing it does not automatically close
+the separate Fountain/PDF, input, recovery or performance gates above.

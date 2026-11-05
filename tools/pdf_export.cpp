@@ -1,4 +1,5 @@
 #include "engine/layout.h"
+#include "app/runtime_assets.h"
 #include "export/pdf.h"
 #include "export/snapshot.h"
 #include "fountain/import.h"
@@ -53,7 +54,7 @@ int main(int argc, char** argv) {
     auto elements = apollo::import_fountain(source.str());
     if (argc == 4) std::erase_if(elements, title_field);
     const auto document = apollo::layout_document(elements);
-    apollo::export_pdf(document, QString::fromLocal8Bit(argv[2]), QStringLiteral(APOLLO_FONT_DIR), argc != 4);
+    apollo::export_pdf(document, QString::fromLocal8Bit(argv[2]), apollo::runtime_asset(QStringLiteral("courier-prime")), argc != 4);
   } catch (const std::exception& error) {
     std::cerr << "export failed: " << error.what() << '\n'; return 1;
   }

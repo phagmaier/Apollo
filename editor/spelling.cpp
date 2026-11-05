@@ -1,4 +1,5 @@
 #include "editor/spelling.h"
+#include "app/runtime_assets.h"
 #include "editor/screenplay_layout.h"
 #include <hunspell.hxx>
 #include <QDir>
@@ -32,7 +33,7 @@ Spelling::Spelling(QTextDocument* document, const QString& personalPath, QObject
   connect(&thread_, &QThread::finished, worker_, &QObject::deleteLater);
   thread_.start();
   QMetaObject::invokeMethod(worker_, [this] {
-    const QString base = QStringLiteral(APOLLO_SPELLING_DIR "/en_US");
+    const QString base = runtime_asset(QStringLiteral("spelling/en_US"));
     const bool available = QFile::exists(base + ".aff") && QFile::exists(base + ".dic");
     if (available) checker_ = std::make_shared<Hunspell>((base + ".aff").toUtf8().constData(), (base + ".dic").toUtf8().constData());
     QMetaObject::invokeMethod(this, [this, available] {

@@ -1,4 +1,5 @@
 #include "editor/autosave.h"
+#include "app/runtime_assets.h"
 #include "editor/editor_commands.h"
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
@@ -61,7 +62,7 @@ struct Opened {
 };
 
 Opened open_document(const char* path) {
-  const auto font = apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR));
+  const auto font = apollo::editor::courier_prime(apollo::runtime_asset(QStringLiteral("courier-prime")));
   const QFileInfo info(QString::fromLocal8Bit(path));
   Opened opened;
   opened.export_destination = info.absolutePath() + "/" + info.completeBaseName() + ".pdf";
@@ -137,7 +138,7 @@ int measure(const char* path, int keys, const QString& export_directory = {}) {
   QElapsedTimer clock; clock.start();
   auto opened = open_document(path);
   auto& document = opened.document;
-  apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(path));
+  apollo::editor::PdfExportJob job(document.get(), apollo::runtime_asset(QStringLiteral("courier-prime")), exporter(), QString::fromLocal8Bit(path));
   const bool exporting = !export_directory.isEmpty();
   if (exporting && !QDir().mkpath(export_directory)) throw std::runtime_error("cannot create export directory");
   const auto destination = QDir(export_directory).filePath(QStringLiteral("while-typing.pdf"));
@@ -343,7 +344,7 @@ int scripted_edits(QQuickWindow& window, QQuickItem& editor, QTextDocument& docu
 int agreement(const char* path, const QString& directory, int edits, bool snapshot = false, bool include_title = true) {
   auto opened = open_document(path);
   auto& document = opened.document;
-  apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(path));
+  apollo::editor::PdfExportJob job(document.get(), apollo::runtime_asset(QStringLiteral("courier-prime")), exporter(), QString::fromLocal8Bit(path));
   QQuickView view;
   const auto destination = QDir(directory).filePath(QStringLiteral("editor.pdf"));
   auto* editor = apollo::editor::show_editor(view, *document, &job, destination, opened.saver.get());
@@ -431,7 +432,7 @@ int export_fountain(const char* path, const QString& destination, bool include_t
   const auto opened = apollo::source::open_project(QString::fromLocal8Bit(path));
   if (opened.project.import_review)
     throw std::runtime_error("Fountain intake is review-only; use Edit in a New Copy before exporting its writing.");
-  auto document = apollo::editor::screenplay_document(opened.screenplay.elements, apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+  auto document = apollo::editor::screenplay_document(opened.screenplay.elements, apollo::editor::courier_prime(apollo::runtime_asset(QStringLiteral("courier-prime"))));
   apollo::editor::FountainExportJob job(document.get(), opened.project.directory, apollo::source::fountain_export_omissions(opened.assets),
                                         {apollo::source::imported_origin(opened.assets)});
   bool success = false;
@@ -622,8 +623,8 @@ int main(int argc, char** argv) {
                          input_info.suffix().compare("fountain", Qt::CaseInsensitive) == 0;
     if (!check) {
       QQuickView view;
-      apollo::editor::ProjectAccessFlow flow(view, apollo::editor::courier_prime(QStringLiteral(APOLLO_FONT_DIR)),
-                                            QStringLiteral(APOLLO_FONT_DIR), exporter());
+      apollo::editor::ProjectAccessFlow flow(view, apollo::editor::courier_prime(apollo::runtime_asset(QStringLiteral("courier-prime"))),
+                                            apollo::runtime_asset(QStringLiteral("courier-prime")), exporter());
       flow.start(fountain ? QString() : input, fountain ? input : QString());
       view.setTitle(QStringLiteral("Apollo"));
       view.setMinimumSize(QSize(560, 400));
@@ -639,7 +640,7 @@ int main(int argc, char** argv) {
       if (!layout->error().isEmpty()) throw std::runtime_error(layout->error().toStdString());
       return 0;
     }
-    apollo::editor::PdfExportJob job(document.get(), QStringLiteral(APOLLO_FONT_DIR), exporter(), QString::fromLocal8Bit(argv[1]));
+    apollo::editor::PdfExportJob job(document.get(), apollo::runtime_asset(QStringLiteral("courier-prime")), exporter(), QString::fromLocal8Bit(argv[1]));
     QQuickView view;
     apollo::editor::show_editor(view, *document, &job, opened.export_destination, opened.saver.get());
     if (opened.saver) opened.saver->guard_close(view);
