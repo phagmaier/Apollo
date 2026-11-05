@@ -28,7 +28,7 @@ Rectangle {
     property string issueKey: ""
     property string issueNotice: ""
     readonly property bool dialogOpen: shortcutPanel.visible || titlePanel.visible || importedPanel.visible
-            || issuePanel.visible || exportPanel.visible || pdfWaitPanel.visible || copyPanel.visible || reloadPanel.visible
+            || issuePanel.visible || exportPanel.visible || pdfWaitPanel.visible || fountainWaitPanel.visible || copyPanel.visible || reloadPanel.visible
             || failurePanel.visible || leavePanel.visible || editorPage.spellingOpen || editorPage.findOpen
     property var selectedIssue: {
         for (const issue of structureIssues) {
@@ -166,7 +166,15 @@ Rectangle {
     }
     Connections {
         target: desk.fountainJob
-        function onChanged() { desk.showReloadStatus = false; desk.lastExport = "fountain" }
+        function onChanged() {
+            desk.showReloadStatus = false; desk.lastExport = "fountain"
+            if (desk.fountainJob.attention) {
+                exportPanel.close()
+                fountainWaitPanel.open()
+            } else {
+                fountainWaitPanel.close()
+            }
+        }
     }
 
     component DeskButton: Button {
@@ -1150,6 +1158,39 @@ Rectangle {
         }
     }
     Popup {
+        id: fountainWaitPanel
+        objectName: "fountainWaitPanel"
+        parent: desk
+        x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
+        width: Math.min(520, desk.width - 16)
+        height: fountainWaitContents.implicitHeight + 40
+        padding: 20; modal: true; focus: true
+        closePolicy: Popup.NoAutoClose
+        onClosed: editorPage.focusEditor()
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
+        Column {
+            id: fountainWaitContents
+            width: parent.width; spacing: 14
+            Label { text: "Fountain export in progress"; font.pixelSize: 18 }
+            Label {
+                width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: desk.fountainJob ? desk.fountainJob.status : ""
+            }
+            Row {
+                spacing: 10
+                DeskButton {
+                    objectName: "fountainWaitCancel"; text: "Cancel Export"; ink: "#303843"
+                    enabled: desk.fountainJob !== null && !desk.fountainJob.cancelling
+                    onClicked: desk.fountainJob.cancel()
+                }
+                DeskButton {
+                    objectName: "fountainKeepWaiting"; text: "Keep Waiting"; ink: "#303843"
+                    onClicked: desk.fountainJob.keepWaiting()
+                }
+            }
+        }
+    }
+    Popup {
         id: exportPanel
         objectName: "exportPanel"
         parent: desk
@@ -1225,6 +1266,11 @@ Rectangle {
                 width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
                 text: desk.exportJob ? desk.exportJob.status : ""
             }
+            Label {
+                visible: desk.exportFormat === "fountain" && desk.fountainJob !== null && desk.fountainJob.busy
+                width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: desk.fountainJob ? desk.fountainJob.status : ""
+            }
             Item {
                 width: parent.width; height: exportConfirm.height
                 DeskButton {
@@ -1232,6 +1278,12 @@ Rectangle {
                     visible: desk.exportFormat === "pdf" && desk.exportJob !== null && desk.exportJob.busy
                     enabled: desk.exportJob !== null && !desk.exportJob.cancelling
                     onClicked: { desk.exportJob.cancel(); exportPanel.close() }
+                }
+                DeskButton {
+                    objectName: "fountainCancel"; text: "Cancel Export"; ink: "#303843"
+                    visible: desk.exportFormat === "fountain" && desk.fountainJob !== null && desk.fountainJob.busy
+                    enabled: desk.fountainJob !== null && !desk.fountainJob.cancelling
+                    onClicked: { desk.fountainJob.cancel(); exportPanel.close() }
                 }
                 DeskButton {
                     id: exportConfirm

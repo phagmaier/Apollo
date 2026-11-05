@@ -136,9 +136,19 @@ cancellation/failure preserves existing outputs. Active-project destinations
 and aliases are refused, including after Save a Copy. Required checks pass
 across full runs and final affected rechecks; focused native PDF/leave/copy
 checks pass. See [the contract](pdf-export.md) and
-[task evidence](#task-5a--bounded-pdf-export-lifecycle). Task 5b — Fountain worker
-lifecycle — is next. Broader compatibility, responsiveness and slice 2/6 work
-remain pending.
+[task evidence](#task-5a--bounded-pdf-export-lifecycle). Task 5b below completes
+Fountain's bounded worker lifecycle. Broader compatibility, responsiveness and
+slice 2/6 work remain pending.
+
+**Task 5b — bounded Fountain export lifecycle is done for this bounded step (2026-11-05).**
+Fountain now has a cancellable helper, staged publication, the 30-second
+Cancel/Keep Waiting watchdog, bounded teardown and precise snapshot status.
+Home/Close preserve newer autosaved writing; failures/cancellation keep existing
+outputs. Release and sanitizer suites pass 27/27 each, engine 2/2, final export
+rechecks 28/28 each, and the native Wayland smoke passes. See
+[the contract](fountain-export.md#snapshot-files-and-departure) and
+[task evidence](#task-5b--bounded-fountain-export-lifecycle).
+Task 5c — production export responsiveness and remaining evidence — is next.
 
 ## Intended result and boundary
 
@@ -2298,15 +2308,73 @@ These tests send Qt key/mouse events. Full compositor/physical input, fcitx,
 owner comfort, new sustained latency/crash-loss measurements and filesystem
 stall cancellation are not established by this task.
 
+### Task 5b — bounded Fountain export lifecycle
+
+2026-11-05. **Done for this bounded task.**
+This follows task 5a and applies the agreed fixed-snapshot, cancellation,
+watchdog and bounded-shutdown requirements to Fountain. The
+[contract](fountain-export.md#snapshot-files-and-departure) describes the
+helper process, staged publication, Cancel Export / Keep Waiting, Home/Close,
+exact capture status and preserved eligibility/disclosures. Existing canonical
+bytes and independent aw-parser expectations are unchanged.
+
+The old in-process worker could not safely stop arbitrary stalled work.
+A regression test demonstrated its destructor waiting the full three seconds
+of a stalled worker (`build/task-5b-red.log`). The private `fountain_export`
+helper now owns verification/serialization and writes only the parent's staged
+file. The parent publishes after a clean exit/protocol response; cancellation
+wins even after full serialization, then reaps and removes staging. Teardown
+kills instead of joining indefinitely. Timing instrumentation now reads the
+helper's actual start/verification/end points instead of a thread callback.
+
+Real-helper tests cover startup cancellation, stopped serialized output,
+crash, bad response, failed exit/publication, prior bytes, permissions, cleanup,
+retry, title omission and fixed snapshots after destroying newer live writing.
+Real QML tests cover watchdog rearming, continued typing, Export cancellation,
+Home, pending Close completion/cancellation and newer autosaved writing.
+Destination checks include project/original aliases and the protected root
+after Save a Copy. Existing import/title/spacing flows now hold an actual
+helper rather than a thread hook.
+
+The CLI uses the same job. Its delegated noninteractive policy is to explicitly
+report and cancel after the ordinary 30-second watchdog, returning failure 1;
+there is no window for Keep Waiting. A separate actual-process check uses an
+isolated stopped helper and the production timeout. Review also reproduced the
+new staging-creation failure returning refusal 3 (`build/task-5b-cli-red.log`);
+it now retains the documented write-failure exit 1, while eligibility and
+protected-destination refusals retain 3.
+
+| Check | Result |
+| --- | --- |
+| Regression baselines | Old thread teardown fails the 1.5-second bound; staging creation initially returned CLI refusal 3 instead of failure 1. Both failures are saved in the red logs above |
+| Release | `mise run check`: 27/27 pass, including independent aw-parser. Final strengthened export checks pass 28/28 |
+| Sanitizers | `mise run check-debug`: 27/27 pass with address/undefined sanitizers. Final strengthened export checks pass 28/28 |
+| Engine | `mise run check-engine`: 2/2 pass |
+| Production CLI watchdog | Actual stopped helper cancels at 30.09 s in release / 29.73 s with sanitizers; exit 1, prior bytes, reaping and cleanup pass |
+| Native Wayland/OpenGL/Compose | `QT_IM_MODULE=compose tools/inspect-writing-desk.sh --smoke` passes: navigation 8/8, sample PDF, export lifecycle 28/28, departure/Copy 8/8 |
+| Review | Requirements, implementation, untracked files and test quality reviewed; CLI exit-code finding fixed. No unresolved in-scope findings. `git diff --check` and runner `bash -n` pass |
+
+Final full runs: `build/task-5b-final-release.log`, `build/task-5b-debug.log`
+and `build/task-5b-engine.log`. Final focused export rechecks:
+`build/task-5b-final-export-release.log` and
+`build/task-5b-final-export-debug.log`. These include strengthened project-link
+protection and cancellation remaining reachable in a smaller window after later
+writing becomes ineligible. The first full release run also passed all 26 then
+configured checks (`build/task-5b-release.log`). Native output is saved in
+`build/task-5b-native.log` and `build/desk-review-DIaVxz/`.
+
+The local Academy directory is still empty; no new Academy comparison was
+possible. Hand-derived fixtures, editor/PDF agreement and aw-parser pass;
+layout/profile code is unchanged. Qt Test supplies native key/mouse events.
+Full compositor/physical input, fcitx, owner comfort, sustained responsiveness,
+new crash-loss/memory measurements and cancellation of kernel-level filesystem
+stalls remain unestablished here. Task 5c and broader compatibility/slice 2/6
+work remain open.
+
 ### Upcoming slice 5 tasks
 
-- **5b — bounded Fountain export lifecycle (ready).** Apply the agreed fixed
-  snapshot, cancellation/watchdog and bounded shutdown requirements to Fountain's
-  current in-process worker. Verify actual worker lifecycle, safe existing
-  outputs, retry, typing, Home/Close and truthful snapshot status. Preserve
-  [canonical eligibility](fountain-export.md) and independent aw-parser evidence.
-- **5c — production export responsiveness and remaining evidence (pending).**
-  Depends on 5a/5b. Measure native primary/stress writing with autosave and all
+- **5c — production export responsiveness and remaining evidence (ready).**
+  Depends on completed 5a/5b. Measure native primary/stress writing with autosave and all
   current assistance enabled, including Fountain/PDF exports while typing,
   saved output correctness and independent layout fixtures. Record cold/warm
   launch, save age, stalls and memory with honest measurement limits. This does

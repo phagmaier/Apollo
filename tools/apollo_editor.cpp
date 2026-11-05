@@ -437,7 +437,18 @@ int export_fountain(const char* path, const QString& destination, bool include_t
   bool success = false;
   QEventLoop loop;
   QObject::connect(&job, &apollo::editor::FountainExportJob::completed, &loop, [&](bool ok) { success = ok; loop.quit(); });
-  if (!job.request(destination, include_title)) { std::cerr << job.status().toStdString() << '\n'; return 3; }
+  // There is no window in this saved-writing command to offer Keep Waiting.
+  // Fail explicitly after the ordinary watchdog rather than wait indefinitely.
+  QObject::connect(&job, &apollo::editor::FountainExportJob::changed, &loop, [&] {
+    if (job.attention()) {
+      std::cerr << "Fountain export exceeded the 30-second command-line timeout; cancelling.\n";
+      job.cancel();
+    }
+  });
+  if (!job.request(destination, include_title)) {
+    std::cerr << job.status().toStdString() << '\n';
+    return job.status().startsWith(QStringLiteral("Fountain export failed")) ? 1 : 3;
+  }
   loop.exec();
   (success ? std::cout : std::cerr) << job.status().toStdString() << '\n';
   return success ? 0 : job.status().startsWith(QStringLiteral("Fountain export blocked")) ? 3 : 1;

@@ -43,6 +43,7 @@ QQuickItem* show_editor(QQuickView& view, QTextDocument& document, PdfExportJob*
   // flag set here, or every keystroke rebuilds nodes for every page.
   editor->setFlag(QQuickItem::ItemObservesViewport);
   if (export_job) export_job->guard_close(view);
+  if (fountain_job) fountain_job->guard_close(view);
   return editor;
 }
 }

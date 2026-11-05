@@ -89,6 +89,9 @@ if(APOLLO_BUILD_EDITOR)
   target_link_libraries(fountain_export_tests PRIVATE apollo_source Qt6::Test)
   target_compile_definitions(fountain_export_tests PRIVATE APOLLO_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
   add_test(NAME fountain_export_tests COMMAND fountain_export_tests)
+  add_executable(fountain_export tools/fountain_export.cpp)
+  target_link_libraries(fountain_export PRIVATE apollo_source apollo_export_snapshot)
+  target_compile_options(fountain_export PRIVATE -Wall -Wextra -Wpedantic)
   include(cmake/Spelling.cmake)
   add_library(apollo_editor_core editor/screenplay_layout.cpp editor/editor_commands.cpp editor/writing_suggestions.cpp editor/spelling.cpp editor/find_replace.cpp editor/editor_view.cpp editor/pdf_export_job.cpp editor/fountain_export_job.cpp
                                  editor/autosave.cpp editor/session_state.cpp editor/project_library.cpp editor/project_access_flow.cpp)
@@ -102,13 +105,13 @@ if(APOLLO_BUILD_EDITOR)
   target_compile_definitions(apollo_editor_core PRIVATE APOLLO_INTAKE_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/ImportedMaterial.qml")
   add_executable(apollo_editor tools/apollo_editor.cpp)
   target_link_libraries(apollo_editor PRIVATE apollo_editor_core apollo_pdf)
-  add_dependencies(apollo_editor pdf_export)
+  add_dependencies(apollo_editor pdf_export fountain_export)
   add_executable(measure_fountain_workflow tools/measure-fountain-workflow.cpp)
   target_link_libraries(measure_fountain_workflow PRIVATE apollo_editor_core Qt6::Test)
   target_compile_options(measure_fountain_workflow PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_definitions(measure_fountain_workflow PRIVATE
     APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime")
-  add_dependencies(measure_fountain_workflow pdf_export)
+  add_dependencies(measure_fountain_workflow pdf_export fountain_export)
   add_executable(project_access_tests tests/project_access_tests.cpp)
   set_target_properties(project_access_tests PROPERTIES AUTOMOC ON)
   target_link_libraries(project_access_tests PRIVATE apollo_source Qt6::Test)
@@ -132,7 +135,7 @@ if(APOLLO_BUILD_EDITOR)
     APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime"
     APOLLO_IMPORT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/import"
     APOLLO_ARTIFACT_DIR="${CMAKE_CURRENT_BINARY_DIR}/project-access-tests")
-  add_dependencies(project_access_flow_tests pdf_export)
+  add_dependencies(project_access_flow_tests pdf_export fountain_export)
   add_test(NAME project_access_flow_tests COMMAND project_access_flow_tests)
   set_tests_properties(project_access_flow_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   target_compile_definitions(apollo_editor PRIVATE APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime")
@@ -178,7 +181,7 @@ if(APOLLO_BUILD_EDITOR)
   target_compile_definitions(export_job_tests PRIVATE
     APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime"
     APOLLO_EXPORTER="$<TARGET_FILE:pdf_export>")
-  add_dependencies(export_job_tests pdf_export)
+  add_dependencies(export_job_tests pdf_export fountain_export)
   add_test(NAME export_job_tests COMMAND export_job_tests)
   set_tests_properties(export_job_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   add_test(NAME editor_pdf_tests COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/tests/editor_pdf_tests.py"
@@ -192,6 +195,9 @@ if(APOLLO_BUILD_EDITOR)
     --editor "$<TARGET_FILE:apollo_editor>" --source "${CMAKE_CURRENT_SOURCE_DIR}/prototype/The Last Broadcast.fountain"
     --output "${CMAKE_CURRENT_BINARY_DIR}/project-lock-tests")
   set_tests_properties(project_lock_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+  add_test(NAME fountain_export_lifecycle_process_tests COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/tests/fountain_export_lifecycle_process_tests.py"
+    --editor "$<TARGET_FILE:apollo_editor>" --output "${CMAKE_CURRENT_BINARY_DIR}/fountain-export-lifecycle-tests")
+  set_tests_properties(fountain_export_lifecycle_process_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
   add_test(NAME fountain_export_process_tests COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/tests/fountain_export_process_tests.py"
     --editor "$<TARGET_FILE:apollo_editor>" --flow-tests "$<TARGET_FILE:project_access_flow_tests>"
     --output "${CMAKE_CURRENT_BINARY_DIR}/fountain-export-process-tests")

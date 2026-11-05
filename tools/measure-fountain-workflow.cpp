@@ -345,8 +345,6 @@ QJsonObject export_panel(QQuickView& view, Controls& controls, FountainExportJob
   require(job.check(true).isEmpty(), "fountain_snapshot_ineligible");
   controls.text("fountainDestination", destination);
   const auto point = controls.prepare_click("exportConfirm");
-  auto verified = std::make_shared<std::atomic<qint64>>(0);
-  job.set_worker_hook([verified] { verified->store(now_ns()); });
   bool completed = false, success = false;
   qint64 busy_ns = 0, complete_ns = 0;
   const auto changed = QObject::connect(&job, &FountainExportJob::changed, &view, [&] {
@@ -361,16 +359,15 @@ QJsonObject export_panel(QQuickView& view, Controls& controls, FountainExportJob
   const auto returned_ns = now_ns();
   require(job.busy() || completed, "fountain_panel_did_not_request_export");
   wait_until([&] { return completed; }, "fountain_export_timeout");
-  require(success && !job.busy() && busy_ns && verified->load(), "fountain_export_not_verified");
-  job.set_worker_hook({});
+  require(success && !job.busy() && busy_ns && job.worker_verified_ns(), "fountain_export_not_verified");
   require(QFileInfo(destination).isFile() && QFileInfo(destination).size() > 0, "fountain_export_missing");
   return {{"request_to_complete_ms", ms(complete_ns - request_ns)},
           {"mouse_handler_capture_dispatch_upper_bound_ms", ms(returned_ns - request_ns)},
           {"request_to_busy_signal_ms", ms(busy_ns - request_ns)},
-          {"busy_signal_to_worker_verified_ms", ms(verified->load() - busy_ns)},
-          {"worker_verified_to_gui_complete_ms", ms(complete_ns - verified->load())},
-          {"worker_runtime_ms", QJsonValue::Null},
-          {"timing_limits", "Busy signal precedes worker launch; verified hook follows serialization and verification, before atomic write. No worker-start/worker-end instrumentation exists."}};
+          {"busy_signal_to_worker_verified_ms", ms(job.worker_verified_ns() - busy_ns)},
+          {"worker_verified_to_gui_complete_ms", ms(complete_ns - job.worker_verified_ns())},
+          {"worker_runtime_ms", ms(job.worker_end_ns() - job.worker_start_ns())},
+          {"timing_limits", "Busy signal follows dispatch; helper timings use the shared steady clock. Verified follows serialization and verification; completion includes staging, process exit and parent publication."}};
 }
 
 QJsonObject run(const Original& original, const QString& root, int keys) {

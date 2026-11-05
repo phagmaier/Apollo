@@ -1,3 +1,5 @@
+#include "editor/fountain_export_job.h"
+#include "tests/fountain_worker.h"
 #include "editor/pdf_export_job.h"
 #include "editor/screenplay_layout.h"
 #include "fountain/import.h"
@@ -92,6 +94,170 @@ private slots:
       original.close();
       QVERIFY(QDir(directory.path()).entryList({".apollo-export-*"}, QDir::Files | QDir::Hidden).isEmpty());
     }
+  }
+
+  void fountain_destruction_bounds_stalled_work() {
+    QTemporaryDir directory;
+    QFile output(directory.filePath("existing.fountain"));
+    QVERIFY(output.open(QIODevice::WriteOnly)); output.write("previous Fountain"); output.close();
+    auto document = screenplay_document({{ElementType::action, "A lamp."}}, courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+    QElapsedTimer elapsed;
+    qint64 pid = 0;
+    {
+      FountainExportJob job(document.get(), directory.filePath("Project"));
+      HeldFountainWorker held(job, directory.filePath("held-worker"));
+      QVERIFY(job.request(output.fileName()));
+      QTRY_VERIFY(held.stopped());
+      pid = job.worker_pid();
+      elapsed.start();
+    }
+    QVERIFY2(elapsed.elapsed() < 1500, "Fountain teardown must not wait for stalled work");
+    errno = 0; QCOMPARE(::kill(static_cast<pid_t>(pid), 0), -1); QCOMPARE(errno, ESRCH);
+    QVERIFY(QDir(directory.path()).entryList({".apollo-fountain-*"}, QDir::Files | QDir::Hidden).isEmpty());
+    QCoreApplication::processEvents();
+    QVERIFY(output.open(QIODevice::ReadOnly));
+    QCOMPARE(output.readAll(), QByteArray("previous Fountain"));
+  }
+
+  void fountain_snapshot_busy_and_retry() {
+    QTemporaryDir directory;
+    auto document = screenplay_document({{ElementType::title, "SNAPSHOT"},
+        {ElementType::heading, "int. room - day"}, {ElementType::action, "A lamp turns.", false, {{2, 6, Style::bold}}}},
+        courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+    FountainExportJob job(document.get(), directory.filePath("Project"));
+    HeldFountainWorker held(job, directory.filePath("held-worker"));
+    QFile output(directory.filePath("snapshot.fountain"));
+    QVERIFY(output.open(QIODevice::WriteOnly)); output.write("previous Fountain"); output.close();
+    const auto permissions = QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup;
+    QVERIFY(output.setPermissions(permissions));
+    QSignalSpy done(&job, &FountainExportJob::completed);
+    QVERIFY(job.request(output.fileName(), false));
+    const auto capture = job.status().section(" from ", 1).section(" to ", 0, 0);
+    QVERIFY(QRegularExpression("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$").match(capture).hasMatch());
+    QTRY_VERIFY(held.stopped());
+    QVERIFY(!job.request(directory.filePath("rejected.fountain"), true));
+    document->setPlainText(QString::fromUtf8("Later unsupported 🚀 text."));
+    document.reset();
+    QVERIFY(held.resume());
+    QTRY_COMPARE(done.size(), 1);
+    QVERIFY(done.front().front().toBool());
+    QVERIFY(output.open(QIODevice::ReadOnly));
+    QCOMPARE(output.readAll(), QByteArray("INT. ROOM - DAY\n\nA **lamp** turns.\n")); output.close();
+    QCOMPARE(QFileInfo(output).permissions() & (QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup | QFile::WriteGroup | QFile::ReadOther | QFile::WriteOther), permissions);
+    QVERIFY(job.status().contains(capture));
+    QVERIFY(job.status().contains("Later edits are not included."));
+    QVERIFY(job.status().contains("Title page left out by choice."));
+    QVERIFY(job.status().contains("typed in lowercase"));
+    QVERIFY(!QFile::exists(directory.filePath("rejected.fountain")));
+    QVERIFY(QDir(directory.path()).entryList({".apollo-fountain-*"}, QDir::Files | QDir::Hidden).isEmpty());
+  }
+
+  void fountain_cancellation_failure_and_retry_data() {
+    QTest::addColumn<QString>("mode");
+    for (const auto* mode : {"cancel-start", "cancel-staged", "crash-staged", "failed-exit", "bad-response", "missing-worker", "publish-failure"})
+      QTest::newRow(mode) << QString::fromLatin1(mode);
+  }
+  void fountain_cancellation_failure_and_retry() {
+    QFETCH(QString, mode);
+    QTemporaryDir directory;
+    auto document = screenplay_document({{ElementType::action, "A lamp."}}, courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+    FountainExportJob job(document.get(), directory.filePath("Project"));
+    HeldFountainWorker held(job, directory.filePath("worker"));
+    if (mode == "missing-worker") job.set_worker_program(directory.filePath("missing-worker"));
+    if (mode == "failed-exit" || mode == "bad-response") {
+      QFile wrapper(directory.filePath("worker"));
+      QVERIFY(wrapper.open(QIODevice::WriteOnly));
+      // A bad helper may write the staging file; without a successful protocol
+      // response and clean exit it still cannot replace the existing output.
+      wrapper.write("#!/bin/sh\necho partial > \"$1\"\n");
+      wrapper.write(mode == "failed-exit" ? "exit 1\n" : "echo garbage\nexit 0\n");
+    }
+    QFile output(directory.filePath("existing.fountain"));
+    QVERIFY(output.open(QIODevice::WriteOnly)); output.write("previous Fountain"); output.close();
+    QSignalSpy done(&job, &FountainExportJob::completed);
+    QVERIFY(job.request(output.fileName()));
+    if (mode.endsWith("staged") || mode == "publish-failure") QTRY_VERIFY(held.stopped());
+    if (mode == "publish-failure") {
+      // Destination changed after capture: rename must fail without publishing
+      // or losing the prior file moved safely aside by its owner.
+      QVERIFY(output.rename(directory.filePath("previous.fountain")));
+      QVERIFY(QDir().mkdir(directory.filePath("existing.fountain")));
+      QVERIFY(held.resume());
+    }
+    const auto pid = job.worker_pid();
+    if (mode.startsWith("cancel")) { job.cancel(); job.cancel(); }
+    if (mode == "crash-staged") QVERIFY(::kill(static_cast<pid_t>(pid), SIGKILL) == 0);
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 2000);
+    QVERIFY(!done.front().front().toBool());
+    QVERIFY(!job.busy()); QVERIFY(!job.attention()); QVERIFY(!job.cancelling());
+    QVERIFY(job.status().contains(mode.startsWith("cancel") ? "cancelled" : "failed"));
+    if (pid) { errno = 0; QCOMPARE(::kill(static_cast<pid_t>(pid), 0), -1); QCOMPARE(errno, ESRCH); }
+    QVERIFY(output.open(QIODevice::ReadOnly));
+    QCOMPARE(output.readAll(), QByteArray("previous Fountain")); output.close();
+    QVERIFY(QDir(directory.path()).entryList({".apollo-fountain-*"}, QDir::Files | QDir::Hidden).isEmpty());
+    if (mode == "publish-failure") {
+      QVERIFY(QDir().rmdir(directory.filePath("existing.fountain")));
+      QVERIFY(output.rename(directory.filePath("existing.fountain")));
+    }
+    job.set_worker_program({});
+    QVERIFY(job.request(output.fileName()));
+    QTRY_COMPARE(done.size(), 2);
+    QVERIFY(done.back().front().toBool());
+    QVERIFY(output.open(QIODevice::ReadOnly)); QCOMPARE(output.readAll(), QByteArray("A lamp.\n"));
+  }
+
+  void fountain_watchdog_and_controls_keep_waiting_then_cancel() {
+    QTemporaryDir directory;
+    auto document = screenplay_document({{ElementType::action, "A lamp."}}, courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+    FountainExportJob job(document.get(), directory.filePath("Project"));
+    HeldFountainWorker held(job, directory.filePath("worker"));
+    job.set_watchdog_interval(500);
+    QQuickView view;
+    auto* editor = show_editor(view, *document, nullptr, directory.filePath("output.pdf"), nullptr, &job);
+    view.resize(1000, 800); view.show(); view.requestActivate(); editor->forceActiveFocus();
+    QVERIFY(QTest::qWaitForWindowActive(&view));
+    auto click = [&](const char* name) {
+      QTest::qWait(30);
+      auto* item = view.rootObject()->findChild<QQuickItem*>(QString::fromLatin1(name));
+      if (!item || !item->isVisible() || !item->isEnabled()) return false;
+      QTest::mouseClick(&view, Qt::LeftButton, Qt::NoModifier, item->mapToScene(item->boundingRect().center()).toPoint());
+      return true;
+    };
+    QSignalSpy done(&job, &FountainExportJob::completed);
+    const auto path = directory.filePath("cancelled.fountain");
+    QVERIFY(job.request(path));
+    auto* panel = view.rootObject()->findChild<QObject*>("fountainWaitPanel");
+    QVERIFY(panel); QTRY_VERIFY(panel->property("opened").toBool());
+    QVERIFY(click("fountainKeepWaiting"));
+    QTRY_VERIFY(!panel->property("visible").toBool());
+    QVERIFY(job.busy()); QVERIFY(!job.attention()); QVERIFY(done.isEmpty());
+    QTest::keyClick(&view, Qt::Key_End, Qt::ControlModifier);
+    QTest::keyClick(&view, Qt::Key_X);
+    QVERIFY(document->toPlainText().endsWith('x'));
+    QTRY_VERIFY(panel->property("opened").toBool());
+    QVERIFY(click("fountainWaitCancel"));
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 2000);
+    QVERIFY(!done.front().front().toBool()); QVERIFY(!QFile::exists(path));
+    QTRY_VERIFY(!panel->property("visible").toBool());
+    job.set_watchdog_interval(30000);
+    QVERIFY(job.request(path));
+    // Later ineligible writing can produce a long disclosure. It must not
+    // push cancellation of the already accepted snapshot outside the window.
+    document->setPlainText(QString::fromUtf8("Later unsupported 🚀 text.\n").repeated(12));
+    QVERIFY(!job.check(true).isEmpty());
+    view.resize(1000, 600);
+    QVERIFY(click("exportButton"));
+    auto* options = view.rootObject()->findChild<QObject*>("exportPanel");
+    QTRY_VERIFY(options->property("opened").toBool());
+    QVERIFY(click("exportFormatFountain"));
+    QTest::qWait(30);
+    auto* cancel = view.rootObject()->findChild<QQuickItem*>("fountainCancel");
+    QVERIFY(cancel);
+    QVERIFY2(cancel->mapToScene(QPointF(0, cancel->height())).y() <= view.height(),
+             "Cancel Export must remain reachable when later writing is ineligible");
+    QVERIFY(click("fountainCancel"));
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 2, 2000);
+    QVERIFY(!done.back().front().toBool());
   }
 
   void destruction_bounds_a_stalled_worker_and_preserves_destination() {
@@ -292,6 +458,37 @@ private slots:
     QVERIFY(source.open(QIODevice::ReadOnly)); QCOMPARE(source.readAll(), QByteArray("retained writing"));
     QVERIFY(!QFile::exists(project + "/imports/new.pdf"));
     QVERIFY(QDir(project).entryList({".apollo-export-*"}, QDir::Files | QDir::Hidden).isEmpty());
+  }
+
+  void fountain_project_and_original_aliases_are_protected() {
+    QTemporaryDir directory;
+    const auto project = directory.filePath("Project");
+    QVERIFY(QDir().mkpath(project + "/imports"));
+    QFile source(project + "/screenplay.json");
+    QVERIFY(source.open(QIODevice::WriteOnly)); source.write("retained writing"); source.close();
+    QFile original(directory.filePath("original.fountain"));
+    QVERIFY(original.open(QIODevice::WriteOnly)); original.write("original writing"); original.close();
+    auto document = screenplay_document({{ElementType::action, "A lamp."}}, courier_prime(QStringLiteral(APOLLO_FONT_DIR)));
+    FountainExportJob job(document.get(), project, {}, {original.fileName()});
+    QVERIFY(!job.request(source.fileName()));
+    QVERIFY(!job.request(project + "/imports/new.fountain"));
+    QVERIFY(QFile::link(source.fileName(), directory.filePath("alias.fountain")));
+    QVERIFY(!job.request(directory.filePath("alias.fountain")));
+    QVERIFY(QFile::link(project, directory.filePath("project-alias")));
+    QVERIFY(!job.request(directory.filePath("project-alias/new.fountain")));
+    QFile outside(directory.filePath("outside.fountain"));
+    QVERIFY(outside.open(QIODevice::WriteOnly)); outside.write("outside evidence"); outside.close();
+    QVERIFY(QFile::link(outside.fileName(), project + "/linked.fountain"));
+    QVERIFY(!job.request(directory.filePath("project-alias/linked.fountain")));
+    QVERIFY(!job.request(project + "/linked.fountain"));
+    QVERIFY(job.status().contains("outside the project folder"));
+    QVERIFY(QFile::link(original.fileName(), directory.filePath("original-alias.fountain")));
+    QVERIFY(!job.request(directory.filePath("original-alias.fountain")));
+    QVERIFY(job.status().contains("never replaces it"));
+    QVERIFY(outside.open(QIODevice::ReadOnly)); QCOMPARE(outside.readAll(), QByteArray("outside evidence"));
+    QVERIFY(original.open(QIODevice::ReadOnly)); QCOMPARE(original.readAll(), QByteArray("original writing"));
+    QVERIFY(source.open(QIODevice::ReadOnly)); QCOMPARE(source.readAll(), QByteArray("retained writing"));
+    QVERIFY(!QFile::exists(project + "/imports/new.fountain"));
   }
 
   void worker_fails_after_writing_complete_pdf() {

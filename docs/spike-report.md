@@ -187,8 +187,9 @@ settings, packaging, or other product feature implementation in this work.
   imports and every possible in-progress editing state are not proven.
 - At the spike checkpoint no export cancellation/timeout policy existed.
   Writing-build task 5a now adds PDF Cancel/Keep Waiting, a watchdog and bounded
-  helper teardown; see [its contract](pdf-export.md). Fountain worker lifecycle
-  and full export responsiveness validation remain separate work.
+  helper teardown; see [its contract](pdf-export.md). Task 5b adds the equivalent
+  [Fountain lifecycle](fountain-export.md#snapshot-files-and-departure). Full
+  export responsiveness validation remains separate work.
 - Native tests use virtual keyboard input through fcitx5, with earlier owner
   observations for manual typing. Extended comfort, physical Compose input,
   cold launch, peak memory, and other machines/Qt upgrades remain unverified.

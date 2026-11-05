@@ -1,3 +1,4 @@
+#include "tests/fountain_worker.h"
 #include "editor/project_access_flow.h"
 #include "editor/autosave.h"
 #include "editor/pdf_export_job.h"
@@ -641,30 +642,17 @@ private slots:
       QCOMPARE(saved, authored);
       // Capture before the next form Apply. Later title edits must not enter
       // the accepted worker snapshot, even though autosave includes them.
-      std::mutex mutex;
-      std::condition_variable condition;
-      bool released = false;
-      std::atomic<bool> entered = false;
-      job->set_worker_hook([&] {
-        std::unique_lock lock(mutex);
-        entered = true;
-        condition.wait(lock, [&] { return released; });
-      });
-      const auto release = qScopeGuard([&] {
-        { std::lock_guard lock(mutex); released = true; }
-        condition.notify_all();
-      });
+      HeldFountainWorker held(*job, path("held-fountain-worker"));
       QVERIFY(job->request(output));
-      QTRY_VERIFY(entered.load());
+      QTRY_VERIFY(held.stopped());
       QVERIFY(window.click("titlePageButton"));
       QVERIFY(fill("titleField_title_0", "THE LATER SIGNAL"));
       QVERIFY(window.click("titleApply"));
       QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
-      { std::lock_guard lock(mutex); released = true; }
-      condition.notify_all();
+      QVERIFY(held.resume());
       QTRY_VERIFY(!job->busy());
       QCOMPARE(bytes(output), expected);
-      job->set_worker_hook({});
+      job->set_worker_program({});
       // Clearing an existing field preserves the blank in source, rather
       // than silently removing imported/authored metadata. Omission bypasses
       // only title checks, never body eligibility.
@@ -1755,25 +1743,13 @@ private slots:
                                         "The project keeps the case as typed."));
       // The accepted snapshot is fixed: typing continues while the worker is
       // held, and the later words are saved but not exported.
-      std::mutex mutex;
-      std::condition_variable condition;
-      bool released = false;
-      std::atomic<bool> entered = false;
-      job->set_worker_hook([&] {
-        std::unique_lock lock(mutex);
-        entered = true;
-        condition.wait(lock, [&] { return released; });
-      });
-      const auto release = qScopeGuard([&] {
-        { std::lock_guard lock(mutex); released = true; }
-        condition.notify_all();
-      });
+      HeldFountainWorker held(*job, path("held-fountain-worker"));
       QVERIFY(window.click("exportButton"));
       QTRY_VERIFY(window.popup_open("exportPanel"));
       QVERIFY(eligibility().startsWith("Ready."));
       QVERIFY(eligibility().contains("1 character cue typed in lowercase"));
       QVERIFY(window.click("exportConfirm"));
-      QTRY_VERIFY(entered.load());
+      QTRY_VERIFY(held.stopped());
       QVERIFY(job->busy());
       QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
       const auto end = window.flow.document()->lastBlock();
@@ -1782,10 +1758,9 @@ private slots:
       QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
       QCOMPARE(open_project(working).screenplay.elements.back().text, std::string("Here. Later."));
       QVERIFY(window.item("operationStatus")->property("text").toString().startsWith("Exporting Fountain snapshot from"));
-      { std::lock_guard lock(mutex); released = true; }
-      condition.notify_all();
+      QVERIFY(held.resume());
       QTRY_VERIFY(!job->busy());
-      job->set_worker_hook({});
+      job->set_worker_program({});
       QCOMPARE(bytes(exported), expected("writer-subset-edited.fountain"));
       QVERIFY(window.item("operationStatus")->property("text").toString().startsWith("Fountain snapshot from"));
       for (int i = 0; i < 7; ++i) QTest::keyClick(&window.view, Qt::Key_Backspace);
@@ -1816,7 +1791,7 @@ private slots:
       replace_file(locked + "/script.fountain", "Existing Fountain evidence");
       QVERIFY(QFile::setPermissions(locked, QFile::ReadOwner | QFile::ExeOwner));
       const auto restore = qScopeGuard([&] { QFile::setPermissions(locked, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner); });
-      QVERIFY(job->request(locked + "/script.fountain"));
+      QVERIFY(!job->request(locked + "/script.fountain"));
       QTRY_VERIFY(!job->busy());
       QVERIFY(job->status().startsWith("Fountain export failed:"));
       QVERIFY(job->status().endsWith("Any existing file there is unchanged."));
@@ -1837,16 +1812,10 @@ private slots:
     QTRY_VERIFY(window.flow.document());
     auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
     QVERIFY(job && job->omissions().isEmpty());
-    std::mutex mutex;
-    std::condition_variable condition;
-    bool released = false;
-    job->set_worker_hook([&] { std::unique_lock lock(mutex); condition.wait(lock, [&] { return released; }); });
-    const auto release = qScopeGuard([&] {
-      { std::lock_guard lock(mutex); released = true; }
-      condition.notify_all();
-    });
+    HeldFountainWorker held(*job, path("held-fountain-worker"));
     const auto output = path("native") + ".fountain";
     QVERIFY(job->request(output));
+    QTRY_VERIFY(held.stopped());
     window.type(QStringLiteral("Later "));
     QVERIFY(window.click("goHome"));
     QTRY_VERIFY(window.flow.leaving());
@@ -1854,8 +1823,7 @@ private slots:
     QTimer::singleShot(0, [&] { heartbeat = true; });
     QTRY_VERIFY(heartbeat);
     QVERIFY(window.flow.document());
-    { std::lock_guard lock(mutex); released = true; }
-    condition.notify_all();
+    QVERIFY(held.resume());
     QTRY_VERIFY(!window.flow.document());
     QCOMPARE(bytes(output), QByteArray("Current writing.\n\nSecond paragraph.\n"));
     QCOMPARE(open_project(p.directory).screenplay.elements.front().text, std::string("Later Current writing."));
@@ -2232,6 +2200,10 @@ private slots:
       const auto saved = bytes(destination + "/screenplay.json");
       QVERIFY(!pdf->request(destination + "/screenplay.json"));
       QVERIFY(pdf->status().contains("outside the project folder"));
+      auto* fountain = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+      QVERIFY(fountain);
+      QVERIFY(!fountain->request(destination + "/screenplay.json"));
+      QVERIFY(fountain->status().contains("outside the project folder"));
       QCOMPARE(bytes(destination + "/screenplay.json"), saved);
       QTRY_VERIFY(SessionState(state).load().has_value());
       QTRY_COMPARE(SessionState(state).load()->directory, destination);
@@ -2525,6 +2497,52 @@ private slots:
     else QTRY_VERIFY(!window.flow.document());
     QCOMPARE(done.size(), 1); QVERIFY(!done.front().front().toBool());
     QCOMPARE(bytes(output), QByteArray("previous PDF"));
+    QCOMPARE(open_project(p.directory).screenplay.elements.front().text,
+             closing ? std::string("Before leaving Later Current writing.") : std::string("Before leaving Current writing."));
+  }
+
+  void stalled_fountain_can_be_cancelled_while_leaving_data() {
+    QTest::addColumn<bool>("closing");
+    QTest::addColumn<bool>("cancel");
+    QTest::newRow("Home cancel") << false << true;
+    QTest::newRow("Close cancel") << true << true;
+    QTest::newRow("Close success") << true << false;
+  }
+  void stalled_fountain_can_be_cancelled_while_leaving() {
+    QFETCH(bool, closing); QFETCH(bool, cancel);
+    const auto p = project();
+    Window window(font_, path("session"), p.directory);
+    QTRY_VERIFY(window.flow.document());
+    auto* job = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+    QVERIFY(job);
+    HeldFountainWorker held(*job, path("held-fountain-worker"));
+    job->set_watchdog_interval(1000);
+    const auto output = path("retained-fountain") + ".fountain";
+    replace_file(output, "previous Fountain");
+    QSignalSpy done(job, &FountainExportJob::completed);
+    QVERIFY(job->request(output));
+    window.type(QStringLiteral("Before leaving "));
+    QTRY_COMPARE(window.flow.autosaver()->state(), QStringLiteral("saved"));
+    if (closing) window.view.close();
+    else QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(window.popup_open("fountainWaitPanel"));
+    QVERIFY(window.view.isVisible());
+    QVERIFY(window.flow.document());
+    if (closing) {
+      QVERIFY(window.click("fountainKeepWaiting"));
+      QTRY_VERIFY(!window.popup_open("fountainWaitPanel"));
+      // The close retried after export must still save newer writing.
+      window.type(QStringLiteral("Later "));
+      QTRY_VERIFY(window.popup_open("fountainWaitPanel"));
+    }
+    if (cancel) QVERIFY(window.click("fountainWaitCancel"));
+    else QVERIFY(held.resume());
+    // Home destroys the job only after its completion; use file/session results
+    // as the durable oracle rather than dereferencing that released job.
+    if (closing) QTRY_VERIFY(!window.view.isVisible());
+    else QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(done.size(), 1); QCOMPARE(done.front().front().toBool(), !cancel);
+    QCOMPARE(bytes(output), cancel ? QByteArray("previous Fountain") : QByteArray("Current writing.\n\nSecond paragraph.\n"));
     QCOMPARE(open_project(p.directory).screenplay.elements.front().text,
              closing ? std::string("Before leaving Later Current writing.") : std::string("Before leaving Current writing."));
   }

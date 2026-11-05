@@ -160,18 +160,62 @@ or explicitly, undoably treated as action.
 
 ## Snapshot, files and departure
 
-- The request captures the document on the GUI thread and runs the linear
-  checks there; verification, serialization and replacement run on a worker.
-  Writing, autosave and undo continue. The status names the capture time, e.g.
-  `Fountain snapshot from 17:36:37 exported to …`, without implying later edits.
-- The destination is replaced through `QSaveFile`: a refusal, blocked snapshot,
-  failed write or interrupted worker leaves any existing file unchanged.
-- Destinations inside the active project folder (updated after Save a Copy) and
-  the external file an import came from are refused. Review-only intakes cannot
-  export; use **Edit in a New Copy** first.
-- Leaving for Home or closing waits for an accepted Fountain export. Fountain
-  cancellation/watchdog work remains pending; PDF now has its separate
-  [bounded lifecycle](pdf-export.md).
+Task **5b** (2026-11-05) replaces the in-process worker with a bounded helper
+lifecycle. The canonical contract, per-snapshot eligibility, independent
+aw-parser gate and imported PDF restriction remain unchanged.
+
+- The request captures owned document elements, styles, dual flags and the
+  title choice on the GUI thread and runs the explicit eligibility checks there.
+  The `fountain_export` helper verifies and serializes this fixed snapshot;
+  writing, autosave, assistance and Undo continue separately. Busy and success
+  status identify the capture date/time to milliseconds. Success explicitly
+  says later edits are not included and retains title/case/spacing/import
+  omission disclosures. Only one Fountain request runs at a time.
+- The parent creates an owned temporary file on the destination filesystem.
+  The helper writes only that staging file. A clean helper exit and valid timing
+  response permit the parent to publish through atomic rename, retaining
+  existing destination permissions. Failure or cancellation preserves existing
+  destination bytes and removes staging after reaping the helper. Cancellation
+  wins even after the helper has serialized a complete file but before its exit
+  is accepted. The saved-writing CLI uses this same helper and publication path.
+- Destinations inside the active project folder (updated after Save a Copy),
+  file/parent aliases into it, and the external original an import came from
+  are refused. A path within the project remains refused even if its final
+  symlink points outside. Review-only intakes cannot export; use **Edit in a
+  New Copy** first.
+- Reopen **Export** → **Fountain** for **Cancel Export**. Cancellation kills
+  asynchronously and stays busy until the helper is reaped; it reports
+  cancellation separately from failure. A subsequent request can retry.
+- After 30 seconds, **Cancel Export / Keep Waiting** appears. Keep Waiting
+  returns focus to writing and starts another 30-second interval without
+  replacing the accepted snapshot. Tests shorten the timer through a C++ seam.
+- Home drains saves and the accepted export asynchronously; watchdog cancellation
+  lets it finish if the helper has stopped. Close offers Cancel Export / Keep
+  Waiting immediately. Keep Waiting retains the pending close; completion or
+  cancellation retries through autosave, protecting writing entered afterward.
+  Save/recovery failure choices remain in force.
+- Teardown without an event loop kills unfinished work and waits up to one
+  second for process completion, then removes staging without publication.
+  Normal departure uses the asynchronous choices above. Kernel-level filesystem
+  stalls during capture, staging creation or publication are not established
+  as cancellable here; production responsiveness measurements remain task 5c.
+
+`export_job_tests` checks actual helper startup/stops, cancellation after full
+serialization, process reaping, bounded destruction, crashes, failed exits,
+malformed responses, publication failure, retry, exact prior bytes, permissions
+and temporary cleanup. Its fixed-snapshot case destroys the changed live
+writing, then compares the export with hand-written canonical text. Real QML
+controls check watchdog rearming, typing and explicit cancellation. Project
+flows check Home/Close, success after pending Close, newer autosaved writing,
+Save a Copy destination protection, and unchanged import/title/case/spacing
+exports. Existing process/aw-parser checks exercise the same QML helper path.
+
+Run `QT_IM_MODULE=compose tools/inspect-writing-desk.sh --smoke` for the focused
+native Wayland path and saved logs, including both exports' lifecycle/departure
+checks. Qt Test supplies their key/mouse events. Full compositor/physical input,
+fcitx, sustained responsiveness and owner comfort are separate evidence. See
+[the task result](writing-build-plan.md#task-5b--bounded-fountain-export-lifecycle)
+for actual verification outcomes and limits.
 
 ## Using it
 
@@ -182,6 +226,8 @@ or explicitly, undoably treated as action.
 - Command line, from the saved writing (no lock; a live writer's unsaved edits
   are not included): `build/release/apollo_editor PROJECT --export-fountain
   OUT.fountain [--no-title-page]`. Exit 0 exported, 3 blocked/refused, 1 failed.
+  With no window to offer Keep Waiting, this command explicitly reports and
+  cancels a helper that exceeds 30 seconds, exits 1 and preserves existing output.
 
 ## Evidence
 
@@ -191,6 +237,7 @@ Independent expectations are in [fixtures/export](../fixtures/export/README.md).
 | --- | --- |
 | `fountain_export_tests` | Hand-written canonical text for the whole writer-subset model, with and without title page, and of the lowercase case and spacing models; 35 hand-written spelling cases (forcing, prefixes, cues, dual, nested emphasis, escapes, multi-value title fields, lowercase headings and cues, line-edge spaces, blank dialogue lines, repeated spaces); 36 refusal cases with located reasons; case and spacing disclosure counts; per-snapshot eligibility changes; omission counts; size bound; explanation coverage |
 | `project_access_flow_tests` | Real QML controls: import → Edit in a New Copy → panel disclosure → export equal to hand-written text; real-key edits: a space left after a break is eligible and disclosed, a speech beginning with a blank line and an empty element block and recover; a separate flow types a space before a break and a blank dialogue line, undoes, redoes, saves, reopens and exports hand-written text with the spacing disclosure; a cue typed in mixed case exported in capitals with the case disclosure; a separate ordinary-project flow types, edits, undoes, saves and reopens lowercase headings/cues and exports hand-written capitals; export while the worker is held and typing continues, autosaved later words excluded; PDF still blocked; reopen and export without title page; failed write and refused destinations keep files; ordinary project export and Home waiting for it |
+| `fountain_export_lifecycle_process_tests` | CLI write failures retain exit 1; an isolated stopped helper exercises the production 30-second timeout, explicit cancellation/failure, exact prior bytes, process reaping and staging cleanup |
 | `fountain_export_process_tests` | Executables: `--edit-fountain`, real typing with autosave ending in a space that a new process exports without it and discloses, then one more key; a refused ordinary project leaving an existing file intact; exact bytes, disclosure, no-title body, refusals of project/original/review-only; the lowercase case fixture imported, typed into and exported as hand-written capitals with disclosure, original bytes and authored source unchanged, `@McKay` refused; the spacing fixture imported, typed into and exported as hand-written text, authored spaces and original bytes kept, indented action refused |
 | `fountain_export_oracle_tests` | aw-parser 0.1.1 (afterwriting's MIT parser, via the pinned afterwriting 1.17.3) reads the process exports and the hand-written expected files, including the case and spacing fixtures and the original spacing fixture itself, as the hand-worked semantic models: types, text, decoded emphasis, dual pairing, title fields and breaks. Its one representation difference is explicit: it reads a lyric as italic action. Mutating a dual marker or emphasis makes the comparison fail |
 
@@ -204,10 +251,11 @@ an ellipsis while checking exact authored text/styles and the separate PDF
 block. The executable/oracle flow reads the original, expected and typed export
 with aw-parser, including the bold code-point span after a curly apostrophe.
 
-Measured on this machine (release build, synthetic repeats of the subset model):
+Historical measurements before task 5b (release build, synthetic repeats of the subset model):
 2,106 elements / 40 KB take 4 ms for the GUI-thread check and 11 ms for the
 worker; 10,506 elements / 200 KB take 20 ms and 57 ms. These are not
-representative-script measurements. The later
+representative-script measurements and do not measure the new helper lifecycle.
+Current production measurements remain task 5c. The later
 [full-length assessment](fountain-compatibility.md#representative-full-length-assessment-2026-10-28)
 records the original assessment and subsequent workflow evidence. The owner
 reference's path requires explicit spacing and empty-speech choices; the second
@@ -233,4 +281,4 @@ reference remains gated.
   fixed; see the [build plan](writing-build-plan.md#layout-fix--spaces-after-a-deliberate-break).
   Since revision 3 such a line is written without the space, with the disclosure.
 - Not verified: power-loss durability of the replaced file, very large scripts
-  near 1 MiB in the UI, a watchdog/cancel for a stuck worker, and owner comfort.
+  near 1 MiB in the UI, cancellation of kernel-level filesystem stalls, and owner comfort.

@@ -56,7 +56,7 @@ input, fcitx, sustained typing latency, compositor-input latency or owner comfor
 The task result and full-suite evidence are in
 [the writing plan](writing-build-plan.md#task-5a--bounded-pdf-export-lifecycle).
 
-Fountain's in-process worker still waits during teardown and has no cancel or
-watchdog. That is the next separate export task, followed by measurements with
-all current writing assistance and autosave enabled. This bounded task does not
+Fountain now has its separate [bounded helper lifecycle](fountain-export.md#snapshot-files-and-departure)
+(task 5b). Measurements with all current writing assistance and autosave enabled
+remain task 5c. This bounded task does not
 establish cancellation of a kernel-level filesystem stall during publication.
