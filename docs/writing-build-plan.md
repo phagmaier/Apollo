@@ -123,11 +123,22 @@ moves preserve authored content and selection, with one-step Undo/Redo.
 Release passes 26/26, sanitizers pass across the full run and affected recheck,
 engine 2/2, and focused native Wayland controls/persistence/export pass. See
 [the contract](scene-navigator.md) and [task evidence](#task-4e--live-scene-navigator).
-Broader Fountain compatibility, slice 2 follow-ups and slices 5–6 remain pending.
+Broader Fountain compatibility, slice 2 follow-ups and the rest of slices 5–6 remain pending.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
 the accepted Qt/Writing desk foundation, measurements, and known limitations.
+
+**Task 5a — bounded PDF export lifecycle is done for this bounded step (2026-11-05).**
+PDF now offers Cancel Export, a 30-second Cancel/Keep Waiting watchdog, bounded
+helper teardown and captured-snapshot status. Home/Close retain autosave safety;
+cancellation/failure preserves existing outputs. Active-project destinations
+and aliases are refused, including after Save a Copy. Required checks pass
+across full runs and final affected rechecks; focused native PDF/leave/copy
+checks pass. See [the contract](pdf-export.md) and
+[task evidence](#task-5a--bounded-pdf-export-lifecycle). Task 5b — Fountain worker
+lifecycle — is next. Broader compatibility, responsiveness and slice 2/6 work
+remain pending.
 
 ## Intended result and boundary
 
@@ -2214,3 +2225,89 @@ its manual path opens a disposable autosaving writer. Screenshots at 1100 and
 640 px were inspected. Full native-compositor pointer input, fcitx, physical
 input, owner comfort and fresh sustained typing/crash-loss measurements remain
 unverified. Existing import/PDF and broader Fountain gates remain in force.
+
+### Task 5a — bounded PDF export lifecycle
+
+2026-11-05. **Done for this bounded task.** This bounded slice 5 step
+follows task 4e. Depends on the existing immutable PDF helper, autosave/close
+guards and Writing desk export panel. The [contract](pdf-export.md) describes
+Cancel Export, the 30-second Cancel/Keep Waiting watchdog, asynchronous
+Home/Close behavior, bounded teardown and captured-snapshot status. Imported
+PDF restrictions and independent layout gates remain unchanged.
+
+The first regression check failed against the old destructor: a stalled helper
+kept teardown waiting for its three-second lifetime. Teardown now cancels
+unfinished work and reaps the helper without publishing. In normal operation,
+cancellation remains asynchronous and busy until the helper exits, including
+when requested during startup or after painting a complete staged PDF. Prior
+PDF bytes survive, temporary files are removed, and retry succeeds. Window
+close waits through an explicit choice and re-enters the autosave guard when
+export finishes, so later writing is still saved. Home uses the existing drain
+flow; cancelling a stuck export lets that flow finish.
+
+Focused tests exercise actual helper processes and QML controls. The existing
+snapshot test now independently extracts its PDF with Poppler and compares a
+hand-written expected line after the live writing was replaced and destroyed.
+The close test also covers normal successful completion without cancelling.
+Review includes the new tests' purpose, cleanup and interactions with autosave.
+It also found that the old PDF destination guard compared only the originally
+opened path, permitting a destination inside an active project. A new test
+failed against that behavior. PDF now refuses active-project contents and
+file/parent aliases, with a Save a Copy regression checking that the protected
+root follows the active destination without replacing its saved source.
+
+| Check | Result |
+| --- | --- |
+| Regression baseline | Old code fails bounded teardown and protected-project destination checks; `build/task-5a-red.log` and `build/task-5a-dest-red.log` |
+| Release | `mise run check`: 26/26 pass; both affected suites pass after the review fixes (`build/task-5a-review-release.log`) |
+| Sanitizers | All 26 checks pass across the full run (24/26) and final affected recheck (4/4), with address/undefined sanitizers. The two full-run launch failures are explained below |
+| Engine | `mise run check-engine`: 2/2 pass |
+| Native Wayland/OpenGL/Compose | Final affected run: PDF lifecycle/protection 17/17; Home/Close and Save a Copy 5/5. The full smoke runner passed before the destination fix; subsequent unchanged navigator checks were intermittent as described below |
+| Review | Requirements, actual code/untracked contract and test necessity reviewed. Both reproduced bugs fixed; affected release/sanitizer/native checks pass. `git diff --check` and `bash -n tools/inspect-writing-desk.sh` pass |
+
+Full runs: `build/task-5a-release.log`, `build/task-5a-debug.log` and
+`build/task-5a-engine.log`. Final affected rechecks:
+`build/task-5a-review-release.log`, `build/task-5a-review-debug.log` and
+`build/task-5a-native-affected.log`. The sanitizer run's last two subprocess
+checks failed to launch because the agent overlapped a rebuild with them
+(`PermissionError` during relinking). After the rebuild finished, both and the
+two affected suites passed in one serial recheck. This was a verification
+scheduling error; no assertion was weakened. A final combined-alias case
+(parent alias into the project, then a file link pointing outside) also passes
+in the release/sanitizer PDF suites (`build/task-5a-alias-release.log` and
+`build/task-5a-alias-debug.log`) and final native PDF suite
+(`build/task-5a-native-alias-final.log`, 17/17).
+
+Native full smoke passed in `build/task-5a-native.log` and
+`build/task-5a-native-recheck.log` before the destination fix. An intervening
+repeat failed the existing outline shortcut check, and the post-fix full smoke
+stopped on the existing scene-autoscroll timeout (5 s; Qt reported 6.45 s would
+have sufficed under that run's load). Their implementation was unchanged;
+final native PDF/leave/copy cases were run directly and passed. These
+intermittent navigator checks remain a separate verification limitation.
+
+The local `reference/academy/` directory is empty, so no new Academy comparison
+was available. Required independent hand-derived fixtures, editor/PDF checks
+and aw-parser passed; no layout/profile code changed here. Fresh Academy and
+responsiveness evidence remain part of the separate production export gates.
+
+The owner runner is
+`QT_IM_MODULE=compose tools/inspect-writing-desk.sh --smoke`; it now includes
+native PDF lifecycle/departure checks and still saves each stage's output.
+These tests send Qt key/mouse events. Full compositor/physical input, fcitx,
+owner comfort, new sustained latency/crash-loss measurements and filesystem
+stall cancellation are not established by this task.
+
+### Upcoming slice 5 tasks
+
+- **5b — bounded Fountain export lifecycle (ready).** Apply the agreed fixed
+  snapshot, cancellation/watchdog and bounded shutdown requirements to Fountain's
+  current in-process worker. Verify actual worker lifecycle, safe existing
+  outputs, retry, typing, Home/Close and truthful snapshot status. Preserve
+  [canonical eligibility](fountain-export.md) and independent aw-parser evidence.
+- **5c — production export responsiveness and remaining evidence (pending).**
+  Depends on 5a/5b. Measure native primary/stress writing with autosave and all
+  current assistance enabled, including Fountain/PDF exports while typing,
+  saved output correctness and independent layout fixtures. Record cold/warm
+  launch, save age, stalls and memory with honest measurement limits. This does
+  not close the separate broader import/compatibility or slice 2/6 work.

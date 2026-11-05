@@ -157,9 +157,10 @@ temporary worker protocol, not the future source schema. The helper owns its Qt 
 paints engine pages with `QPdfWriter`; no live document/font/layout crosses
 the process boundary. An accepted job is immutable while writing continues.
 Only one job runs at a time. Only clean helper exit publishes its staged PDF
-by atomic rename; failures preserve existing bytes. Closing drains an accepted
-job before Qt teardown. This process choice isolates font/paint state and
-keeps typing responsive; it is not a claim that all Qt painting needs the
+by atomic rename; failures preserve existing bytes. At the spike checkpoint,
+closing drained an accepted job before Qt teardown; writing-build task 5a now
+adds the [bounded PDF lifecycle](pdf-export.md). This process choice isolates
+font/paint state and keeps typing responsive; it is not a claim that all Qt painting needs the
 GUI thread.
 
 The new outline is only an opening snapshot of headings with a preview
@@ -184,9 +185,10 @@ settings, packaging, or other product feature implementation in this work.
 - Unsupported font glyphs reject export; the current engine-rejection path
   uses an unpaginated editor fallback with a visible error. General malformed
   imports and every possible in-progress editing state are not proven.
-- No export cancellation/timeout policy exists. Shutdown waits for the helper;
-  a stalled filesystem can prolong closing. A production export workflow and
-  persisted-document durability are separate work.
+- At the spike checkpoint no export cancellation/timeout policy existed.
+  Writing-build task 5a now adds PDF Cancel/Keep Waiting, a watchdog and bounded
+  helper teardown; see [its contract](pdf-export.md). Fountain worker lifecycle
+  and full export responsiveness validation remain separate work.
 - Native tests use virtual keyboard input through fcitx5, with earlier owner
   observations for manual typing. Extended comfort, physical Compose input,
   cold launch, peak memory, and other machines/Qt upgrades remain unverified.

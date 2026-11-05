@@ -2227,6 +2227,12 @@ private slots:
       window.flow.editor()->setProperty("cursorPosition", 4);
       QVERIFY(window.flow.autosaver()->save_copy(destination));
       QTRY_COMPARE(window.flow.autosaver()->location(), destination);
+      auto* pdf = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+      QVERIFY(pdf);
+      const auto saved = bytes(destination + "/screenplay.json");
+      QVERIFY(!pdf->request(destination + "/screenplay.json"));
+      QVERIFY(pdf->status().contains("outside the project folder"));
+      QCOMPARE(bytes(destination + "/screenplay.json"), saved);
       QTRY_VERIFY(SessionState(state).load().has_value());
       QTRY_COMPARE(SessionState(state).load()->directory, destination);
       QCOMPARE(SessionState(state).load()->project_id, open_project(destination).project.id);
@@ -2476,6 +2482,51 @@ private slots:
     QCOMPARE(open_project(copy).screenplay.elements.front().text, std::string("Keep this Current writing."));
     QCOMPARE(bytes(moved + "/screenplay.json"), original_before);
     QCOMPARE(SessionState(state).load()->directory, copy);
+  }
+
+  void stalled_pdf_can_be_cancelled_while_leaving_data() {
+    QTest::addColumn<bool>("closing");
+    QTest::newRow("Home") << false;
+    QTest::newRow("Close") << true;
+  }
+  void stalled_pdf_can_be_cancelled_while_leaving() {
+    QFETCH(bool, closing);
+    const auto p = project();
+    const auto wrapper = path("stopped-exporter");
+    replace_file(wrapper, "#!/bin/sh\nkill -STOP $$\n");
+    QVERIFY(QFile::setPermissions(wrapper, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+    Window window(font_, path("session"), p.directory, wrapper);
+    QTRY_VERIFY(window.flow.document());
+    auto* job = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(job);
+    job->set_watchdog_interval(1000);
+    const auto output = path("retained-pdf") + ".pdf";
+    replace_file(output, "previous PDF");
+    QSignalSpy done(job, &PdfExportJob::completed);
+    QVERIFY(job->request(output));
+    window.type(QStringLiteral("Before leaving "));
+    QTRY_COMPARE(window.flow.autosaver()->state(), QStringLiteral("saved"));
+    if (closing) window.view.close();
+    else QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(window.popup_open("pdfWaitPanel"));
+    QVERIFY(window.view.isVisible());
+    QVERIFY(window.flow.document());
+    if (closing) {
+      QVERIFY(window.click("pdfKeepWaiting"));
+      QTRY_VERIFY(!window.popup_open("pdfWaitPanel"));
+      // The close retried after export must still save newer writing.
+      window.type(QStringLiteral("Later "));
+      QTRY_VERIFY(window.popup_open("pdfWaitPanel"));
+    }
+    QVERIFY(window.click("pdfWaitCancel"));
+    // Home destroys the job only after its completion; use file/session results
+    // as the durable oracle rather than dereferencing that released job.
+    if (closing) QTRY_VERIFY(!window.view.isVisible());
+    else QTRY_VERIFY(!window.flow.document());
+    QCOMPARE(done.size(), 1); QVERIFY(!done.front().front().toBool());
+    QCOMPARE(bytes(output), QByteArray("previous PDF"));
+    QCOMPARE(open_project(p.directory).screenplay.elements.front().text,
+             closing ? std::string("Before leaving Later Current writing.") : std::string("Before leaving Current writing."));
   }
 
   void leaving_waits_for_worker_recovery_and_pdf_without_blocking_the_gui() {

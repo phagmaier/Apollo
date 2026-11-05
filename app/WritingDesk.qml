@@ -28,7 +28,7 @@ Rectangle {
     property string issueKey: ""
     property string issueNotice: ""
     readonly property bool dialogOpen: shortcutPanel.visible || titlePanel.visible || importedPanel.visible
-            || issuePanel.visible || exportPanel.visible || copyPanel.visible || reloadPanel.visible
+            || issuePanel.visible || exportPanel.visible || pdfWaitPanel.visible || copyPanel.visible || reloadPanel.visible
             || failurePanel.visible || leavePanel.visible || editorPage.spellingOpen || editorPage.findOpen
     property var selectedIssue: {
         for (const issue of structureIssues) {
@@ -154,7 +154,15 @@ Rectangle {
     }
     Connections {
         target: desk.exportJob
-        function onChanged() { desk.showReloadStatus = false; desk.lastExport = "pdf" }
+        function onChanged() {
+            desk.showReloadStatus = false; desk.lastExport = "pdf"
+            if (desk.exportJob.attention) {
+                exportPanel.close()
+                pdfWaitPanel.open()
+            } else {
+                pdfWaitPanel.close()
+            }
+        }
     }
     Connections {
         target: desk.fountainJob
@@ -283,7 +291,7 @@ Rectangle {
             text: (desk.exportJob && desk.exportJob.busy) || (desk.fountainJob && desk.fountainJob.busy) ? "Exporting…" : "Export"
             fill: "#e9edf0"; ink: "#303843"
             font.weight: Font.DemiBold
-            enabled: (desk.exportJob !== null && !desk.exportJob.busy) || (desk.fountainJob !== null && !desk.fountainJob.busy)
+            enabled: desk.exportJob !== null || desk.fountainJob !== null
             Accessible.name: desk.fountainJob ? "Export PDF or Fountain options (Ctrl+E exports PDF; Ctrl+Shift+E opens Fountain options)" : "Export PDF options (Ctrl+E exports PDF)"
             onClicked: desk.openExport(desk.exportFormat)
         }
@@ -1109,6 +1117,39 @@ Rectangle {
         }
     }
     Popup {
+        id: pdfWaitPanel
+        objectName: "pdfWaitPanel"
+        parent: desk
+        x: Math.max(8, (desk.width - width) / 2); y: header.height + 8
+        width: Math.min(520, desk.width - 16)
+        height: pdfWaitContents.implicitHeight + 40
+        padding: 20; modal: true; focus: true
+        closePolicy: Popup.NoAutoClose
+        onClosed: editorPage.focusEditor()
+        background: Rectangle { color: "#f5f4f1"; radius: 8; border.color: "#b9c0c7" }
+        Column {
+            id: pdfWaitContents
+            width: parent.width; spacing: 14
+            Label { text: "PDF export in progress"; font.pixelSize: 18 }
+            Label {
+                width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: desk.exportJob ? desk.exportJob.status : ""
+            }
+            Row {
+                spacing: 10
+                DeskButton {
+                    objectName: "pdfWaitCancel"; text: "Cancel Export"; ink: "#303843"
+                    enabled: desk.exportJob !== null && !desk.exportJob.cancelling
+                    onClicked: desk.exportJob.cancel()
+                }
+                DeskButton {
+                    objectName: "pdfKeepWaiting"; text: "Keep Waiting"; ink: "#303843"
+                    onClicked: desk.exportJob.keepWaiting()
+                }
+            }
+        }
+    }
+    Popup {
         id: exportPanel
         objectName: "exportPanel"
         parent: desk
@@ -1179,8 +1220,19 @@ Rectangle {
                 color: desk.exportFormat === "fountain" && desk.fountainCheck.length === 0 ? "#3f5a45" : "#8a3b2c"
                 font { family: "Liberation Sans"; pixelSize: 12 }
             }
+            Label {
+                visible: desk.exportFormat === "pdf" && desk.exportJob !== null && desk.exportJob.busy
+                width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: desk.exportJob ? desk.exportJob.status : ""
+            }
             Item {
                 width: parent.width; height: exportConfirm.height
+                DeskButton {
+                    objectName: "pdfCancel"; text: "Cancel Export"; ink: "#303843"
+                    visible: desk.exportFormat === "pdf" && desk.exportJob !== null && desk.exportJob.busy
+                    enabled: desk.exportJob !== null && !desk.exportJob.cancelling
+                    onClicked: { desk.exportJob.cancel(); exportPanel.close() }
+                }
                 DeskButton {
                     id: exportConfirm
                     objectName: "exportConfirm"

@@ -169,7 +169,9 @@ or explicitly, undoably treated as action.
 - Destinations inside the active project folder (updated after Save a Copy) and
   the external file an import came from are refused. Review-only intakes cannot
   export; use **Edit in a New Copy** first.
-- Leaving for Home or closing waits for an accepted export, as for PDF.
+- Leaving for Home or closing waits for an accepted Fountain export. Fountain
+  cancellation/watchdog work remains pending; PDF now has its separate
+  [bounded lifecycle](pdf-export.md).
 
 ## Using it
 

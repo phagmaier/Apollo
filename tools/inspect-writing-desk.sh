@@ -41,7 +41,10 @@ if [[ ${1:-} == --smoke ]]; then
     scene_navigator_click_drag_cancel_and_selection scene_drag_autoscrolls_and_keeps_preamble \
     scene_moves_preserve_content_selection_and_reject_stale_requests scene_move_and_undo
   run_logged native-export timeout 30s env QT_FATAL_WARNINGS=1 "$editor" "$writer" --agreement "$APOLLO_RUN_DIR/export"
-  printf 'Native screen, live navigator/drag/selection/Undo checks, and sample export completed. These checks do not record new owner observations.\n'
+  run_logged native-export-lifecycle timeout 45s "$project_dir/build/release/export_job_tests"
+  run_logged native-export-leaving timeout 30s "$project_dir/build/release/project_access_flow_tests" \
+    stalled_pdf_can_be_cancelled_while_leaving save_copy_updates_resume_identity_and_malformed_state_is_visible
+  printf 'Native screen, live navigator/drag/selection/Undo, sample export and PDF cancel/wait/close checks completed. These checks do not record new owner observations.\n'
   exit 0
 fi
 command -v xdg-open >/dev/null || { printf 'Missing command: xdg-open\n' >&2; exit 1; }
@@ -52,6 +55,7 @@ printf '\n%s\n' \
   'In QML, click a scene to navigate. Drag its right handle to move the whole scene; Esc cancels and Ctrl+Z restores it.' \
   'QML uses the real Courier Prime/profile layout. The HTML uses sample page 12 and approximate text layout.' \
   'Type/select briefly; Ctrl+Z undoes and Ctrl+Shift+Z redoes. Export opens options; Ctrl+E exports the current snapshot.' \
+  'During PDF export, Export reopens options with Cancel Export. Slow exports and Close offer Cancel Export or Keep Waiting.' \
   'QML autosaves a disposable project in the review directory; the original sample fixture stays untouched.' \
   'The sample and any PDF are in the review directory above.' \
   'The Writing desk foundation and Qt stack are accepted. Note any further refinements you want after inspection.'

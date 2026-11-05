@@ -359,6 +359,7 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   connect(document_.get(), &QTextDocument::contentsChanged, this, &ProjectAccessFlow::schedule_session);
   if (intake_ && intake_->working) connect(document_.get(), &QTextDocument::contentsChanged, this, &ProjectAccessFlow::changed);
   connect(saver_.get(), &Autosaver::locationChanged, this, [this] {
+    export_job_->set_project(saver_->location());
     fountain_job_->set_project(saver_->location());
     library_dirty_ = true; schedule_session(); emit changed();
   });

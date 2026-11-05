@@ -114,6 +114,8 @@ frozen every visual detail.
   [find-and-replace.md](docs/find-and-replace.md). When a speech-structure
   issue exists, the bar above the page lists it (**N speech issues…**) with
   explicit corrections; see [diagnostics.md](docs/diagnostics.md).
+  During PDF export, reopen Export for Cancel Export; slow exports and window
+  close offer Cancel Export / Keep Waiting. See [pdf-export.md](docs/pdf-export.md).
 - Project folders and autosave follow [source-format.md](docs/source-format.md).
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
   and `apollo_editor DIR` opens editable projects with autosave. Ordinary
