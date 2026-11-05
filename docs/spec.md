@@ -102,6 +102,8 @@ These capabilities come from the owner's brief. Except where explicitly noted, t
   remain to be specified. A normal deliberate line break is not an error.
 - Edit title pages through structured fields: title, writing credit (such as Written by), author(s), source/based-on credit, contact information, and draft date. Apollo handles placement. Choose whether to include the title page in an export.
 - Provide find and replace.
+  The bounded writer's literal-search, scope and replacement conventions are
+  recorded in [find and replace](find-and-replace.md).
 - Provide US English spell checking: underline potential misspellings, offer
   replacements on demand, and support a personal dictionary for names and
   invented words. Added words apply across all the owner's scripts on this

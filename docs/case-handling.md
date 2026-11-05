@@ -124,6 +124,7 @@ owner's forced mixed-case-name policy.
   earlier case behavior; the title must be authored in capitals for Fountain.
 - PDF export of imported writing remains blocked pending independent layout
   evidence. Other import limits of the writer subset are unchanged.
-- Not verified: owner comfort with the presentation and disclosure wording,
-  and find/replace or suggestions, which do not exist yet and will need to
-  choose between authored and presented text.
+- Not verified: owner comfort with the presentation and disclosure wording.
+  [Find/replace](find-and-replace.md) now searches authored case (case-insensitive
+  by default); [suggestions](writing-build-plan.md#task-4a--context-restricted-writing-suggestions)
+  read authored names/heading parts and offer capitalized options.

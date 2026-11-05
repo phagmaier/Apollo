@@ -101,6 +101,10 @@ frozen every visual detail.
   heading parts: arrows select, Tab accepts, Esc dismisses, Ctrl+Space reopens;
   Enter keeps its ordinary writing action. See
   [task 4a](docs/writing-build-plan.md#task-4a--context-restricted-writing-suggestions).
+  **Find / Find and Replace** are available through Edit or Ctrl+F / Ctrl+H.
+  Literal authored-text search offers case/whole-word and opening-selection
+  scope, next/previous and one-step Replace All Undo; see
+  [find-and-replace.md](docs/find-and-replace.md).
 - Project folders and autosave follow [source-format.md](docs/source-format.md).
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
   and `apollo_editor DIR` opens editable projects with autosave. Ordinary

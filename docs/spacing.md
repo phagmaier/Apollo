@@ -210,5 +210,6 @@ Ordinary deliberate breaks/intentional internal dialogue blanks are not flagged.
 - Imported writing still cannot be exported as PDF; its layout needs separate
   requirements and evidence.
 - Not verified: owner comfort with invisible spaces and the caret position left
-  of the column, the disclosure wording, and find/replace, which does not exist
-  yet and will need to choose between authored and presented text.
+  of the column and the disclosure wording. [Find/replace](find-and-replace.md)
+  now searches authored spaces, including hidden line-edge spaces; matches and
+  replacements stay within one authored line of one element.

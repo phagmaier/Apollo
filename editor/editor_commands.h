@@ -11,6 +11,7 @@ class QMimeData;
 namespace apollo::editor {
 class WritingSuggestions;
 class Spelling;
+class FindReplace;
 // The spike's editing rules (docs/spike-brief.md, "Editor behavior under
 // test"), applied to the document through QTextCursor. QML forwards the keys
 // it intercepts. Each command is one undo step; commands that move the caret
@@ -28,6 +29,7 @@ class EditorCommands : public QObject {
   Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
   Q_PROPERTY(QObject* suggestions READ suggestions CONSTANT)
   Q_PROPERTY(QObject* spelling READ spelling CONSTANT)
+  Q_PROPERTY(QObject* findReplace READ findReplace CONSTANT)
 public:
   // Clipboard format that keeps element types, emphasis, and dual flags.
   static inline const QString mime_type = QStringLiteral("application/x-apollo-elements");
@@ -47,6 +49,7 @@ public:
   bool canRedo() const { return document_->isRedoAvailable(); }
   QObject* suggestions() const;
   QObject* spelling() const;
+  QObject* findReplace() const;
   const QString& typeMessage() const { return type_message_; }
   // Single caret in the second speech; changes only its cue flag, undoably.
   Q_INVOKABLE void toggleDualDialogue(int position, int selectionStart, int selectionEnd);
@@ -98,6 +101,7 @@ private:
   QTextDocument* document_;
   WritingSuggestions* suggestions_;
   Spelling* spelling_;
+  FindReplace* find_replace_;
   int typed_end_ = -1, typed_steps_ = -1;
   QVariantList empty_speeches_;
   QString title_text_;

@@ -76,6 +76,7 @@ Popup {
         Column {
             width: scroll.availableWidth - verticalBar.width - 12
             SectionTitle { text: "Editing" }
+            ShortcutRow { width: parent.width; label: "Find / Find and Replace"; keys: "Ctrl+F / Ctrl+H"; detail: "Literal authored text, case/whole words and opening-selection scope. In Find, Enter/F3 goes next; Shift+Enter/Shift+F3 goes previous. Replace All is one undo step." }
             ShortcutRow { width: parent.width; label: "Spelling at caret"; keys: "F7 / Edit"; detail: "Review US English replacements or add a personal word for all scripts on this computer. No automatic corrections." }
             ShortcutRow { width: parent.width; label: "Undo"; keys: "Ctrl+Z"; keyName: "shortcutUndo" }
             ShortcutRow { width: parent.width; label: "Redo"; keys: "Ctrl+Shift+Z"; keyName: "shortcutRedo" }

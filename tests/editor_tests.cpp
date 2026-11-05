@@ -267,6 +267,114 @@ private slots:
   void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral(".*"))); }
   void cleanup() { view_.reset(); document_.reset(); }
 
+  void find_replace_real_controls_and_undo() {
+    QVERIFY(open_elements({{ElementType::heading, "INT. ROOM - DAY"},
+        {ElementType::action, "Cat cat scatter cat."}}));
+    editor_->setProperty("cursorPosition", 0);
+    const auto before = document_elements(*document_);
+    press(Qt::Key_H, Qt::ControlModifier);
+    auto* panel = view_->rootObject()->findChild<QObject*>("findPanel");
+    QVERIFY2(panel, "Find and Replace panel is missing");
+    QTRY_VERIFY(panel->property("opened").toBool());
+    auto* query = find_item(view_->contentItem(), "findQuery");
+    auto* replacement = find_item(view_->contentItem(), "findReplacement");
+    QVERIFY(query && replacement);
+    query->forceActiveFocus(); type("cat");
+    auto* words = find_item(view_->contentItem(), "findWholeWords");
+    QVERIFY(words);
+    QTest::qWait(50); // Polish the newly opened popup before pointer delivery.
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     words->mapToScene(words->boundingRect().center()).toPoint());
+    QTRY_VERIFY(words->property("checked").toBool());
+    auto* status = find_item(view_->contentItem(), "findStatus");
+    QVERIFY(status);
+    QTRY_COMPARE(status->property("text").toString(), QString("1 of 3 matches"));
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/find-replace.png")));
+    replacement->forceActiveFocus(); type("dog");
+    auto* all = find_item(view_->contentItem(), "findReplaceAll");
+    QVERIFY(all && all->isEnabled());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier,
+                     all->mapToScene(all->boundingRect().center()).toPoint());
+    QTRY_COMPARE(document_->lastBlock().text(), QString("dog dog scatter dog."));
+    QCOMPARE(document_elements(*document_)[1].id, before[1].id);
+    press(Qt::Key_F1);
+    QVERIFY(!view_->rootObject()->findChild<QObject*>("shortcutPanel")->property("visible").toBool());
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), before);
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_->lastBlock().text(), QString("dog dog scatter dog."));
+  }
+
+  void find_selection_navigation_menu_and_composition() {
+    QVERIFY(open_elements({{ElementType::action, "cat cat cat cat"}}));
+    const auto before = document_elements(*document_);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 11), Q_ARG(int, 4));
+    press(Qt::Key_F, Qt::ControlModifier);
+    auto* panel = view_->rootObject()->findChild<QObject*>("findPanel");
+    QTRY_VERIFY(panel && panel->property("opened").toBool());
+    auto* query = find_item(view_->contentItem(), "findQuery");
+    QVERIFY(query);
+    QCOMPARE(query->property("text").toString(), QString("cat cat"));
+    press(Qt::Key_A, Qt::ControlModifier); type("cat");
+    auto* scope = find_item(view_->contentItem(), "findSelectionOnly");
+    QVERIFY(scope && scope->isEnabled());
+    QTest::qWait(50);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, scope->mapToScene(scope->boundingRect().center()).toPoint());
+    auto* status = find_item(view_->contentItem(), "findStatus");
+    QTRY_COMPARE(status->property("text").toString(), QString("1 of 2 matches"));
+    QCOMPARE(editor_->property("selectionStart").toInt(), 4);
+    press(Qt::Key_F3);
+    QTRY_COMPARE(editor_->property("selectionStart").toInt(), 8);
+    press(Qt::Key_F3, Qt::ShiftModifier);
+    QTRY_COMPARE(editor_->property("selectionStart").toInt(), 4);
+    query->forceActiveFocus();
+    press(Qt::Key_Return);
+    QTRY_COMPARE(editor_->property("selectionStart").toInt(), 8);
+    press(Qt::Key_Return, Qt::ShiftModifier);
+    QTRY_COMPARE(editor_->property("selectionStart").toInt(), 4);
+    QCOMPARE(document_elements(*document_), before);
+    find_item(view_->contentItem(), "findReplacement")->forceActiveFocus(); type("ox");
+    auto* replace = find_item(view_->contentItem(), "findReplaceOne");
+    QVERIFY(replace && replace->isEnabled());
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, replace->mapToScene(replace->boundingRect().center()).toPoint());
+    QTRY_COMPARE(document_->toPlainText(), QString("cat ox cat cat"));
+    QTRY_COMPARE(status->property("text").toString(), QString("1 of 1 matches"));
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_elements(*document_), before);
+    press(Qt::Key_Right);
+    auto* menuButton = find_item(view_->contentItem(), "editButton");
+    QVERIFY(menuButton);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, menuButton->mapToScene(menuButton->boundingRect().center()).toPoint());
+    auto* action = find_item(view_->contentItem(), "editFind");
+    QTRY_VERIFY((action = find_item(view_->contentItem(), "editFind")) && action->isVisible());
+    action->forceActiveFocus(); press(Qt::Key_Space);
+    QTRY_VERIFY(panel->property("opened").toBool());
+    QTRY_VERIFY(find_item(view_->contentItem(), "findQuery")->hasActiveFocus());
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    QCOMPARE(document_elements(*document_), before);
+    editor_->setProperty("cursorPosition", document_->characterCount() - 1);
+    QInputMethodEvent preedit(QStringLiteral("x"), {});
+    QCoreApplication::sendEvent(editor_, &preedit);
+    QVERIFY(editor_->property("inputMethodComposing").toBool());
+    press(Qt::Key_H, Qt::ControlModifier);
+    QVERIFY(!panel->property("visible").toBool());
+    QInputMethodEvent cancel; QCoreApplication::sendEvent(editor_, &cancel);
+    QCOMPARE(document_->toPlainText(), QString("cat cat cat cat"));
+    QCOMPARE(document_elements(*document_), before);
+    // The panel remains reachable and scrolls on a smaller desk.
+    view_->resize(740, 600);
+    press(Qt::Key_H, Qt::ControlModifier);
+    QTRY_VERIFY(panel->property("opened").toBool());
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/find-replace-small.png")));
+    QVERIFY(panel->property("height").toReal() <= 600);
+    press(Qt::Key_Escape);
+  }
+
   void spelling_real_controls_and_transient_underlines() {
     QVERIFY(open_elements({{ElementType::action, "A beautifull color."}}));
     auto* commands = document_->findChild<EditorCommands*>();

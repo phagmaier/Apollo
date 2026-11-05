@@ -30,7 +30,7 @@ Rectangle {
     property string emptySpeechNotice: ""
     readonly property bool dialogOpen: shortcutPanel.visible || titlePanel.visible || importedPanel.visible
             || emptySpeechPanel.visible || exportPanel.visible || copyPanel.visible || reloadPanel.visible
-            || failurePanel.visible || leavePanel.visible || editorPage.spellingOpen
+            || failurePanel.visible || leavePanel.visible || editorPage.spellingOpen || editorPage.findOpen
     property var selectedEmptySpeech: {
         for (const issue of emptySpeechIssues) {
             if (issue.id === emptySpeechId)
@@ -115,6 +115,8 @@ Rectangle {
     Shortcut { sequence: "Ctrl+Shift+S"; enabled: !desk.departing && !desk.dialogOpen && desk.autosaver !== null && !desk.autosaver.copyBusy && !desk.autosaver.reloadBusy; onActivated: copyPanel.open() }
     Shortcut { sequence: "Ctrl+Shift+H"; enabled: desk.projectFlow !== null && !desk.departing && !desk.dialogOpen; onActivated: desk.projectFlow.home() }
     Shortcut { sequence: "Ctrl+Shift+T"; enabled: titleButton.enabled && !desk.dialogOpen; onActivated: titlePanel.open() }
+    Shortcut { sequence: "Ctrl+F"; enabled: editorPage.enabled && !desk.dialogOpen; onActivated: editorPage.openFind() }
+    Shortcut { sequence: "Ctrl+H"; enabled: editorPage.enabled && !desk.dialogOpen; onActivated: editorPage.openFind(true) }
     Connections {
         target: desk.projectFlow
         function onChanged() {
@@ -504,8 +506,8 @@ Rectangle {
                     objectName: "editButton"
                     text: "Edit"; ink: "#303843"; fill: "#e9edf0"
                     enabled: editorPage.enabled
-                    Accessible.name: "Edit: Undo, Redo and clipboard actions"
-                    ToolTip.text: "Undo: Ctrl+Z. Redo: Ctrl+Shift+Z. Cut, copy, paste and select all."
+                    Accessible.name: "Edit: Undo, Redo, clipboard, spelling, Find and Replace"
+                    ToolTip.text: "Undo: Ctrl+Z. Redo: Ctrl+Shift+Z. Find: Ctrl+F. Find and Replace: Ctrl+H. Spelling: F7."
                     onClicked: editMenu.open()
                     Menu {
                         id: editMenu
@@ -541,6 +543,14 @@ Rectangle {
                         MenuItem {
                             objectName: "editSpelling"; text: "Spelling at caret…\tF7"
                             onTriggered: editorPage.checkSpelling()
+                        }
+                        MenuItem {
+                            objectName: "editFind"; text: "Find…\tCtrl+F"
+                            onTriggered: editorPage.openFind()
+                        }
+                        MenuItem {
+                            objectName: "editReplace"; text: "Find and Replace…\tCtrl+H"
+                            onTriggered: editorPage.openFind(true)
                         }
                         MenuItem {
                             objectName: "editSelectAll"; text: "Select all\tCtrl+A"

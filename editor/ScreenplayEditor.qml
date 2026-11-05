@@ -15,6 +15,36 @@ Rectangle {
     readonly property var suggestions: commands.suggestions
     readonly property var spelling: commands.spelling
     readonly property bool spellingOpen: spellingMenu.visible
+    readonly property bool findOpen: findPanel.visible
+    readonly property var finder: commands.findReplace
+    Connections {
+        target: root.finder
+        function onSelectionRequested(start, end) {
+            editor.select(start, end)
+            editor.revealCursor()
+        }
+    }
+    function openFind(replace = false) {
+        if (!enabled || editor.inputMethodComposing || editor.preeditText.length > 0) return
+        suggestions.dismiss()
+        spelling.dismiss()
+        finder.begin(editor.cursorPosition, editor.selectionStart, editor.selectionEnd)
+        selectionScope.checked = false
+        const selected = editor.selectedText
+        if (selected.length > 0 && selected.length <= 4096
+                && selected.indexOf("\n") < 0 && selected.indexOf("\u2028") < 0 && selected.indexOf("\u2029") < 0)
+            findQuery.text = selected
+        findPanel.open()
+        refreshFind()
+        if (replace) { findReplacement.forceActiveFocus(); findReplacement.selectAll() }
+        else { findQuery.forceActiveFocus(); findQuery.selectAll() }
+    }
+    function refreshFind() {
+        if (findPanel.visible) {
+            replaceResult.text = ""
+            finder.configure(findQuery.text, findCase.checked, findWords.checked, selectionScope.checked)
+        }
+    }
     property int spellingRevision: 0
     Connections {
         target: root.spelling
@@ -37,9 +67,9 @@ Rectangle {
         spelling.request(editor.cursorPosition, editor.selectionStart, editor.selectionEnd)
         if (spelling.word.length > 0) spellingMenu.open()
     }
-    onEnabledChanged: { if (!enabled) { suggestions.dismiss(); spelling.dismiss() } }
+    onEnabledChanged: { if (!enabled) { suggestions.dismiss(); spelling.dismiss(); findPanel.close() } }
     color: "#d4d9df"
-    function focusEditor() { if (!spellingMenu.visible) editor.forceActiveFocus() }
+    function focusEditor() { if (!spellingMenu.visible && !findPanel.visible) editor.forceActiveFocus() }
     readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
     // Observe the installed document's history directly: TextEdit's property
     // notifications do not refresh bindings for these external cursor edits.
@@ -386,6 +416,83 @@ Rectangle {
         ScrollBar.horizontal: ScrollBar {
             contentItem: Rectangle { implicitHeight: 5; radius: 2; color: "#89939e"; opacity: parent.active ? 0.8 : 0.4 }
         }
+    }
+
+    Dialog {
+        id: findPanel
+        objectName: "findPanel"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(root.width - 24, 540)
+        height: Math.min(root.height - 24, findContents.implicitHeight + 32)
+        padding: 16; modal: true; focus: true
+        closePolicy: Popup.CloseOnEscape
+        onClosed: { root.finder.dismiss(); editor.forceActiveFocus() }
+        background: Rectangle { color: "#f5f6f7"; radius: 12; border.color: "#c9d0d6" }
+        contentItem: ScrollView {
+            clip: true
+            Column {
+                id: findContents
+                width: findPanel.availableWidth; spacing: 10
+                Label { text: "Find and replace"; font.pixelSize: 18; font.bold: true }
+                Label {
+                    width: parent.width; wrapMode: Text.Wrap
+                    text: "Search authored text, including title fields. Each match stays within one line of one element."
+                }
+                Label { text: "Find" }
+                TextField {
+                    id: findQuery; objectName: "findQuery"; width: parent.width
+                    Accessible.name: "Find text"; selectByMouse: true
+                    onTextChanged: root.refreshFind()
+                    Keys.onReturnPressed: (event) => { root.finder.next(event.modifiers & Qt.ShiftModifier); event.accepted = true }
+                }
+                Label { text: "Replace with" }
+                TextField {
+                    id: findReplacement; objectName: "findReplacement"; width: parent.width
+                    Accessible.name: "Replacement text"; selectByMouse: true
+                }
+                Flow {
+                    width: parent.width; spacing: 8
+                    CheckBox {
+                        id: findCase; objectName: "findMatchCase"; text: "Match case"
+                        onToggled: root.refreshFind()
+                    }
+                    CheckBox {
+                        id: findWords; objectName: "findWholeWords"; text: "Whole words"
+                        onToggled: root.refreshFind()
+                    }
+                    CheckBox {
+                        id: selectionScope; objectName: "findSelectionOnly"; text: "Opening selection only"
+                        enabled: root.finder.hasScope
+                        onToggled: root.refreshFind()
+                    }
+                }
+                Label {
+                    objectName: "findStatus"; width: parent.width; wrapMode: Text.Wrap
+                    text: root.finder.status; Accessible.role: Accessible.StaticText
+                }
+                Label { id: replaceResult; objectName: "findReplaceResult"; width: parent.width; wrapMode: Text.Wrap; visible: text.length > 0 }
+                Flow {
+                    width: parent.width; spacing: 8
+                    Button { objectName: "findPrevious"; text: "Previous"; enabled: !root.finder.busy && root.finder.count > 0; onClicked: root.finder.next(true) }
+                    Button { objectName: "findNext"; text: "Next"; enabled: !root.finder.busy && root.finder.count > 0; onClicked: root.finder.next() }
+                    Button {
+                        objectName: "findReplaceOne"; text: "Replace"
+                        enabled: !root.finder.busy && root.finder.count > 0
+                        onClicked: replaceResult.text = root.finder.replace(findReplacement.text) + " replacement(s)."
+                    }
+                    Button {
+                        objectName: "findReplaceAll"; text: "Replace All"
+                        enabled: !root.finder.busy && root.finder.count > 0
+                        onClicked: replaceResult.text = root.finder.replace(findReplacement.text, true) + " replacement(s). Undo restores them together."
+                    }
+                    Button { objectName: "findClose"; text: "Close"; onClicked: findPanel.close() }
+                }
+            }
+        }
+        Shortcut { sequence: "F3"; enabled: findPanel.visible; onActivated: root.finder.next() }
+        Shortcut { sequence: "Shift+F3"; enabled: findPanel.visible; onActivated: root.finder.next(true) }
+        onOpened: replaceResult.text = ""
     }
 
     // A non-focusing overlay keeps caret, selection and input-method ownership

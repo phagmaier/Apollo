@@ -97,8 +97,15 @@ Release and sanitizer suites pass 25/25 each, engine 2/2, with final affected
 release and focused native checks passing. See [the spelling contract](spelling.md)
 and [task evidence](#task-4b--us-english-spelling-and-personal-dictionary).
 Compositor/fcitx/physical-key and sustained-performance checks remain unverified.
-Next ready work is find/replace; diagnostics, scene navigation and remaining
-Fountain compatibility stay pending.
+
+**Task 4c — find/replace is done for this bounded step (2026-11-04).**
+Edit / Ctrl+F / Ctrl+H opens literal authored-text search with case/whole-word
+options, opening-selection scope, navigation and explicit replacement; Replace
+All is one Undo step. Release, final affected rechecks, sanitizer and engine
+checks pass. Native Qt controls pass individually; compositor shortcut
+reliability retains the documented Qt/wtype lookup limitation. See the
+[contract](find-and-replace.md) and [task evidence](#task-4c--find-and-replace).
+Diagnostics, scene navigation and remaining Fountain compatibility stay pending.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1986,4 +1993,111 @@ compositor F7 check could not launch `wtype`; compositor/fcitx/physical-key inpu
 sustained spelling/typing/export performance, memory targets and owner comfort
 remain unverified. Existing Academy-reference, imported-PDF, broader Fountain
 compatibility and heavy-I/O crash-loss limits remain. This bounded task does not
-complete slice 4 or the writing milestone. Next ready work is find/replace.
+complete slice 4 or the writing milestone. Task 4c below implements find/replace.
+
+### Task 4c — find and replace
+
+2026-11-04. **Done for this bounded task**, with the native-input limits below.
+Dependencies: protected selection/clipboard editing (3f), writing suggestions
+(4a) and spelling (4b). Implements the
+[writing requirement](spec.md#writing-and-formatting) and the proposed literal
+search/selection/Replace All Undo step in the
+[editing plan](#editing-and-assistance-contract).
+
+The [bounded contract](find-and-replace.md) records authored-text matching,
+case/whole-word options, opening-selection scope, wrapping navigation, explicit
+single replacement and one-step Replace All Undo. Edit and Ctrl+F / Ctrl+H open
+the modal panel; Enter/Shift+Enter in Find and F3/Shift+F3 navigate. Title fields
+are searchable separately; markers and generated labels are skipped. Every
+replacement stays inside one authored line and one element, retaining IDs,
+types, flags, breaks and surrounding emphasis. Replacement text takes its first
+matched character's emphasis. Source, import/export contracts, dependencies and
+tool pins are unchanged.
+
+`FindReplace` owns bounded, cancellable event-loop scans and validates current
+revision before publishing or replacing. Long queries, excessive match sets,
+control/break insertion and excessive replacement expansion are refused before
+editing, with a visible reason. Search state is transient per document.
+
+The first real-key test failed on the absent panel. Focused checks cover literal
+punctuation, authored case/spaces, Unicode and whole-word edges, reversed scope,
+navigation, stale/closed/reconfigured scans, long-paragraph chunk boundaries,
+caps, no-op history, exact emphasis/IDs/dual/title/marker preservation and source
+reopening. A scope regression caught Qt's tracked selection anchor moving past
+new text at its left edge; separate tracked endpoint cursors keep scope through
+replacement and Undo. Completion review also reproduced a fully deleted scope
+disabling its checked scope control; the opening-selection capability now stays
+available even when its tracked range is empty, permitting return to whole-script
+search. `build/task-4c-empty-scope-{red,green}.log` records the same QObject-property
+probe before/after correction; the permanent scope test retains the case.
+The first sanitizer run exposed repeated full-block copies for dense matches
+(the 100,001-match refusal took 9.45 seconds). Scanning now reads each block
+once per event-loop batch and searches string views inside it; the existing
+bounded-input regression verifies the same refusal without a relaxed timeout.
+Real QML controls cover both entry points, selected-query
+seeding, scope, keyboard navigation, single/all replacement, Undo/Redo, modal
+blocking, composition guarding and a smaller desk. Project-flow checks exercise
+autosave/reopen and compare actual Fountain with hand-written text; Poppler
+independently extracts the expected two-page PDF text.
+
+Native shortcut probing is limited by an unresolved Qt/wtype lookup discrepancy:
+tracing recorded an actual `Key_H` with Control but possible key sequence
+`Ctrl+Esc`. One isolated compositor run authored replacements and undid them,
+but later combined and isolated runs missed the opening shortcut; a delayed
+wtype probe did not resolve it. A combined synthesized native run also missed
+F3, while its individual cases pass. These observations do not establish
+reliable compositor shortcut interaction, and no production key handling was
+changed to accommodate them. Review removed the unreliable optional compositor
+case from the permanent suite and native runner; its complete source remains in
+`build/task-4c-compositor-test.cpp.fragment`. The successful run is
+`build/task-4c-native-compositor-isolated.log`; failures/traces remain in
+`build/task-4c-native-{editor,editor-repeat,editor-final,shortcut-trace-all,delay-trace}.log`.
+
+An isolated native Wayland/OpenGL probe opened ordinary generated projects with
+autosave/spelling enabled, measured 20 alternating whole-word queries, then
+replaced `radio` with `signal`, undid it and waited for Saved:
+
+| Workload | Search-ready p95 / max | Replace All count / synchronous duration | Final sampled PSS |
+| --- | --- | --- | --- |
+| 203 pages | 11.12 / 37.04 ms | 524 / 47.91 ms | 115.96 MiB |
+| 507 pages | 14.89 / 33.23 ms | 1,331 / 129.97 ms | 174.63 MiB |
+
+These are API-to-search-result and synchronous document-edit observations,
+not physical-key-to-frame timings, sustained typing/export, cold-open or peak
+memory acceptance. Replace All runs in a modal panel and remains synchronous.
+The disposable probe is `build/task-4c-measure.cpp`; final results/projects are
+`build/task-4c-measure-{200,500}-verified{.log,/}`. These final measurements use
+the corrected scan and scope implementation; earlier observations remain under
+`build/task-4c-measure-*-final*`. Its initial relative output path
+was correctly refused by the session-state contract; final runs use absolute
+paths. No production behavior was changed for that invocation error.
+
+| Check | Observed result |
+| --- | --- |
+| `mise run check` | **26/26 passed** before the final scope/scan review corrections |
+| Final release build and affected rechecks | **3/3 suites passed** after those corrections: search **9 passed** including lifecycle; editor **148 passed**, six platform/optional skips; project flows **49 passed** |
+| `mise run check-debug` | **26/26 passed** on the corrected implementation with address/undefined sanitizers, including the independent Fountain oracle and crash checks |
+| `mise run check-engine` | **2/2 passed** |
+| Native Wayland / OpenGL, Compose input context | Both focused Qt-synthesized editor cases pass in separate processes, including controls, selection, navigation, replacement, Undo/Redo, composition guard and smaller-window access |
+| Native Wayland / software project flow, Compose context | The focused autosave/reopen/Fountain/PDF case passes |
+| Completion review / whitespace | Requirements, tracked/untracked implementation and test necessity reviewed; scope and scan findings fixed and rechecked; no remaining code finding; final whitespace check passes |
+
+Final logs: `build/task-4c-release.log`,
+`build/task-4c-{unit,editor,flows}-verified.log`,
+`build/task-4c-release-build-verified.log`, `build/task-4c-debug-verified.log`,
+`build/task-4c-debug-unit-focused.log`, `build/task-4c-engine.log`,
+`build/task-4c-native-find_{replace_real_controls_and_undo,selection_navigation_menu_and_composition}-verified.log`
+and `build/task-4c-native-flow-verified.log`. Captures inspected:
+`build/release/editor-tests/find-replace{,-small}.png`.
+The earlier sanitizer timeout remains in `build/task-4c-debug-final.log`;
+that pre-correction run was stopped after its failure, and the full corrected
+run above passed. The earlier initial debug build was interrupted; it supplies
+no passing-suite claim.
+
+The installed Compose plugin supplies native Qt input here. fcitx/physical-key
+input and reliable compositor shortcut interaction remain unverified; the full
+fcitx runner was not run. No new owner comfort, sustained typing/export, peak
+memory, Academy-reference, broader Fountain compatibility or imported-PDF
+acceptance follows from this task. Existing heavy-I/O crash-loss limits remain.
+Diagnostics and the live scene navigator are the next separate slice 4 tasks;
+this does not complete slice 4 or the writing milestone.

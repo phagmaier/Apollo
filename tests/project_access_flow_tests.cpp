@@ -126,6 +126,59 @@ class ProjectAccessFlowTests : public QObject {
   Project project() { return create_project(path("project"), {5, {{ElementType::action, "Current writing.", false, {}, "first"},
                                                                {ElementType::action, "Second paragraph.", false, {}, "second"}}}); }
 private slots:
+  void find_replace_autosaves_reopens_and_exports() {
+    const auto project = create_project(path("find-project"), {0, {
+        {ElementType::heading, "INT. ROOM - DAY"},
+        {ElementType::action, "A cat waits.", false, {{2, 5, Style::bold}}},
+        {ElementType::cue, "MARA"}, {ElementType::dialogue, "The cat listens.\nStay, cat."},
+        {ElementType::page_break, ""}, {ElementType::action, "The cat leaves."}}});
+    auto expected = open_project(project.directory).screenplay.elements;
+    const auto initial = expected;
+    expected[1].text = "A dog waits.";
+    expected[3].text = "The dog listens.\nStay, dog.";
+    expected[5].text = "The dog leaves.";
+    const auto state = path("find-state");
+    {
+      Window window(font_, state, project.directory);
+      QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+      QTest::keyClick(&window.view, Qt::Key_H, Qt::ControlModifier);
+      QTRY_VERIFY(window.popup_open("findPanel"));
+      QVERIFY(window.item("findQuery"));
+      window.item("findQuery")->forceActiveFocus(); window.type("cat");
+      QTRY_COMPARE(window.item("findStatus")->property("text").toString(), QString("1 of 4 matches"));
+      window.item("findReplacement")->forceActiveFocus(); window.type("dog");
+      QVERIFY(window.click("findReplaceAll"));
+      QTRY_COMPARE(document_elements(*window.flow.document()), expected);
+      QTest::keyClick(&window.view, Qt::Key_Escape);
+      QTRY_VERIFY(window.flow.editor()->hasActiveFocus());
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(document_elements(*window.flow.document()), initial);
+      QTest::keyClick(&window.view, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+      QCOMPARE(document_elements(*window.flow.document()), expected);
+      QTRY_COMPARE(window.flow.autosaver()->state(), QString("saved"));
+      QCOMPARE(open_project(project.directory).screenplay.elements, expected);
+    }
+    Window window(font_, state, project.directory);
+    QTRY_VERIFY(window.flow.editor() && window.flow.editor()->hasActiveFocus());
+    QCOMPARE(document_elements(*window.flow.document()), expected);
+    QVERIFY(!window.popup_open("findPanel"));
+    auto* fountain = qobject_cast<FountainExportJob*>(window.view.rootObject()->property("fountainJob").value<QObject*>());
+    auto* pdf = qobject_cast<PdfExportJob*>(window.view.rootObject()->property("exportJob").value<QObject*>());
+    QVERIFY(fountain && pdf);
+    const auto output = path("find-output");
+    QVERIFY(fountain->request(output + ".fountain", false));
+    QTRY_VERIFY(!fountain->busy());
+    QCOMPARE(bytes(output + ".fountain"), QByteArray("INT. ROOM - DAY\n\nA **dog** waits.\n\nMARA\nThe dog listens.\nStay, dog.\n\n===\n\nThe dog leaves.\n"));
+    QSignalSpy complete(pdf, &PdfExportJob::completed);
+    QVERIFY(pdf->request(output + ".pdf", false));
+    QTRY_VERIFY(!pdf->busy());
+    QVERIFY(complete.size() == 1 && complete[0][0].toBool());
+    QProcess extract; extract.start("pdftotext", {"-layout", output + ".pdf", "-"});
+    QVERIFY(extract.waitForFinished(5000)); QCOMPARE(extract.exitCode(), 0);
+    const auto printed = QString::fromUtf8(extract.readAllStandardOutput()).simplified();
+    QCOMPARE(printed, QString("INT. ROOM - DAY A dog waits. MARA The dog listens. Stay, dog. 2. The dog leaves."));
+  }
+
   void suggestions_acceptance_autosaves_reopens_and_stays_project_local() {
     const auto p = create_project(path("suggestions"), {0, {{ElementType::heading, "INT. KITCHEN - DAY"},
         {ElementType::cue, "JOHN (V.O.)"}, {ElementType::dialogue, "Hi."}, {ElementType::cue, ""}}});
