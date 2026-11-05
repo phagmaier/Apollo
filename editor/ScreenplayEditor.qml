@@ -13,9 +13,33 @@ Rectangle {
     // coordinates. 0.75 gives the prototype's 612 px Letter page and 12 px type.
     property real pageScale: 0.75
     readonly property var suggestions: commands.suggestions
-    onEnabledChanged: { if (!enabled) suggestions.dismiss() }
+    readonly property var spelling: commands.spelling
+    readonly property bool spellingOpen: spellingMenu.visible
+    property int spellingRevision: 0
+    Connections {
+        target: root.spelling
+        function onChanged() { ++root.spellingRevision }
+        function onMenuChanged() { if (root.spelling.word.length === 0) spellingMenu.close() }
+    }
+    Connections {
+        target: root.screenplayLayout
+        function onLayoutChanged() { ++root.spellingRevision }
+    }
+    // Replacement removes its delegate; finish in the surviving root context.
+    function applySpelling(replacement) {
+        const position = spelling.replace(replacement)
+        spellingMenu.close()
+        editor.place(position)
+    }
+    function checkSpelling() {
+        if (!enabled || editor.inputMethodComposing || editor.preeditText.length > 0) return
+        suggestions.dismiss()
+        spelling.request(editor.cursorPosition, editor.selectionStart, editor.selectionEnd)
+        if (spelling.word.length > 0) spellingMenu.open()
+    }
+    onEnabledChanged: { if (!enabled) { suggestions.dismiss(); spelling.dismiss() } }
     color: "#d4d9df"
-    function focusEditor() { editor.forceActiveFocus() }
+    function focusEditor() { if (!spellingMenu.visible) editor.forceActiveFocus() }
     readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
     // Observe the installed document's history directly: TextEdit's property
     // notifications do not refresh bindings for these external cursor edits.
@@ -152,11 +176,11 @@ Rectangle {
                             && suggestionTrigger === trigger)
                         offerSuggestions()
                 }
-                onCursorPositionChanged: root.suggestions.cursorChanged(cursorPosition)
-                onSelectionStartChanged: root.suggestions.dismiss()
-                onSelectionEndChanged: root.suggestions.dismiss()
-                onActiveFocusChanged: { if (!activeFocus) root.suggestions.dismiss() }
-                onInputMethodComposingChanged: { if (inputMethodComposing) root.suggestions.dismiss() }
+                onCursorPositionChanged: { root.suggestions.cursorChanged(cursorPosition); root.spelling.dismiss() }
+                onSelectionStartChanged: { root.suggestions.dismiss(); root.spelling.dismiss() }
+                onSelectionEndChanged: { root.suggestions.dismiss(); root.spelling.dismiss() }
+                onActiveFocusChanged: { if (!activeFocus) { root.suggestions.dismiss(); if (!spellingMenu.visible) root.spelling.dismiss() } }
+                onInputMethodComposingChanged: { if (inputMethodComposing) { root.suggestions.dismiss(); root.spelling.dismiss() } }
                 Connections {
                     target: root.commands
                     function onTextCommitted(position, revision) {
@@ -185,6 +209,11 @@ Rectangle {
 
                 Keys.onPressed: (event) => {
                     ++suggestionTrigger
+                    if (event.key === Qt.Key_F7 && event.modifiers === Qt.NoModifier) {
+                        root.checkSpelling()
+                        event.accepted = true
+                        return
+                    }
                     const shift = event.modifiers & Qt.ShiftModifier
                     const command = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)
                     const code = event.text.length > 0 ? event.text.charCodeAt(0) : 0
@@ -278,6 +307,20 @@ Rectangle {
                 }
             }
 
+            Repeater {
+                model: {
+                    root.spellingRevision
+                    return root.spelling.marks((flick.contentY - pages.y) / root.pageScale,
+                        (flick.contentY + flick.height - pages.y) / root.pageScale)
+                }
+                Rectangle {
+                    required property var modelData
+                    objectName: "spellingUnderline"
+                    x: modelData.x; y: modelData.y
+                    width: modelData.width; height: 1.5
+                    color: "#bc4545"
+                }
+            }
             Repeater {
                 model: root.screenplayLayout.pageBreaks
                 Row {
@@ -410,4 +453,46 @@ Rectangle {
             }
         }
     }
+    Popup {
+        id: spellingMenu
+        objectName: "spellingMenu"
+        parent: root
+        x: Math.max(8, (root.width - width) / 2)
+        y: Math.max(8, Math.min(60, root.height - height - 8))
+        width: Math.min(390, root.width - 16)
+        height: Math.min(root.height - 16, spellingContents.implicitHeight + 32)
+        padding: 16; modal: true; focus: true
+        onClosed: { root.spelling.dismiss(); editor.forceActiveFocus() }
+        background: Rectangle { color: "#f5f4f1"; radius: 6; border.color: "#b9c0c7" }
+        ScrollView {
+            anchors.fill: parent
+            contentWidth: availableWidth
+            Column {
+                id: spellingContents
+                width: parent.width; spacing: 8
+                Label { width: parent.width; text: "Spelling · US English"; font.pixelSize: 16 }
+                Label { width: parent.width; text: root.spelling.word; textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere; font.bold: true }
+                Label { width: parent.width; text: root.spelling.message; wrapMode: Text.Wrap }
+                Repeater {
+                    model: root.spelling.choices
+                    Button {
+                        required property string modelData
+                        required property int index
+                        objectName: "spellingReplacement" + index
+                        width: spellingContents.width
+                        text: modelData
+                        onClicked: root.applySpelling(modelData)
+                    }
+                }
+                Button {
+                    objectName: "spellingAddWord"; text: "Add to personal dictionary"
+                    enabled: root.spelling.word.length > 0 && root.spelling.word.length <= 128
+                    onClicked: { if (root.spelling.addWord()) spellingMenu.close() }
+                }
+                Label { width: parent.width; text: root.spelling.error; visible: text.length > 0; wrapMode: Text.Wrap; color: "#9d3030" }
+                Button { text: "Close"; objectName: "spellingClose"; onClicked: spellingMenu.close() }
+            }
+        }
+    }
+
 }

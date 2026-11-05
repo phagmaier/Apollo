@@ -1,4 +1,6 @@
 #include "editor/editor_commands.h"
+#include "editor/spelling.h"
+#include <QTemporaryDir>
 #include "editor/editor_view.h"
 #include "editor/screenplay_layout.h"
 #include "fountain/import.h"
@@ -142,6 +144,7 @@ QQuickItem* find_item(QQuickItem* root, const QString& name) {
 
 class EditorTests : public QObject {
   Q_OBJECT
+  QTemporaryDir spelling_data_;
   QFont font_;
   std::unique_ptr<QTextDocument> document_;
   std::unique_ptr<QQuickView> view_;
@@ -251,6 +254,7 @@ class EditorTests : public QObject {
 
 private slots:
   void initTestCase() {
+    qputenv("XDG_DATA_HOME", spelling_data_.path().toUtf8());
     // The regular suite is deterministic offscreen. The same interaction
     // checks can also exercise the real Wayland/OpenGL rendering path.
     const bool native = qEnvironmentVariableIntValue("APOLLO_TEST_OPENGL") == 1;
@@ -262,6 +266,89 @@ private slots:
   // Any warning, such as a QML binding error, fails the test.
   void init() { QTest::failOnWarning(QRegularExpression(QStringLiteral(".*"))); }
   void cleanup() { view_.reset(); document_.reset(); }
+
+  void spelling_real_controls_and_transient_underlines() {
+    QVERIFY(open_elements({{ElementType::action, "A beautifull color."}}));
+    auto* commands = document_->findChild<EditorCommands*>();
+    QVERIFY(commands);
+    auto* spelling = qobject_cast<Spelling*>(commands->spelling());
+    QVERIFY(spelling);
+    QTRY_VERIFY_WITH_TIMEOUT(!spelling->busy(), 10000);
+    QCOMPARE(spelling->misspellings().size(), 1);
+    const auto original = document_elements(*document_);
+    const auto marks = spelling->marks(0, 2000);
+    QVERIFY(!marks.isEmpty());
+    const auto image = view_->grabWindow();
+    QVERIFY(image.save(QStringLiteral(APOLLO_ARTIFACT_DIR "/spelling-underlines.png")));
+    int red = 0;
+    for (int y = 0; y < image.height(); ++y)
+      for (int x = 0; x < image.width(); ++x) {
+        const auto pixel = image.pixelColor(x,y);
+        red += pixel.red() > 140 && pixel.green() < 110 && pixel.blue() < 110;
+      }
+    QVERIFY(red > 8);
+    QCOMPARE(document_elements(*document_)[0].styles.size(), std::size_t(0));
+    editor_->setProperty("cursorPosition", 6);
+    if (qEnvironmentVariableIntValue("APOLLO_TEST_WAYLAND_INPUT") == 1)
+      QCOMPARE(compositor_keys({"-k", "F7"}), QString());
+    else
+      press(Qt::Key_F7);
+    auto* menu = view_->rootObject()->findChild<QObject*>("spellingMenu");
+    QVERIFY(menu);
+    QTRY_VERIFY(menu->property("visible").toBool());
+    QTRY_VERIFY(spelling->choices().contains("beautiful"));
+    QVERIFY(view_->rootObject()->property("dialogOpen").toBool());
+    press(Qt::Key_F1);
+    QVERIFY(!view_->rootObject()->findChild<QObject*>("shortcutPanel")->property("visible").toBool());
+    QVERIFY(view_->grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/spelling-menu.png")));
+    const int index = spelling->choices().indexOf("beautiful");
+    auto* button = find_item(view_->contentItem(), "spellingReplacement" + QString::number(index));
+    QTRY_VERIFY((button = find_item(view_->contentItem(), "spellingReplacement" + QString::number(index))));
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, button->mapToScene(QPointF(button->width()/2, button->height()/2)).toPoint());
+    QTRY_COMPARE(document_->toPlainText(), QString("A beautiful color."));
+    QCOMPARE(document_elements(*document_)[0].id, original[0].id);
+    QVERIFY(editor_->hasActiveFocus());
+    press(Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(document_->toPlainText(), QString("A beautifull color."));
+    press(Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(document_->toPlainText(), QString("A beautiful color."));
+    editor_->setProperty("cursorPosition", document_->characterCount()-1);
+    type(" Zorblax");
+    press(Qt::Key_F7);
+    QTRY_VERIFY(menu->property("visible").toBool());
+    auto* add = find_item(view_->contentItem(), "spellingAddWord");
+    QVERIFY(add);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, add->mapToScene(QPointF(add->width()/2, add->height()/2)).toPoint());
+    QTRY_VERIFY(!spelling->busy());
+    QCOMPARE(spelling->misspellings().size(), 0);
+    // Another editor has no project-local spelling exemption to inherit.
+    QVERIFY(open_elements({{ElementType::action, "Zorblax"}}));
+    spelling = qobject_cast<Spelling*>(document_->findChild<EditorCommands*>()->spelling());
+    QTRY_VERIFY(!spelling->busy());
+    QCOMPARE(spelling->misspellings().size(), 0);
+    menu = view_->rootObject()->findChild<QObject*>("spellingMenu");
+    QInputMethodEvent composing(QStringLiteral("Zo"), {});
+    QCoreApplication::sendEvent(editor_, &composing);
+    press(Qt::Key_F7);
+    QVERIFY(!menu->property("visible").toBool());
+    QInputMethodEvent clear;
+    QCoreApplication::sendEvent(editor_, &clear);
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 0), Q_ARG(int, 4));
+    press(Qt::Key_F7);
+    QVERIFY(!menu->property("visible").toBool());
+    editor_->setProperty("cursorPosition", 3);
+    auto* edit = view_->rootObject()->findChild<QQuickItem*>("editButton");
+    QVERIFY(edit);
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, edit->mapToScene(edit->boundingRect().center()).toPoint());
+    QQuickItem* action = nullptr;
+    QTRY_VERIFY((action = find_item(view_->contentItem(), "editSpelling")));
+    QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, action->mapToScene(action->boundingRect().center()).toPoint());
+    QTRY_VERIFY(menu->property("visible").toBool());
+    QVERIFY(!editor_->hasActiveFocus());
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(!menu->property("visible").toBool());
+    QVERIFY(editor_->hasActiveFocus());
+  }
 
   void suggestions_character_keys_and_identity() {
     QVERIFY(open_elements({{ElementType::cue, "JOHN (V.O.)"}, {ElementType::dialogue, "One."},

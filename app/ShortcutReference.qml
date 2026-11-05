@@ -76,6 +76,7 @@ Popup {
         Column {
             width: scroll.availableWidth - verticalBar.width - 12
             SectionTitle { text: "Editing" }
+            ShortcutRow { width: parent.width; label: "Spelling at caret"; keys: "F7 / Edit"; detail: "Review US English replacements or add a personal word for all scripts on this computer. No automatic corrections." }
             ShortcutRow { width: parent.width; label: "Undo"; keys: "Ctrl+Z"; keyName: "shortcutUndo" }
             ShortcutRow { width: parent.width; label: "Redo"; keys: "Ctrl+Shift+Z"; keyName: "shortcutRedo" }
             ShortcutRow { width: parent.width; label: "Cut / copy selection"; keys: "Ctrl+X / Ctrl+C" }

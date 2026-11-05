@@ -30,7 +30,7 @@ Rectangle {
     property string emptySpeechNotice: ""
     readonly property bool dialogOpen: shortcutPanel.visible || titlePanel.visible || importedPanel.visible
             || emptySpeechPanel.visible || exportPanel.visible || copyPanel.visible || reloadPanel.visible
-            || failurePanel.visible || leavePanel.visible
+            || failurePanel.visible || leavePanel.visible || editorPage.spellingOpen
     property var selectedEmptySpeech: {
         for (const issue of emptySpeechIssues) {
             if (issue.id === emptySpeechId)
@@ -539,6 +539,10 @@ Rectangle {
                             onTriggered: editorPage.edit("paste")
                         }
                         MenuItem {
+                            objectName: "editSpelling"; text: "Spelling at caret…\tF7"
+                            onTriggered: editorPage.checkSpelling()
+                        }
+                        MenuItem {
                             objectName: "editSelectAll"; text: "Select all\tCtrl+A"
                             onTriggered: editorPage.edit("selectAll")
                         }
@@ -748,7 +752,7 @@ Rectangle {
         Text {
             anchors { left: parent.left; right: parent.right; margins: 20; verticalCenter: parent.verticalCenter }
             objectName: "operationStatus"
-            text: desk.commands.typeMessage || desk.commands.pageBreakMessage || desk.screenplayLayout.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.lastExport === "fountain" && desk.fountainJob ? desk.fountainJob.status : desk.exportJob ? desk.exportJob.status : "")
+            text: desk.commands.typeMessage || desk.commands.pageBreakMessage || desk.screenplayLayout.error || desk.commands.spelling.error || (desk.autosaver && (desk.autosaver.copyBusy || desk.autosaver.copyError) ? desk.autosaver.copyStatus : "") || (desk.autosaver && desk.showReloadStatus ? desk.autosaver.reloadStatus : "") || (desk.lastExport === "fountain" && desk.fountainJob ? desk.fountainJob.status : desk.exportJob ? desk.exportJob.status : "")
             elide: Text.ElideMiddle
             ToolTip.visible: footerArea.containsMouse
             ToolTip.text: text

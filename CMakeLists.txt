@@ -89,12 +89,14 @@ if(APOLLO_BUILD_EDITOR)
   target_link_libraries(fountain_export_tests PRIVATE apollo_source Qt6::Test)
   target_compile_definitions(fountain_export_tests PRIVATE APOLLO_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
   add_test(NAME fountain_export_tests COMMAND fountain_export_tests)
-  add_library(apollo_editor_core editor/screenplay_layout.cpp editor/editor_commands.cpp editor/writing_suggestions.cpp editor/editor_view.cpp editor/pdf_export_job.cpp editor/fountain_export_job.cpp
+  include(cmake/Spelling.cmake)
+  add_library(apollo_editor_core editor/screenplay_layout.cpp editor/editor_commands.cpp editor/writing_suggestions.cpp editor/spelling.cpp editor/editor_view.cpp editor/pdf_export_job.cpp editor/fountain_export_job.cpp
                                  editor/autosave.cpp editor/session_state.cpp editor/project_library.cpp editor/project_access_flow.cpp)
   set_target_properties(apollo_editor_core PROPERTIES AUTOMOC ON)
-  target_link_libraries(apollo_editor_core PUBLIC apollo_layout apollo_source apollo_export_snapshot Qt6::Gui Qt6::Quick)
+  target_link_libraries(apollo_editor_core PUBLIC apollo_hunspell apollo_layout apollo_source apollo_export_snapshot Qt6::Gui Qt6::Quick)
   target_compile_options(apollo_editor_core PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_definitions(apollo_editor_core PRIVATE
+    APOLLO_SPELLING_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/spelling"
     APOLLO_EDITOR_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/WritingDesk.qml"
     APOLLO_ACCESS_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/ProjectAccess.qml")
   target_compile_definitions(apollo_editor_core PRIVATE APOLLO_INTAKE_QML="${CMAKE_CURRENT_SOURCE_DIR}/app/ImportedMaterial.qml")
@@ -134,6 +136,11 @@ if(APOLLO_BUILD_EDITOR)
   add_test(NAME project_access_flow_tests COMMAND project_access_flow_tests)
   set_tests_properties(project_access_flow_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   target_compile_definitions(apollo_editor PRIVATE APOLLO_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/courier-prime")
+  add_executable(spelling_tests tests/spelling_tests.cpp)
+  set_target_properties(spelling_tests PROPERTIES AUTOMOC ON)
+  target_link_libraries(spelling_tests PRIVATE apollo_editor_core Qt6::Test)
+  add_test(NAME spelling_tests COMMAND spelling_tests)
+  set_tests_properties(spelling_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   add_executable(editor_tests tests/editor_tests.cpp)
   set_target_properties(editor_tests PROPERTIES AUTOMOC ON)
   target_link_libraries(editor_tests PRIVATE apollo_editor_core Qt6::Test)

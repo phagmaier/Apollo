@@ -89,8 +89,16 @@ free text, undo, persistence and excluded-context/input-method checks.
 Release and sanitizer checks pass 24/24 each, with final editor checks repeated
 after the composition-paste correction; engine-only passes 2/2. Native project flows pass 48/48;
 the native editor and focused compositor/Compose checks pass as recorded below.
-Next ready work is US English spelling and the personal dictionary. Find/replace,
-diagnostics, scene navigation and remaining Fountain compatibility stay pending.
+
+**Task 4b — US English spelling and personal dictionary is done for this bounded
+step (2026-11-04).** F7 / Edit opens explicit replacements and Add; transient
+underlines and computer-wide personal words leave source/export formatting intact.
+Release and sanitizer suites pass 25/25 each, engine 2/2, with final affected
+release and focused native checks passing. See [the spelling contract](spelling.md)
+and [task evidence](#task-4b--us-english-spelling-and-personal-dictionary).
+Compositor/fcitx/physical-key and sustained-performance checks remain unverified.
+Next ready work is find/replace; diagnostics, scene navigation and remaining
+Fountain compatibility stay pending.
 
 The [specification](spec.md) holds confirmed behavior. [Planning rounds 18–23](planning.md#round-18--first-usable-writing-milestone-boundary-2026-10-28)
 record the owner's milestone answers. The [spike report](spike-report.md) holds
@@ -1909,5 +1917,73 @@ additional Academy reference is unavailable locally; independent synthetic
 fixtures/PDF and Fountain-oracle checks pass. Imported PDF, broader Fountain
 compatibility and the rest of the writing milestone retain their existing gates.
 
-Next ready bounded work: US English spelling and the personal dictionary.
-Find/replace, diagnostics and the live scene navigator remain separate tasks.
+Task 4b below implements the next bounded spelling step. Find/replace,
+diagnostics and the live scene navigator remain separate tasks.
+
+### Task 4b — US English spelling and personal dictionary
+
+2026-11-04. **Done for this bounded task.**
+Depends on task 4a and the existing protected
+editing commands. Underline potential misspellings without changing source,
+offer replacements on demand with one-step Undo, and persist personal words
+across this computer's scripts. Obsolete-result rejection, retained
+formatting/structure, persistence and storage failure, real controls, native
+Qt input, and required release/sanitizer/engine suites are verified below.
+
+Engineering scope: bundled pinned US dictionary and Hunspell; background
+checking of authored text, transient viewport marks, caret-word spelling menu
+(F7 / Edit), explicit add-word action. No automatic replacement, language
+selection, sync or changes to character completion identity.
+
+
+The [bounded spelling contract](spelling.md) records tokenization, long-token
+limits, the explicit F7/Edit panel, replacement/Undo, viewport-only marks and
+personal-word storage/error behavior. Hunspell 1.7.2 is built from a hash-pinned
+source archive; the committed SCOWL US English files retain their full notices
+and configure-time hashes. See [dependencies and licenses](../assets/spelling/README.md).
+No source schema, export profile, character identity or runtime tool pin changed.
+
+Verification covers known US words/misspellings, UTF-16 locations after emoji,
+deliberate breaks, exact retained identities/dual flags/emphasis, one-step
+replacement Undo and source serialization/reopening. Personal words survive a
+new editor, ignore case, merge independent-instance additions under a lock and
+refresh an already open editor. Busy/corrupt dictionary cases preserve evidence
+and writing; the US dictionary remains functional. Tests isolate personal state
+and leave no user dictionary file. Real F7/Edit controls, pointer replacement,
+Add, Escape, modal shortcut blocking and selection/preedit guards pass.
+Underlines and menu captures were inspected.
+
+Review covered tracked/untracked implementation, dependency/license provenance
+and test necessity. The UI reproducer exposed a replacement destroying its
+button delegate before the click handler finished; completion now runs in the
+surviving editor context. Sanitizer project flows exposed a layout notification
+reading obsolete mark positions before contentsChanged; published-revision,
+current-word/block and layout guards now reject those positions. The same flows
+pass with the guards, with a focused whole-document-change regression retained.
+Review also corrected Edit-menu focus handoff and stale dictionary-error recovery.
+
+| Check | Observed result |
+| --- | --- |
+| `mise run check` | **25/25 passed** |
+| Final release recheck after review adjustments | **3/3 passed**: project flows (48 cases), spelling (5 cases including lifecycle), editor (146 passed, six platform/optional skips) |
+| `mise run check-debug` | **25/25 passed** with address/undefined sanitizers |
+| `mise run check-engine` | **2/2 passed** |
+| Native Wayland/OpenGL, Compose context, sanitizer binary | **3 passed**, no failures/skips: focused spelling lifecycle including controls, persistence, Undo/Redo and modal/preedit/selection guards |
+| `tools/check-wayland.sh --preflight` | Unavailable: required `wtype` command missing |
+| Direct completion review / whitespace | No remaining in-scope findings; tracked whitespace check passes |
+
+Logs: `build/task-4b-release-final.log`, `build/task-4b-release-recheck.log`,
+`build/task-4b-debug-final.log`, `build/task-4b-engine.log`,
+`build/task-4b-native-final.log` and `build/task-4b-wayland-preflight.log`.
+Captures: `build/release/editor-tests/spelling-{underlines,menu}.png`.
+Intermediate logs retain the earlier UI and sanitizer failures. An earlier
+release attempt also overlapped relinking with process tests and reported
+executable permission errors; final full/recheck runs do not overlap builds of
+their own executables. No production fix is claimed for those harness errors.
+
+Native input here uses Qt-synthesized keys and the Compose context. The attempted
+compositor F7 check could not launch `wtype`; compositor/fcitx/physical-key input,
+sustained spelling/typing/export performance, memory targets and owner comfort
+remain unverified. Existing Academy-reference, imported-PDF, broader Fountain
+compatibility and heavy-I/O crash-loss limits remain. This bounded task does not
+complete slice 4 or the writing milestone. Next ready work is find/replace.

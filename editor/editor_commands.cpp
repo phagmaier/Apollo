@@ -1,5 +1,6 @@
 #include "editor/editor_commands.h"
 #include "editor/writing_suggestions.h"
+#include "editor/spelling.h"
 #include "editor/screenplay_layout.h"
 #include "source/screenplay_format.h"
 
@@ -339,6 +340,7 @@ int insert_between(QTextCursor& cursor, const std::vector<Element>& inserted) {
 
 EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObject(parent), document_(document) {
   suggestions_ = new WritingSuggestions(document, this);
+  spelling_ = new Spelling(document, {}, this);
   connect(document_, &QTextDocument::contentsChanged, this, &EditorCommands::refreshDocumentState);
   connect(document_, &QTextDocument::undoAvailable, this, &EditorCommands::historyChanged);
   connect(document_, &QTextDocument::redoAvailable, this, &EditorCommands::historyChanged);
@@ -346,6 +348,7 @@ EditorCommands::EditorCommands(QTextDocument* document, QObject* parent) : QObje
 }
 
 QObject* EditorCommands::suggestions() const { return suggestions_; }
+QObject* EditorCommands::spelling() const { return spelling_; }
 
 void EditorCommands::refreshDocumentState() {
   setTypeMessage({});
