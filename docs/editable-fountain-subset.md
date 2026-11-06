@@ -1,5 +1,9 @@
 # Bounded editable Fountain preservation contract
 
+> **Superseded for new imports (owner decision, 2026-11-05).** Import is now the
+> simple conversion in [fountain-import.md](fountain-import.md). This document
+> describes the earlier review-era contract, which applies only to projects it created.
+
 2026-10-28. This is task **2.6c**, a bounded continuation of 2.6b, not complete
 Fountain compatibility or completion of writing slice 3. Contract `writer-subset-1`
 (now `writer-subset-5`, below) is an engineering choice within the requested preservation work.

@@ -59,11 +59,20 @@ struct Window {
   QQuickView view;
   ProjectAccessFlow flow;
   Window(const QFont& font, const QString& state, const QString& project = {}, const QString& exporter = {},
-         const QString& fountain = {}, bool wait_for_ready = true)
+         const QString& fountain = {}, bool wait_for_ready = true, bool legacy_review = true)
       : flow(view, font, QStringLiteral(APOLLO_FONT_DIR),
              exporter.isEmpty() ? QCoreApplication::applicationDirPath() + "/pdf_export" : exporter, state) {
     view.resize(1000, 1000);
+    // A Fountain path prefills the simple import form. Older tests build
+    // review-era imported projects through the legacy preview, which the home
+    // page no longer offers, so open it explicitly once start() has finished.
     flow.start(project, fountain);
+    if (legacy_review && !fountain.isEmpty())
+      QObject::connect(&flow, &ProjectAccessFlow::changed, &flow, [this, fountain, started = false]() mutable {
+        if (started || flow.busy()) return;
+        started = true;
+        flow.preview_import(fountain);
+      });
     view.show();
     if (!wait_for_ready) return; // Explicit queued-result teardown check below.
     // Window shortcuts require activation. A loaded document alone can become
@@ -2387,6 +2396,106 @@ private slots:
     QCOMPARE(window.flow.document()->toPlainText(), QStringLiteral("A new opening."));
   }
 
+  // Simple import (docs/fountain-import.md): name + file + Import opens an
+  // ordinary project. The extra blank lines before a heading are what the old
+  // flow refused without an explicit spacing choice.
+  void fountain_import_opens_ordinary_project_and_leaves_original_unchanged() {
+    const auto home = path("home");
+    QVERIFY(QDir().mkpath(home));
+    const auto old_home = qgetenv("HOME"), old_config = qgetenv("XDG_CONFIG_HOME");
+    const auto restore = qScopeGuard([&] { qputenv("HOME", old_home); qputenv("XDG_CONFIG_HOME", old_config); });
+    qputenv("HOME", home.toUtf8());
+    qputenv("XDG_CONFIG_HOME", (home + "/.config").toUtf8());
+    const auto fountain = path("script") + ".fountain";
+    const QByteArray original =
+        "Title: CROSSROADS\nAuthor: Pat Writer\nContact: 1 Main St\n    Springfield\n\n"
+        "INT. LAB - DAY\n\nThe *monkey* clings. [[a note]]\n\n\n"
+        "INT. HALL - NIGHT\n\nDEAN\n(quietly)\nThat’s what the questions are for…\n\n"
+        "# Act One\n\n= Dean arrives.\n\n/* cut scene */\n\nCUT TO:\n";
+    replace_file(fountain, original);
+    const auto state = path("session");
+    Window window(font_, state);
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(window.click("showImport"));
+    QVERIFY(!window.click("importFountain")); // A name and a file are both required.
+    window.item("importSourcePath")->setProperty("text", fountain + ".missing");
+    window.item("importProjectName")->setProperty("text", "Crossroads");
+    QVERIFY(window.click("importFountain"));
+    QTRY_VERIFY(!window.flow.busy());
+    QVERIFY(window.flow.error().contains("does not exist"));
+    QVERIFY(!window.flow.document());
+    window.item("importSourcePath")->setProperty("text", fountain);
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/fountain-import.png")));
+    QVERIFY(window.click("importFountain"));
+    QTRY_VERIFY(window.flow.document());
+    QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/fountain-import-writer.png")));
+    QTRY_VERIFY(window.flow.document());
+    const auto directory = home + "/Documents/Apollo/Crossroads";
+    QCOMPARE(window.flow.autosaver()->location(), directory);
+    QCOMPARE(bytes(fountain), original);
+    QVERIFY(window.flow.notice().contains("1 note, 1 boneyard passage, 1 section heading, 1 synopsis"));
+    QCOMPARE(window.view.rootObject()->property("sessionNotice").toString(), window.flow.notice());
+
+    const auto opened = open_project(directory);
+    QVERIFY(!opened.project.import_review && !opened.project.import_working);
+    QVERIFY(!opened.assets.imported_material && !opened.assets.original_fountain);
+    const std::vector<std::pair<ElementType, std::string>> expected{
+        {ElementType::title, "CROSSROADS"}, {ElementType::author, "Pat Writer"}, {ElementType::contact, "1 Main St\nSpringfield"},
+        {ElementType::heading, "INT. LAB - DAY"}, {ElementType::action, "The monkey clings. "},
+        {ElementType::heading, "INT. HALL - NIGHT"}, {ElementType::cue, "DEAN"}, {ElementType::parenthetical, "(quietly)"},
+        {ElementType::dialogue, "That’s what the questions are for…"}, {ElementType::transition, "CUT TO:"}};
+    std::vector<std::pair<ElementType, std::string>> actual;
+    for (const auto& e : opened.screenplay.elements) actual.emplace_back(e.type, e.text);
+    QCOMPARE(actual, expected);
+    QCOMPARE(opened.screenplay.elements[4].styles, (std::vector<StyleSpan>{{4, 10, Style::italic}}));
+
+    // Ordinary writing: edits autosave to the project, never to the Fountain file.
+    window.type(QStringLiteral("Edited. "));
+    QVERIFY(window.click("goHome"));
+    QTRY_VERIFY(!window.flow.document());
+    QVERIFY(window.flow.notice().isEmpty());
+    QCOMPARE(bytes(fountain), original);
+    const auto edited = open_project(directory).screenplay.elements;
+    QVERIFY(std::any_of(edited.begin(), edited.end(), [](const Element& e) { return e.text.starts_with("Edited. "); }));
+  }
+  // The sidebar and toolbar can each be hidden; the choice is remembered.
+  void hidden_sidebar_and_toolbar_are_remembered_across_sessions() {
+    const auto p = project();
+    const auto state = path("view-session");
+    {
+      Window window(font_, state, p.directory);
+      QTRY_VERIFY(window.flow.document());
+      QVERIFY(window.item("sidebar")->isVisible());
+      QVERIFY(window.item("toolbar")->isVisible());
+      QVERIFY(!window.item("showSidebar")->isVisible());
+      QVERIFY(window.click("toolbarToggle"));
+      QTRY_VERIFY(!window.item("toolbar")->isVisible());
+      QVERIFY(window.click("hideSidebar"));
+      QTRY_VERIFY(!window.item("sidebar")->isVisible());
+      QVERIFY(window.item("showSidebar")->isVisible());
+      QVERIFY(window.flow.editor()->hasActiveFocus());
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/writer-focused.png")));
+    }
+    {
+      Window window(font_, state, p.directory);
+      QTRY_VERIFY(window.flow.document());
+      QVERIFY(!window.item("sidebar")->isVisible());
+      QVERIFY(!window.item("toolbar")->isVisible());
+      QVERIFY(window.click("showSidebar"));
+      QTRY_VERIFY(window.item("sidebar")->isVisible());
+      QTest::keyClick(&window.view, Qt::Key_B, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(!window.item("sidebar")->isVisible());
+      QTest::keyClick(&window.view, Qt::Key_B, Qt::ControlModifier | Qt::ShiftModifier);
+      QTRY_VERIFY(window.item("sidebar")->isVisible());
+      QVERIFY(window.click("toolbarToggle"));
+      QTRY_VERIFY(window.item("toolbar")->isVisible());
+      QVERIFY(window.view.grabWindow().save(QStringLiteral(APOLLO_ARTIFACT_DIR "/writer.png")));
+    }
+    Window window(font_, state, p.directory);
+    QTRY_VERIFY(window.flow.document());
+    QVERIFY(window.item("sidebar")->isVisible() && window.item("toolbar")->isVisible());
+  }
+
   void stale_recent_identity_and_moved_project_use_safe_access_without_replacing_last_success() {
     const auto p = project(), replacement = project();
     const auto state = path("session");
@@ -2649,9 +2758,7 @@ private slots:
     {
       Window window(font_, state);
       QTRY_VERIFY(!window.flow.busy());
-      QVERIFY(window.click("showImport"));
-      window.item("importSourcePath")->setProperty("text", source);
-      QVERIFY(window.click("previewImport"));
+      window.flow.preview_import(source); // Legacy review intake; not on the home page.
       QTRY_VERIFY(window.flow.intake_preview());
       QVERIFY(window.flow.intake_summary().contains("entire source is pending"));
       QVERIFY(!window.flow.document());
@@ -2844,18 +2951,24 @@ private slots:
     QVERIFY(competing.flow.error().contains("locked"));
     QCOMPARE(bytes(package.directory + "/imports/original.fountain"), QByteArray("A source. [[retained note]]\n"));
   }
-  void explicit_fountain_preview_takes_precedence_over_remembered_project() {
+  // `apollo FILE.fountain` offers that file on the import form instead of
+  // resuming the remembered project; nothing is created until it is named.
+  void fountain_path_prefills_import_instead_of_resuming_remembered_project() {
     const auto p = project();
     const auto state = path("dispatch-state");
     SessionState(state).save({p.directory, p.id, {}, 0, 0});
     const auto state_before = bytes(state);
     const auto source = path("explicit") + ".fountain";
-    replace_file(source, "Explicit preview source.");
-    Window window(font_, state, {}, {}, source);
-    QTRY_VERIFY(window.flow.intake_preview());
+    replace_file(source, "INT. ROOM - DAY\n\nQuiet.\n");
+    Window window(font_, state, {}, {}, source, true, false);
+    QTRY_VERIFY(!window.flow.busy());
+    QTest::qWait(100);
     QVERIFY(!window.flow.document());
+    QVERIFY(!window.flow.intake_preview());
     QCOMPARE(bytes(state), state_before);
-    QCOMPARE(window.flow.intake_source(), QString("Explicit preview source."));
+    QCOMPARE(window.item("importSourcePath")->property("text").toString(), QFileInfo(source).absoluteFilePath());
+    QVERIFY(window.item("importProjectName")->isVisible());
+    QVERIFY(!window.item("importFountain")->isEnabled());
   }
   void changed_published_intake_cannot_activate_as_the_reviewed_snapshot() {
     const auto state = path("publication-session");

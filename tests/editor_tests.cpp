@@ -1034,6 +1034,87 @@ private slots:
 
   // The approved shell must leave the live editor and its selection intact
   // when the outline is shown/hidden, including a compact desktop window.
+  // Owner report (2026-11-05): the caret vanished on a line reached by moving
+  // down. The editor parked it on the viewport's bottom edge, under an
+  // always-drawn horizontal scrollbar handle.
+  void caret_stays_clear_of_viewport_edges_and_scrollbars() {
+    std::vector<Element> elements;
+    for (int i = 0; i < 160; ++i) elements.push_back({ElementType::action, "Line " + std::to_string(i) + " of the scene."});
+    QVERIFY(open_elements(elements));
+    view_->resize(1280, 1000);
+    QTest::qWait(50);
+    auto* flick = view_->rootObject()->findChild<QQuickItem*>("flick");
+    auto* horizontal = view_->rootObject()->findChild<QQuickItem*>("horizontalScrollBar");
+    QVERIFY(flick && horizontal);
+    QVERIFY(!horizontal->isVisible()); // The page fits; there is nothing to scroll sideways.
+    const auto line = editor_->property("cursorRectangle").toRectF().height();
+    editor_->setProperty("cursorPosition", 0);
+    for (int step = 0; step < 120; ++step) {
+      press(Qt::Key_Down);
+      const auto caret = editor_->mapRectToItem(flick, editor_->property("cursorRectangle").toRectF());
+      QVERIFY2(caret.bottom() <= flick->height() - 2 * line, qPrintable(QString("step %1: caret bottom %2 of %3").arg(step).arg(caret.bottom()).arg(flick->height())));
+      QVERIFY(caret.top() >= 0);
+    }
+    for (int step = 0; step < 120; ++step) {
+      press(Qt::Key_Up);
+      const auto caret = editor_->mapRectToItem(flick, editor_->property("cursorRectangle").toRectF());
+      QVERIFY(caret.bottom() <= flick->height());
+      const auto from_document_top = flick->property("contentY").toReal() + caret.top();
+      QVERIFY2(caret.top() >= std::min(2 * line, from_document_top),
+               qPrintable(QString("step %1: caret top %2").arg(step).arg(caret.top())));
+    }
+  }
+
+  // Ctrl+0 opens the element picker beside the page; keys or a click choose,
+  // Esc leaves the element unchanged, and writing keeps focus afterwards.
+  void element_picker_chooses_types_from_the_keyboard() {
+    QVERIFY(open_elements({{ElementType::action, "Words stay.", false, {}, "one"}, {ElementType::action, "Other."}}));
+    const auto original = document_elements(*document_);
+    auto* picker = view_->rootObject()->findChild<QObject*>("elementTypeMenu");
+    QVERIFY(picker);
+    editor_->setProperty("cursorPosition", 3);
+    press(Qt::Key_0, Qt::ControlModifier);
+    QTRY_VERIFY(picker->property("opened").toBool());
+    QCOMPARE(picker->property("highlighted").toInt(), 1); // Action, the current type.
+    press(Qt::Key_Escape);
+    QTRY_VERIFY(!picker->property("opened").toBool());
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    QCOMPARE(document_elements(*document_), original);
+    press(Qt::Key_0, Qt::ControlModifier);
+    QTRY_VERIFY(picker->property("opened").toBool());
+    press(Qt::Key_Down); press(Qt::Key_Down); press(Qt::Key_Down); // Action → Dialogue
+    press(Qt::Key_Up);                                             // → Parenthetical
+    press(Qt::Key_Return);
+    QTRY_VERIFY(!picker->property("opened").toBool());
+    QTRY_VERIFY(editor_->hasActiveFocus());
+    auto expected = original; expected[0].type = ElementType::parenthetical;
+    QCOMPARE(document_elements(*document_), expected);
+    QCOMPARE(cursor(), 3);
+    press(Qt::Key_0, Qt::ControlModifier);
+    QTRY_VERIFY(picker->property("opened").toBool());
+    press(Qt::Key_1);
+    QTRY_VERIFY(!picker->property("opened").toBool());
+    expected[0].type = ElementType::heading;
+    QCOMPARE(document_elements(*document_), expected);
+    // The picker never covers the caret: beside the page when the window has
+    // room for it, otherwise just right of the caret.
+    for (const int width : {1280, 900}) {
+      view_->resize(width, 900);
+      QTest::qWait(50);
+      press(Qt::Key_0, Qt::ControlModifier);
+      QTRY_VERIFY(picker->property("opened").toBool());
+      auto* popup = qobject_cast<QQuickItem*>(picker->property("contentItem").value<QObject*>());
+      QVERIFY(popup);
+      const auto area = popup->mapRectToScene(popup->boundingRect());
+      const auto caret = editor_->mapRectToScene(editor_->property("cursorRectangle").toRectF());
+      const auto page = editor_->mapRectToScene(QRectF(0, 0, 1, 1));
+      if (width == 1280) QVERIFY2(area.right() < page.left(), qPrintable(QString("picker %1 page %2").arg(area.right()).arg(page.left())));
+      else QVERIFY(area.left() > caret.right());
+      press(Qt::Key_Escape);
+      QTRY_VERIFY(!picker->property("opened").toBool());
+    }
+  }
+
   void writing_desk_outline_and_focus() {
     QVERIFY(open_elements(import_fountain(read(QStringLiteral(APOLLO_LOOK_SOURCE)))));
     view_->rootObject()->setProperty("documentTitle", "The Last Broadcast");

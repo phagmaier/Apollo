@@ -8,6 +8,7 @@
 #include "editor/project_access_flow.h"
 #include "source/fountain_conversion.h"
 #include "source/fountain_working.h"
+#include "source/fountain_import.h"
 #include "fountain/import.h"
 #include "source/project.h"
 
@@ -546,9 +547,10 @@ int autosave_typing(const char* path, const QString& log_path, int keys, int int
 }
 }
 
-// Ordinary Fountain input previews lossless intake; projects open through safe
-// access as a writer or a review-only reader. --retain-fountain captures a
-// review-only project. The explicit spike DIR --create [FILE.fountain] uses
+// A Fountain path opens the home page's import form with that file; projects
+// open through safe access. NEW_PROJECT --import-fountain FILE is the same simple
+// import (docs/fountain-import.md). The legacy --retain/--interpret/--edit-fountain
+// modes create review-era projects for older tests. The explicit spike DIR --create [FILE.fountain] uses
 // the limited parser and exits. --autosave-typing types into an editable project
 // for the crash checks. --check only lays the document out and
 // reports whether every block matched the engine's line breaks. --measure
@@ -565,15 +567,16 @@ int main(int argc, char** argv) {
              snapshot = mode == "--snapshot", export_measuring = mode == "--measure-export", creating = mode == "--create",
              typing = mode == "--autosave-typing", interpreting = mode == "--interpret-fountain",
              editing_import = mode == "--edit-fountain", retaining = mode == "--retain-fountain" || interpreting || editing_import,
-             fountain_export = mode == "--export-fountain";
-  if ((check || comparing || typing || creating || retaining || fountain_export) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
+             fountain_export = mode == "--export-fountain", importing = mode == "--import-fountain";
+  if ((check || comparing || typing || creating || retaining || fountain_export || importing) && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   QGuiApplication application(argc, argv);
   const bool normalize_scene_spacing = editing_import && argc == 5 && std::string(argv[4]) == "--normalize-scene-spacing";
-  const bool usage = retaining ? (argc != 4 && !normalize_scene_spacing) : check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
+  const bool usage = importing ? argc != 4 : retaining ? (argc != 4 && !normalize_scene_spacing) : check ? argc != 3 : measuring ? argc != 3 && argc != 4 : creating ? argc != 3 && argc != 4
       : typing ? argc < 4 || argc > 7
       : (comparing || snapshot || export_measuring || fountain_export) ? argc != 4 && argc != 5 : argc != 1 && argc != 2;
   if (usage) {
     std::cerr << "usage: apollo_editor [FILE.fountain|PROJECT] [--check | --measure [KEYS] | --agreement OUTDIR [EDITS] | --snapshot OUTDIR [--no-title-page] | --measure-export OUTDIR [KEYS]]\n"
+                 "       apollo_editor NEW_PROJECT --import-fountain FILE.fountain\n"
                  "       apollo_editor PROJECT --create [FILE.fountain]\n"
                  "       apollo_editor PROJECT --retain-fountain FILE\n"
                  "       apollo_editor NEW_PROJECT --interpret-fountain FILE\n"
@@ -583,6 +586,12 @@ int main(int argc, char** argv) {
     return 2;
   }
   try {
+    if (importing) {
+      const auto imported = apollo::source::import_fountain_project_at(QString::fromLocal8Bit(argv[1]), QString::fromLocal8Bit(argv[3]));
+      std::cout << "imported " << imported.project.directory.toStdString() << '\n';
+      if (!imported.notice.isEmpty()) std::cout << imported.notice.toStdString() << '\n';
+      return 0;
+    }
     if (retaining) {
       const auto intake = apollo::source::read_fountain_intake(QString::fromLocal8Bit(argv[3]));
       const auto assets = editing_import ? apollo::source::editable_fountain_assets(intake.assets, normalize_scene_spacing)

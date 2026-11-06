@@ -8,6 +8,7 @@
 #include "editor/fountain_export_job.h"
 #include "editor/screenplay_layout.h"
 #include "source/project_creation.h"
+#include "source/fountain_import.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -15,6 +16,10 @@
 #include <QQuickView>
 #include <QTextDocument>
 #include <QMap>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QStandardPaths>
 
 namespace apollo::editor {
 namespace {
@@ -31,6 +36,26 @@ ProjectAccessFlow::ProjectAccessFlow(QQuickView& view, QFont font, QString font_
   state_timer_.setSingleShot(true);
   state_timer_.setInterval(250);
   connect(&state_timer_, &QTimer::timeout, this, &ProjectAccessFlow::persist_session);
+  // A few bytes of layout preference; an unreadable file keeps the defaults.
+  const auto data = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+  view_path_ = !session_path.isEmpty() ? session_path + QStringLiteral(".view")
+             : data.isEmpty() ? QString() : data + QStringLiteral("/Apollo/view.json");
+  QFile file(view_path_);
+  if (!view_path_.isEmpty() && file.open(QIODevice::ReadOnly) && file.size() < 4096) {
+    const auto view = QJsonDocument::fromJson(file.readAll()).object();
+    sidebar_visible_ = view.value(QStringLiteral("sidebar")).toBool(true);
+    toolbar_visible_ = view.value(QStringLiteral("toolbar")).toBool(true);
+  }
+}
+void ProjectAccessFlow::set_view(bool sidebar, bool toolbar) {
+  if (sidebar == sidebar_visible_ && toolbar == toolbar_visible_) return;
+  sidebar_visible_ = sidebar; toolbar_visible_ = toolbar;
+  emit viewChanged();
+  if (view_path_.isEmpty()) return;
+  try {
+    QDir().mkpath(QFileInfo(view_path_).absolutePath());
+    source::replace_file(view_path_, QJsonDocument(QJsonObject{{"sidebar", sidebar}, {"toolbar", toolbar}}).toJson(QJsonDocument::Compact));
+  } catch (const std::exception& error) { qWarning("Writer layout not saved: %s", error.what()); }
 }
 QQuickItem* ProjectAccessFlow::editor() const { return editor_; }
 QString ProjectAccessFlow::location() const { return saver_ ? saver_->location() : location_; }
@@ -109,7 +134,7 @@ void ProjectAccessFlow::start(const QString& directory, const QString& fountain)
       session_notice_ = session_error;
       library_notice_ = library_error;
       update_notice();
-      if (!fountain.isEmpty()) preview_import(fountain);
+      if (!fountain.isEmpty()) { pending_import_ = QFileInfo(fountain).absoluteFilePath(); emit changed(); }
       else if (!directory.isEmpty()) inspect(directory, {});
       else if (resume_) inspect(resume_->directory, resume_->project_id);
     }, Qt::QueuedConnection);
@@ -148,6 +173,29 @@ void ProjectAccessFlow::create_project(const QString& parent, const QString& nam
       // Even our freshly published projects acquire safe edit access and check
       // the expected UUID; a competing open or changed project is not bypassed.
       inspect(project->directory, project->id);
+    }, Qt::QueuedConnection);
+  });
+}
+
+void ProjectAccessFlow::import_fountain(const QString& name, const QString& path) {
+  if (busy_ || document_ || review_session_ || intake_) return;
+  busy_ = true;
+  error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
+  emit changed();
+  launch([this, parent = default_location_, name, path] {
+    access_.reset();
+    std::optional<source::ImportedProject> imported;
+    QString failure;
+    try { imported = source::import_fountain_project(parent, name, path); }
+    catch (const std::exception& error) { failure = QString::fromUtf8(error.what()); }
+    QMetaObject::invokeMethod(this, [this, imported, failure] {
+      busy_ = false;
+      if (!imported) { error_ = failure; emit changed(); return; }
+      pending_import_.clear();
+      import_notice_ = imported->notice;
+      update_notice();
+      // Open through the same safe access as any new project.
+      inspect(imported->project.directory, imported->project.id);
     }, Qt::QueuedConnection);
   });
 }
@@ -376,6 +424,7 @@ void ProjectAccessFlow::install(std::unique_ptr<source::ProjectSession> session)
   connect(saver_.get(), &Autosaver::released, this, [this] {
     view_.setSource({});
     export_job_.reset(); fountain_job_.reset(); saver_.reset(); document_.reset(); intake_.reset();
+    import_notice_.clear(); update_notice();
     leaving_ = false; saver_drained_ = false; leave_failed_ = false;
     location_.clear(); error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
     show_access(); emit changed();
@@ -397,6 +446,7 @@ void ProjectAccessFlow::home() {
     review.reset();
     QMetaObject::invokeMethod(this, [this] {
       intake_.reset();
+      import_notice_.clear(); update_notice();
       location_.clear(); error_.clear(); candidates_.clear(); current_available_ = false; current_summary_.clear();
       busy_ = false; show_access(); emit changed();
     }, Qt::QueuedConnection);
@@ -434,7 +484,8 @@ void ProjectAccessFlow::set_notice(const QString& notice) {
 }
 void ProjectAccessFlow::update_notice() {
   notice_ = session_notice_;
-  if (!library_notice_.isEmpty()) notice_ += (notice_.isEmpty() ? QString() : QStringLiteral("\n")) + library_notice_;
+  for (const auto* extra : {&library_notice_, &import_notice_})
+    if (!extra->isEmpty()) notice_ += (notice_.isEmpty() ? QString() : QStringLiteral("\n")) + *extra;
   if (document_ && view_.rootObject()) view_.rootObject()->setProperty("sessionNotice", notice_);
   emit changed();
 }

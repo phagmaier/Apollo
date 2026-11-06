@@ -12,12 +12,16 @@ reference tools, and an early feasibility-spike build; it is not yet an app.
   settled product decisions, proposed implementation slices, and verification.
 - [Spike brief](docs/spike-brief.md): current feasibility work, scope, tool pins,
   order, and pass/fail checks.
+- [Fountain import](docs/fountain-import.md): the owner's simple import
+  (name, file, Import → ordinary project); supersedes the review-based intake.
 - [Fountain export](docs/fountain-export.md): the bounded canonical Fountain
   export contract, its per-snapshot eligibility, evidence and remaining gates.
 - [Case handling](docs/case-handling.md): authored text versus capitals shown
   and printed for headings and cues, import/export rules and the owner's case policy.
 - [Spacing](docs/spacing.md): authored versus presented spaces, deliberate
   breaks and blank dialogue lines in layout, page splits, import and export.
+- [Writer layout](docs/writer-layout.md): the owner's simple writing screen,
+  sidebar, toolbar, element picker and caret visibility.
 - [Element types](docs/element-types.md): the body selector and Ctrl+1–8,
   centered act labels, the six-type Tab cycle and protected structures.
 - [Selection and clipboard](docs/selection-and-clipboard.md): replacement,
@@ -106,7 +110,12 @@ frozen every visual detail.
   checkpoints for deliberate/blank dialogue lines, leading-space navigation and
   Fountain disclosure. `--smoke` automates the focused native checks. Spacing
   choices remain provisional until owner review; see `docs/spacing.md`.
-- The bounded Writing desk shell is in `app/WritingDesk.qml`. Use
+- The Writing desk is in `app/WritingDesk.qml`; its layout follows the owner's
+  2026-11-05 simplification ([writer-layout.md](docs/writer-layout.md)): no top
+  header, a hideable labeled sidebar (Home, Scenes, Elements, Title page, Find,
+  Export, Save copy), an optional toolbar, the page and one status line. Ctrl+0
+  opens the element picker; Ctrl+Shift+B hides the sidebar. Keep it simple; do
+  not add banners or explanatory text to the writing screen. Use
   `tools/inspect-writing-desk.sh` for the prototype/QML comparison, or `--smoke`
   for its automated native launch/outline/export check. See
   `docs/spike-report.md` and `docs/spike-handoff.md` for the owner's acceptance
@@ -115,8 +124,8 @@ frozen every visual detail.
   a whole scene in one Undo step. Alt+Shift+Up moves the current scene up; Esc
   cancels a drag. See [scene-navigator.md](docs/scene-navigator.md).
   Undo is Ctrl+Z; redo is Ctrl+Shift+Z.
-  The rail's **Shortcuts** button or F1 opens the writing shortcut reference;
-  **Edit** exposes Undo/Redo and clipboard actions with their key labels.
+  The sidebar's **Shortcuts** button or F1 opens the writing shortcut reference;
+  the toolbar's **Edit** exposes Undo/Redo and clipboard actions with their key labels.
   Writing suggestions cover current-script character names, cue extensions and
   heading parts: arrows select, Tab accepts, Esc dismisses, Ctrl+Space reopens;
   Enter keeps its ordinary writing action. See
@@ -132,22 +141,19 @@ frozen every visual detail.
   [pdf-export.md](docs/pdf-export.md) and [fountain-export.md](docs/fountain-export.md).
 - Project folders and autosave follow [source-format.md](docs/source-format.md).
   `build/release/apollo_editor DIR --create [FILE.fountain]` creates a project
-  and `apollo_editor DIR` opens editable projects with autosave. Ordinary
-  Fountain paths now open a lossless review-only import preview (task 2.6a);
-  `DIR --retain-fountain FILE` publishes that review-only intake. Task 2.6b's
-  **Interpret in a New Copy** (or `NEW_DIR --interpret-fountain FILE`) retains
-  located interpretations, named notes/stash and metadata in another read-only
-  project, with unresolved ranges and layout limitations. Original projects
-  are never upgraded in place. Task 2.6c adds **Edit in a New Copy**
-  (`NEW_DIR --edit-fountain FILE`) only for the independently tested
-  [bounded writer subset](docs/editable-fountain-subset.md). Its imported reader
-  stays available while writing; imported PDF export remains gated. See
-  [fountain-compatibility.md](docs/fountain-compatibility.md): full editable
-  conversion and round-trip compatibility remain pending. Task 2.6d exports
-  clean Fountain from editable projects whose current snapshot meets
-  [fountain-export.md](docs/fountain-export.md) (Export panel, Ctrl+Shift+E, or
-  `apollo_editor PROJECT --export-fountain OUT [--no-title-page]`); PDF of
-  imported writing stays blocked. `fountain_export_oracle_tests` uses aw-parser
+  and `apollo_editor DIR` opens editable projects with autosave. Importing
+  Fountain follows [fountain-import.md](docs/fountain-import.md) (owner decision,
+  2026-11-05): Home → **Import Fountain…**, name the project, choose the file,
+  **Import**; it opens as an ordinary project (PDF and Fountain export as usual)
+  and the Fountain file is never written. Do not reintroduce review, retain,
+  interpret, location or spacing options into import. `apollo_editor FILE.fountain`
+  prefills that form; `NEW_DIR --import-fountain FILE` is the CLI equivalent.
+  The earlier review-era intake (`--retain-fountain`, `--interpret-fountain`,
+  `--edit-fountain`, `ImportedMaterial.qml`) remains only so older imported
+  projects open and older tests run. Editable projects export clean Fountain
+  when the current snapshot meets [fountain-export.md](docs/fountain-export.md)
+  (Export panel, Ctrl+Shift+E, or
+  `apollo_editor PROJECT --export-fountain OUT [--no-title-page]`). `fountain_export_oracle_tests` uses aw-parser
   from `tools/afterwriting-oracle.sh` as the independent parser and is configured
   only once that is installed. The explicit spike
   `--create [FILE]`/instrumentation paths retain their limited parser.

@@ -1,5 +1,9 @@
 # Fountain compatibility and intake
 
+> **Superseded for new imports (owner decision, 2026-11-05).** Import is now the
+> simple conversion in [fountain-import.md](fountain-import.md). This document
+> describes the earlier review-era contract, which applies only to projects it created.
+
 Investigated 2026-10-28 against the checked-in official samples and
 [official Fountain 1.1 syntax](https://fountain.io/syntax/). Sample provenance and
 MIT terms remain in [fixtures/README.md](../fixtures/README.md) and

@@ -444,6 +444,36 @@ Before task 4d, the spec left exact diagnostics open. The owner chose:
 Other diagnostics, the mixed-case exception and blank-spacing advisories remain
 to be specified. See [diagnostics.md](diagnostics.md).
 
+## Round 27 — simple Fountain import (settled, 2026-11-05)
+
+After importing a real script, the owner rejected the review-based import as
+busy and confusing, and it refused ordinary Fountain until an explicit spacing
+choice was made. The owner decided:
+
+1. Import is: name the new project, choose the Fountain file, Import. It
+   converts into Apollo's own format and opens for writing.
+2. No import options: no location choice, no "retain for review", no
+   "interpret in a new copy", no scene-spacing choice. Apollo's normal spacing
+   is simply used.
+3. The original Fountain file is never touched; import always creates a new
+   project.
+
+See [fountain-import.md](fountain-import.md). The 2.6a–2.6c review/subset
+contracts apply only to projects they already created.
+
+## Round 28 — simple writer layout (settled, 2026-11-05)
+
+The owner found the top bar confusing and asked for a clean, simple writing
+screen like a professional app they pointed to:
+
+1. The top bar should be hideable and simpler.
+2. A sidebar, also hideable, holds navigation: Home, export (PDF or other), etc.
+3. An easy pop-up list to choose the element type.
+4. Don't overcomplicate; match the reference's simplicity, not its exact look.
+5. Fix the caret disappearing on some lines.
+
+See [writer-layout.md](writer-layout.md).
+
 ## Subsequent decision branches
 
 Visual exploration: [editor prototype](../prototype/editor.html) presents three

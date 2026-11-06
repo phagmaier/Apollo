@@ -49,6 +49,12 @@ class ProjectAccessFlow : public QObject {
   Q_PROPERTY(QString intakeSummary READ intake_summary NOTIFY changed)
   Q_PROPERTY(QString intakeSource READ intake_source NOTIFY changed)
   Q_PROPERTY(QVariantList intakeFindings READ intake_findings NOTIFY changed)
+  // A Fountain path given on the command line, offered on the home page's
+  // import form; importing still needs a project name.
+  Q_PROPERTY(QString pendingImport READ pending_import NOTIFY changed)
+  // Writer layout choices, remembered across sessions beside the session state.
+  Q_PROPERTY(bool sidebarVisible READ sidebar_visible NOTIFY viewChanged)
+  Q_PROPERTY(bool toolbarVisible READ toolbar_visible NOTIFY viewChanged)
 public:
   ProjectAccessFlow(QQuickView& view, QFont font, QString font_directory, QString exporter, QString session_path = {});
   ~ProjectAccessFlow() override;
@@ -61,11 +67,20 @@ public:
   Q_INVOKABLE void home();
   Q_INVOKABLE void retry_leave();
   Q_INVOKABLE void keep_writing();
+  // Simple import (docs/fountain-import.md): reads the Fountain file without
+  // changing it, creates a new ordinary project named `name` in the default
+  // location, and opens it for writing.
+  Q_INVOKABLE void import_fountain(const QString& name, const QString& path);
+  // Legacy review-only intake, kept for older tests and projects; not offered
+  // by the home page.
   Q_INVOKABLE void preview_import(const QString& path);
   Q_INVOKABLE void publish_import(const QString& parent, const QString& name);
   Q_INVOKABLE void interpret_import(const QString& parent, const QString& name);
   Q_INVOKABLE void edit_import(const QString& parent, const QString& name);
   void set_intake_normalize_scene_spacing(bool normalize);
+  Q_INVOKABLE void set_view(bool sidebar, bool toolbar);
+  bool sidebar_visible() const { return sidebar_visible_; }
+  bool toolbar_visible() const { return toolbar_visible_; }
   Q_INVOKABLE QUrl folder_url(const QString& path) const;
   Q_INVOKABLE QString local_folder(const QUrl& url) const;
   bool busy() const { return busy_; }
@@ -77,6 +92,7 @@ public:
   QVariantList candidates() const { return candidates_; }
   QVariantList recent_projects() const;
   QString default_location() const { return default_location_; }
+  QString pending_import() const { return pending_import_; }
   bool leaving() const { return leaving_; }
   bool leave_failed() const { return leave_failed_; }
   bool intake_preview() const { return intake_ && !document_ && !intake_active(); }
@@ -95,6 +111,7 @@ public:
   QQuickItem* editor() const;
 signals:
   void changed();
+  void viewChanged();
   void activated();
 private slots:
   void schedule_session();
@@ -136,7 +153,9 @@ private:
   bool busy_ = false, current_available_ = false, state_writing_ = false, state_dirty_ = false;
   bool leaving_ = false, leave_failed_ = false, saver_drained_ = false, library_dirty_ = false;
   bool normalize_scene_spacing_ = false;
-  QString default_location_, session_notice_, library_notice_;
+  bool sidebar_visible_ = true, toolbar_visible_ = true;
+  QString view_path_;
+  QString default_location_, session_notice_, library_notice_, import_notice_, pending_import_;
   QString location_, error_, notice_, current_summary_;
   QVariantList candidates_;
 };

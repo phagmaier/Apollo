@@ -8,7 +8,7 @@ Rectangle {
     required property var access
     property int selectedIndex: -1
     property bool creating: false
-    property bool importing: false
+    property bool importing: access.pendingImport.length > 0
     color: "#d4d9df"
     Connections {
         target: page.access
@@ -62,33 +62,51 @@ Rectangle {
                 }
                 Button {
                     objectName: "showImport"
-                    text: page.importing ? "Cancel Import" : "Import Fountain for Review…"
+                    text: page.importing ? "Cancel Import" : "Import Fountain…"
                     enabled: !page.access.busy
                     onClicked: { page.importing = !page.importing; page.creating = false }
                 }
             }
+            Label {
+                visible: page.importing
+                text: "Import a Fountain script"
+                font { family: "Liberation Sans"; pixelSize: 26; weight: Font.DemiBold }
+                color: "#303843"
+            }
             Column {
                 width: parent.width; spacing: 12; visible: page.importing
-                Label {
-                    width: parent.width; wrapMode: Text.Wrap; color: "#303843"
-                    text: "Retain and read an exact copy of your Fountain file in a new project. Review the source before retaining it. Writing in the verified subset can then be edited in a new copy and exported as clean Fountain; PDF export of imported writing is still pending."
-                }
+                Label { text: "Project name"; color: "#303843" }
                 TextField {
-                    id: importSource; objectName: "importSourcePath"
+                    id: importName; objectName: "importProjectName"
                     width: parent.width; selectByMouse: true; enabled: !page.access.busy
-                    placeholderText: "/path/to/script.fountain"; Accessible.name: "Fountain source file"
+                    placeholderText: "Name your screenplay"; Accessible.name: "New project name"
+                    onAccepted: importButton.clicked()
                 }
-                Flow {
+                Label { text: "Fountain file"; color: "#303843" }
+                Row {
                     width: parent.width; spacing: 12
+                    TextField {
+                        id: importSource; objectName: "importSourcePath"
+                        width: parent.width - chooseImport.width - parent.spacing
+                        selectByMouse: true; enabled: !page.access.busy
+                        text: page.access.pendingImport
+                        placeholderText: "/path/to/script.fountain"; Accessible.name: "Fountain file to import"
+                        onAccepted: importButton.clicked()
+                    }
                     Button {
-                        objectName: "chooseImportSource"; text: "Choose Fountain File…"; enabled: !page.access.busy
+                        id: chooseImport; objectName: "chooseImportSource"; text: "Choose File…"; enabled: !page.access.busy
                         onClicked: importFiles.open()
                     }
-                    Button {
-                        objectName: "previewImport"; text: "Review Import"
-                        enabled: !page.access.busy && importSource.text.length > 0
-                        onClicked: page.access.preview_import(importSource.text)
-                    }
+                }
+                Label {
+                    width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: "#4d5965"
+                    text: "Saved as a new project in " + page.access.defaultLocation + ". Your Fountain file is not changed."
+                }
+                Button {
+                    id: importButton; objectName: "importFountain"
+                    text: page.access.busy ? "Importing…" : "Import"
+                    enabled: !page.access.busy && importName.text.trim().length > 0 && importSource.text.trim().length > 0
+                    onClicked: if (enabled) page.access.import_fountain(importName.text, importSource.text.trim())
                 }
             }
             Column {
@@ -130,7 +148,7 @@ Rectangle {
             Label {
                 width: parent.width; wrapMode: Text.Wrap
                 visible: !page.creating && !page.importing
-                text: "Choose an Apollo project folder. Opening never replaces its writing with a recovery copy."
+                text: "Open an Apollo project folder."
                 font { family: "Liberation Sans"; pixelSize: 14 }
                 color: "#303843"
             }
@@ -162,17 +180,17 @@ Rectangle {
                 }
             }
             Label {
-                visible: !page.creating && page.access.location.length === 0
+                visible: !page.creating && !page.importing && page.access.location.length === 0
                 text: "Recent projects"; color: "#303843"
                 font { family: "Liberation Sans"; pixelSize: 18; weight: Font.DemiBold }
             }
             Label {
                 width: parent.width; wrapMode: Text.Wrap; color: "#4d5965"
-                visible: !page.creating && page.access.location.length === 0 && page.access.recentProjects.length === 0
+                visible: !page.creating && !page.importing && page.access.location.length === 0 && page.access.recentProjects.length === 0
                 text: "No recent projects yet. Create a screenplay or open an Apollo project folder."
             }
             Repeater {
-                model: !page.creating && page.access.location.length === 0 ? page.access.recentProjects : []
+                model: !page.creating && !page.importing && page.access.location.length === 0 ? page.access.recentProjects : []
                 ItemDelegate {
                     required property var modelData
                     required property int index
@@ -300,7 +318,7 @@ Rectangle {
     }
     FileDialog {
         id: importFiles; objectName: "importFileDialog"
-        title: "Choose a Fountain source to retain"
+        title: "Choose a Fountain script to import"
         fileMode: FileDialog.OpenFile
         nameFilters: ["Fountain scripts (*.fountain)", "All files (*)"]
         onAccepted: importSource.text = page.access.local_folder(selectedFile)

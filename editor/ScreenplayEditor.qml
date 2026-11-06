@@ -68,7 +68,7 @@ Rectangle {
         if (spelling.word.length > 0) spellingMenu.open()
     }
     onEnabledChanged: { if (!enabled) { suggestions.dismiss(); spelling.dismiss(); findPanel.close() } }
-    color: "#d4d9df"
+    color: "#e8eaee"
     function focusEditor() { if (!spellingMenu.visible && !findPanel.visible) editor.forceActiveFocus() }
     readonly property bool hasSelection: editor.selectionStart !== editor.selectionEnd
     // Observe the installed document's history directly: TextEdit's property
@@ -135,6 +135,13 @@ Rectangle {
             editor.place(commands.removePageBreak(position, position, position))
         editor.forceActiveFocus()
     }
+    // The caret in this item's coordinates, for pop-ups placed beside it.
+    readonly property rect caretRect: {
+        flick.contentX; flick.contentY; pages.x; pages.y
+        return editor.mapToItem(root, editor.cursorRectangle)
+    }
+    // Left edge of the page cards in this item's coordinates.
+    readonly property real pageLeft: { flick.contentX; flick.width; pages.x; return pages.mapToItem(root, 0, 0).x }
     readonly property bool sceneInteractionAllowed: enabled && !editor.inputMethodComposing && editor.preeditText.length === 0
     readonly property string currentSceneId: {
         commands.documentRevision
@@ -239,12 +246,16 @@ Rectangle {
                         Qt.callLater(editor.offerCommittedSuggestions, position, revision, editor.suggestionTrigger)
                     }
                 }
+                // Keep a few lines of context around the caret instead of
+                // parking it on the viewport edge, where it is hard to see.
                 function revealCursor() {
                     const rect = mapToItem(flick.contentItem, cursorRectangle)
-                    if (rect.y < flick.contentY)
-                        flick.contentY = Math.max(0, rect.y - 12)
-                    else if (rect.y + rect.height > flick.contentY + flick.height)
-                        flick.contentY = rect.y + rect.height - flick.height
+                    const margin = Math.min(flick.height / 4, Math.max(36, rect.height * 4))
+                    const lowest = Math.max(0, flick.contentHeight - flick.height)
+                    if (rect.y < flick.contentY + margin)
+                        flick.contentY = Math.max(0, Math.min(flick.contentY, rect.y - margin))
+                    else if (rect.y + rect.height > flick.contentY + flick.height - margin)
+                        flick.contentY = Math.min(lowest, rect.y + rect.height + margin - flick.height)
                     if (rect.x < flick.contentX)
                         flick.contentX = Math.max(0, rect.x - 12)
                     else if (rect.x + rect.width > flick.contentX + flick.width)
@@ -439,11 +450,25 @@ Rectangle {
         }
         onWidthChanged: Qt.callLater(editor.revealCursor)
         onHeightChanged: Qt.callLater(editor.revealCursor)
+        // Draw a handle only when there is something to scroll; a handle that
+        // is always drawn lay across the bottom line and hid the caret there.
         ScrollBar.vertical: ScrollBar {
-            contentItem: Rectangle { implicitWidth: 5; radius: 2; color: "#89939e"; opacity: parent.active ? 0.8 : 0.4 }
+            id: verticalBar
+            policy: ScrollBar.AsNeeded
+            contentItem: Rectangle {
+                implicitWidth: 5; radius: 2; color: "#89939e"
+                visible: verticalBar.size < 1; opacity: verticalBar.active ? 0.8 : 0.4
+            }
         }
         ScrollBar.horizontal: ScrollBar {
-            contentItem: Rectangle { implicitHeight: 5; radius: 2; color: "#89939e"; opacity: parent.active ? 0.8 : 0.4 }
+            id: horizontalBar
+            objectName: "horizontalScrollBar"
+            policy: ScrollBar.AsNeeded
+            visible: size < 1
+            contentItem: Rectangle {
+                implicitHeight: 5; radius: 2; color: "#89939e"
+                visible: horizontalBar.size < 1; opacity: horizontalBar.active ? 0.8 : 0.4
+            }
         }
     }
 

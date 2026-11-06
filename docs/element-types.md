@@ -1,7 +1,9 @@
 # Element-type authoring (task 3e)
 
-The Writing desk's element selector shows the type at the caret and offers all
-eight body text types. Labels include their direct shortcuts:
+The Writing desk's element selector (toolbar button, sidebar **Elements**, or
+**Ctrl+0**) opens the element picker beside the page. It shows the type at the
+caret and offers all eight body text types; arrows and Enter, a number key or a
+click choose, Esc closes ([writer-layout.md](writer-layout.md)). Direct shortcuts:
 
 | Type | Shortcut |
 | --- | --- |

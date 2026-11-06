@@ -50,11 +50,11 @@ fi
 command -v xdg-open >/dev/null || { printf 'Missing command: xdg-open\n' >&2; exit 1; }
 printf '\n%s\n' \
   'Enlarge each window in turn to at least 1100 px wide for the full page with the outline open.' \
-  'Compare the slate header, narrow left rail, quiet gray desk, centered paper, and pale scene outline.' \
-  'In each screen use the second rail icon to show/hide Scenes; QML also has Ctrl+\ and the × close button.' \
+  'The QML writer (2026-11-05 layout) has no top header: a labeled left sidebar, an optional toolbar, the page and one status line.' \
+  'Use Scenes in the sidebar (or Ctrl+\) to show/hide the outline; Hide / Ctrl+Shift+B hides the sidebar; Ctrl+0 opens the element list.' \
   'In QML, click a scene to navigate. Drag its right handle to move the whole scene; Esc cancels and Ctrl+Z restores it.' \
   'QML uses the real Courier Prime/profile layout. The HTML uses sample page 12 and approximate text layout.' \
-  'Type/select briefly; Ctrl+Z undoes and Ctrl+Shift+Z redoes. Export opens options; Ctrl+E exports the current snapshot.' \
+  'Type/select briefly; Ctrl+Z undoes and Ctrl+Shift+Z redoes. Export in the sidebar opens options; Ctrl+E exports the current snapshot.' \
   'During PDF or Fountain export, Export reopens options with Cancel Export. Slow exports and Close offer Cancel Export or Keep Waiting.' \
   'QML autosaves a disposable project in the review directory; the original sample fixture stays untouched.' \
   'The sample and any PDF are in the review directory above.' \
