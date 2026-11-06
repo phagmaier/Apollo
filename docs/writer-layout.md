@@ -37,15 +37,33 @@ cycle are unchanged ([element-types.md](element-types.md)).
 
 ## Caret visibility
 
-Owner report: the caret disappeared on a line ("Eric smiles, excited.") reached
-by moving down. Cause: the editor scrolled only until the caret touched the
-viewport's bottom edge, and the scrollbars' custom handles were always drawn,
-so a 5 px bar lay over that bottom line. Now the editor keeps about three lines
-of context (at most a quarter of the view) above and below the caret, and a
-scrollbar handle is drawn only when there is something to scroll.
+The first caret fix addressed viewport edges: the editor scrolled only until
+the caret touched the viewport's bottom edge, and the scrollbars' custom
+handles were always drawn, so a 5 px bar lay over that bottom line. The editor
+keeps about three lines of context (at most a quarter of the view) above and
+below the caret, and a scrollbar handle is drawn only when there is something
+to scroll.
+
+The owner subsequently reported the caret still disappearing in the middle of
+action lines after arrow navigation or clicks. This was reproduced on native
+Wayland/OpenGL: at column 3, a valid caret rectangle painted zero pixels. Qt's
+one-document-pixel caret shrank to 0.75 screen pixels with the page, leaving
+some horizontal positions with no raster coverage. The same check passed with
+the software renderer. A custom caret now keeps one screen pixel of width at
+every page scale, follows Qt's caret coordinates and height, and uses the
+desktop blink interval, resetting to visible on movement or editing. Selection
+and read-only states suppress it.
 
 ## Verification
 
+- `editor_tests::caret_is_painted_inside_action_lines`: checks actual painted
+  pixels at every character across a wrapped action paragraph, using arrows
+  and reverse-order clicks, 1280/900 px windows and 60%/75%/100% page scales.
+  Run on native Wayland/OpenGL to catch this regression; offscreen software
+  alone cannot detect the original failure. Both the stock caret and a custom
+  caret left at one document pixel failed at column 3 before the width fix.
+- `editor_tests::caret_blinks_and_reappears_after_navigation`: actual painted
+  on/off states, movement during the off phase and collapsing a selection.
 - `editor_tests::caret_stays_clear_of_viewport_edges_and_scrollbars`: 120 Down
   and Up steps at the app's default window size; no horizontal scrollbar, and
   the caret stays at least two lines from the edges. It fails against the old

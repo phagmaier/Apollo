@@ -20,6 +20,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSet>
+#include <QStyleHints>
 #include <QTextBlock>
 #include <QTextFrame>
 #include <QTextLayout>
@@ -140,6 +141,17 @@ QQuickItem* find_item(QQuickItem* root, const QString& name) {
   for (auto* child : root->childItems())
     if (auto* found = find_item(child, name)) return found;
   return nullptr;
+}
+
+int changed_pixels(const QImage& a, const QImage& b, const QRectF& scene_rect) {
+  const auto ratio = a.devicePixelRatio();
+  const auto region = QRectF(scene_rect.topLeft() * ratio, scene_rect.size() * ratio)
+      .adjusted(-2, -1, 2, 1).toAlignedRect().intersected(a.rect()).intersected(b.rect());
+  int count = 0;
+  for (int y = region.top(); y <= region.bottom(); ++y)
+    for (int x = region.left(); x <= region.right(); ++x)
+      count += a.pixel(x, y) != b.pixel(x, y);
+  return count;
 }
 }
 
@@ -1032,11 +1044,78 @@ private slots:
     QCOMPARE(source::canonical({0, document_elements(*document_)}), original);
   }
 
-  // The approved shell must leave the live editor and its selection intact
-  // when the outline is shown/hidden, including a compact desktop window.
-  // Owner report (2026-11-05): the caret vanished on a line reached by moving
-  // down. The editor parked it on the viewport's bottom edge, under an
-  // always-drawn horizontal scrollbar handle.
+  // Inspect actual pixels, not just cursorRectangle: the stock 1 document-px
+  // caret rasterized to nothing at some columns on native OpenGL at 75%.
+  void caret_is_painted_inside_action_lines_data() {
+    QTest::addColumn<bool>("click");
+    QTest::addColumn<double>("scale");
+    QTest::addColumn<int>("width");
+    QTest::newRow("arrows-default") << false << 0.75 << 1280;
+    QTest::newRow("clicks-default") << true << 0.75 << 1280;
+    QTest::newRow("clicks-compact") << true << 0.75 << 900;
+    QTest::newRow("arrows-smaller-page") << false << 0.6 << 1280;
+    QTest::newRow("arrows-full-size") << false << 1.0 << 1280;
+  }
+  void caret_is_painted_inside_action_lines() {
+    QFETCH(bool, click);
+    QFETCH(double, scale);
+    QFETCH(int, width);
+    const auto old_flash = QGuiApplication::styleHints()->cursorFlashTime();
+    QGuiApplication::styleHints()->setCursorFlashTime(0);
+    const auto restore_flash = qScopeGuard([&] { QGuiApplication::styleHints()->setCursorFlashTime(old_flash); });
+    QVERIFY(open_elements({{ElementType::action,
+        "The room is quiet while Eric crosses toward the window. He pauses beside the table and looks outside."}}));
+    view_->rootObject()->findChild<QQuickItem*>("editorPage")->setProperty("pageScale", scale);
+    view_->resize(width, 1000);
+    QTest::qWait(50);
+    for (int step = 0; step < document_->characterCount() - 1; ++step) {
+      const int i = click ? document_->characterCount() - 2 - step : step;
+      if (click) {
+        const auto rect = caret_rect(i);
+        const auto point = editor_->mapToScene(QPointF(rect.x(), rect.center().y()) * px_per_point);
+        QTest::mouseClick(view_.get(), Qt::LeftButton, Qt::NoModifier, point.toPoint());
+      } else if (i) press(Qt::Key_Right);
+      QTRY_COMPARE(cursor(), i);
+      const auto caret = editor_->mapRectToScene(editor_->property("cursorRectangle").toRectF());
+      QVERIFY(QRectF(viewport()).contains(caret));
+      const auto shown = view_->grabWindow();
+      editor_->setProperty("cursorVisible", false);
+      const auto hidden = view_->grabWindow();
+      editor_->setProperty("cursorVisible", true);
+      const int changed = changed_pixels(shown, hidden, caret);
+      if (changed < 6) {
+        shown.save(QStringLiteral(APOLLO_ARTIFACT_DIR "/missing-caret.png"));
+        hidden.save(QStringLiteral(APOLLO_ARTIFACT_DIR "/missing-caret-hidden.png"));
+      }
+      QVERIFY2(changed >= 6, qPrintable(QString("position %1, caret %2,%3 width %4: only %5 painted pixels")
+          .arg(i).arg(caret.x()).arg(caret.y()).arg(caret.width()).arg(changed)));
+    }
+  }
+
+  void caret_blinks_and_reappears_after_navigation() {
+    const auto old_flash = QGuiApplication::styleHints()->cursorFlashTime();
+    QGuiApplication::styleHints()->setCursorFlashTime(400);
+    const auto restore_flash = qScopeGuard([&] { QGuiApplication::styleHints()->setCursorFlashTime(old_flash); });
+    QVERIFY(open_elements({{ElementType::action, "Eric crosses the room."}}));
+    editor_->setProperty("cursorVisible", false);
+    const auto hidden = view_->grabWindow();
+    editor_->setProperty("cursorVisible", true);
+    const auto painted = [&] {
+      return changed_pixels(view_->grabWindow(), hidden,
+          editor_->mapRectToScene(editor_->property("cursorRectangle").toRectF()));
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(painted() >= 6, 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(painted() == 0, 1000);
+    press(Qt::Key_Right);
+    QTRY_COMPARE(cursor(), 1);
+    QVERIFY(painted() >= 6); // Movement immediately resets the blink to on.
+    QMetaObject::invokeMethod(editor_, "select", Q_ARG(int, 0), Q_ARG(int, 4));
+    press(Qt::Key_Right);
+    QTRY_COMPARE(cursor(), 4);
+    QVERIFY(painted() >= 6); // Collapsing a selection restores the caret too.
+  }
+
+  // The earlier viewport-edge report is distinct from subpixel rasterization.
   void caret_stays_clear_of_viewport_edges_and_scrollbars() {
     std::vector<Element> elements;
     for (int i = 0; i < 160; ++i) elements.push_back({ElementType::action, "Line " + std::to_string(i) + " of the scene."});

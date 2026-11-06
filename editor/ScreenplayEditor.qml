@@ -222,6 +222,40 @@ Rectangle {
                 color: "black"
                 selectionColor: "#8fb4e8"
                 selectedTextColor: "black"
+                // A document-pixel caret becomes subpixel at the desk's 75%
+                // scale and OpenGL can rasterize no pixels at some columns.
+                // Keep one screen pixel at every presentation scale.
+                cursorDelegate: Item {
+                    id: caret
+                    width: 1 / root.pageScale
+                    visible: editor.cursorVisible
+                    property bool blinkOn: true
+                    function restartBlink() {
+                        blinkOn = true
+                        if (blink.running) blink.restart()
+                    }
+                    onVisibleChanged: restartBlink()
+                    Rectangle {
+                        anchors.fill: parent
+                        color: editor.color
+                        visible: caret.blinkOn && !editor.readOnly
+                                 && editor.selectionStart === editor.selectionEnd
+                    }
+                    Timer {
+                        id: blink
+                        interval: Math.max(1, Qt.styleHints.cursorFlashTime / 2)
+                        running: caret.visible && Qt.styleHints.cursorFlashTime >= 2
+                        repeat: true
+                        onTriggered: caret.blinkOn = !caret.blinkOn
+                        onRunningChanged: caret.blinkOn = true
+                    }
+                    Connections {
+                        target: editor
+                        function onCursorRectangleChanged() { caret.restartBlink() }
+                        function onCursorVisibleChanged() { caret.restartBlink() }
+                        function onTextChanged() { caret.restartBlink() }
+                    }
+                }
                 readonly property bool suggestionsOpen: suggestionMenu.visible
                 readonly property var suggestionChoices: root.suggestions.choices
                 readonly property int suggestionIndex: root.suggestions.selected
